@@ -1,0 +1,25 @@
+export const Colors = {
+  bg: '#0F0F0F',
+  surface: '#1A1A1A',
+  surfaceElevated: '#242424',
+  border: '#2A2A2A',
+  accent: '#E8FF5A',
+  accentDim: '#B5C944',
+  text: '#F0F0F0',
+  textSecondary: '#A0A0A0',
+  textMuted: '#606060',
+  success: '#4CAF50',
+  warning: '#FF9800',
+  error: '#F44336',
+
+  muscleColors: [
+    '#E8FF5A',
+    '#5AE8FF',
+    '#FF5A5A',
+    '#FF9F5A',
+    '#5AFF9F',
+    '#FF5AE8',
+    '#5A9FFF',
+    '#FFE85A',
+  ],
+};
