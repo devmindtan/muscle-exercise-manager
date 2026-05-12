@@ -13,13 +13,22 @@ export async function getSession(): Promise<Session | null> {
   return data.session;
 }
 
+function getWebOAuthRedirectTo(): string {
+  const configured = process.env.EXPO_PUBLIC_WEB_URL?.trim();
+  if (configured) {
+    const base = configured.replace(/\/$/, '');
+    return `${base}/auth-callback`;
+  }
+  return `${window.location.origin}/auth-callback`;
+}
+
 export async function signInWithGoogle(): Promise<void> {
   if (Platform.OS === 'web') {
     // On web: full-page redirect handled by Supabase
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth-callback`,
+        redirectTo: getWebOAuthRedirectTo(),
       },
     });
     return;

@@ -1,3 +1,4 @@
+import { supabase } from './supabase';
 import { MuscleGroup, Exercise, WorkoutLog } from '@/types/database';
 
 export type RecentLog = WorkoutLog & {
@@ -34,6 +35,11 @@ function genId(): string {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+async function getUserId(): Promise<string | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  return sessionData.session?.user.id ?? null;
 }
 
 function loadState(): LocalState {
@@ -109,6 +115,7 @@ export async function insertMuscleGroup(data: {
   image_uri?: string | null;
 }): Promise<MuscleGroup> {
   const state = loadState();
+  const userId = await getUserId();
   const row: MuscleGroup = {
     id: genId(),
     name: data.name,
@@ -120,7 +127,7 @@ export async function insertMuscleGroup(data: {
     updated_at: now(),
     sync_status: 'pending',
     deleted_at: null,
-    user_id: null,
+    user_id: userId,
   };
   state.muscle_groups.push(row);
   saveState(state);
@@ -204,6 +211,7 @@ export async function insertExercise(data: {
   image_uri?: string | null;
 }): Promise<Exercise> {
   const state = loadState();
+  const userId = await getUserId();
   const row: Exercise = {
     id: genId(),
     muscle_group_id: data.muscle_group_id,
@@ -215,7 +223,7 @@ export async function insertExercise(data: {
     updated_at: now(),
     sync_status: 'pending',
     deleted_at: null,
-    user_id: null,
+    user_id: userId,
   };
   state.exercises.push(row);
   saveState(state);
@@ -262,6 +270,7 @@ export async function insertWorkoutLog(data: {
   logged_at: string;
 }): Promise<void> {
   const state = loadState();
+  const userId = await getUserId();
   state.workout_logs.push({
     id: genId(),
     exercise_id: data.exercise_id,
@@ -275,7 +284,7 @@ export async function insertWorkoutLog(data: {
     updated_at: now(),
     sync_status: 'pending',
     deleted_at: null,
-    user_id: null,
+    user_id: userId,
   });
   saveState(state);
 }

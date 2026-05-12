@@ -10,6 +10,7 @@ import { AlertCircle, Check, Cloud, CloudOff } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
 import { useSync } from '@/context/SyncContext';
+import { UserAccountModal } from './UserAccountModal';
 
 export function SyncStatusChip() {
   const { user, signIn } = useAuth();
@@ -53,22 +54,30 @@ export function SyncStatusChip() {
   }
 
   return (
-    <TouchableOpacity
-      style={[styles.chip, errorBorder && styles.chipError]}
-      onPress={sync}
-    >
-      {icon}
-      <Text
-        style={[styles.label, errorBorder && { color: Colors.error }]}
-        numberOfLines={1}
+    <View style={styles.container}>
+      <TouchableOpacity
+        style={[styles.chip, errorBorder && styles.chipError]}
+        onPress={sync}
       >
-        {label}
-      </Text>
-    </TouchableOpacity>
+        {icon}
+        <Text
+          style={[styles.label, errorBorder && { color: Colors.error }]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </TouchableOpacity>
+      <UserAccountModal />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
