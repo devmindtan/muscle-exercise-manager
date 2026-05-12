@@ -55,24 +55,32 @@ export async function pushPendingChanges(): Promise<void> {
 // ── Pull remote changes from Supabase since last pull ─────────────────────────
 export async function pullRemoteChanges(): Promise<void> {
   const db = await getDB();
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) return;
+  const userId = sessionData.session.user.id;
+
+  const nowMs = Date.now();
   const lastPull =
     (await getMetaValue('last_pull_at')) ?? '1970-01-01T00:00:00.000Z';
+  // Guard against cursor moving into the future due to clock skew
+  const safeSince = new Date(
+    Math.min(Date.parse(lastPull) || 0, nowMs),
+  ).toISOString();
+
+  // Track max updated_at from server so cursor uses server time, not client time
+  let maxUpdatedAt = safeSince;
 
   for (const table of TABLES) {
-    let query = supabase.from(table).select('*').limit(500);
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .eq('user_id', userId)          // only this user's data
+      .gt('updated_at', safeSince)    // incremental: only rows newer than cursor
+      .order('updated_at', { ascending: true })
+      .limit(500);
 
-    // Only filter by updated_at if the column exists (guard against missing migration)
-    try {
-      query = query.gt('updated_at', lastPull) as typeof query;
-    } catch {
-      // column may not exist yet; fall through to full fetch on first run
-    }
-
-    const { data, error } = await query;
     if (error || !data || data.length === 0) continue;
 
-    // Cast to a flexible record type since remote rows will have extra
-    // columns (updated_at, deleted_at) not present in our local TypeScript types
     const remoteRows = data as Record<string, unknown>[];
 
     for (const remote of remoteRows) {
@@ -89,10 +97,17 @@ export async function pullRemoteChanges(): Promise<void> {
       if (!local || remoteDate > localDate) {
         await upsertFromRemote(db, table, remote);
       }
+
+      // Advance cursor using server timestamp to avoid client clock skew
+      const remoteUpdatedAt = String(remote.updated_at ?? '');
+      if (remoteUpdatedAt > maxUpdatedAt) {
+        maxUpdatedAt = remoteUpdatedAt;
+      }
     }
   }
 
-  await setMetaValue('last_pull_at', new Date().toISOString());
+  // Persist the max server timestamp seen (not new Date()) to avoid skipping rows
+  await setMetaValue('last_pull_at', maxUpdatedAt);
 }
 
 async function upsertFromRemote(
@@ -173,8 +188,12 @@ export async function seedFromSupabase(): Promise<void> {
   const row = await db.getFirstAsync<{ n: number }>(
     'SELECT COUNT(*) AS n FROM muscle_groups',
   );
-  if (row && row.n > 0) return; // already have local data
-  await setMetaValue('last_pull_at', '1970-01-01T00:00:00.000Z');
+  // First time only: reset cursor so we pull everything from Supabase.
+  // Always pull regardless — cursor-based so only fetches rows newer than
+  // last_pull_at. This ensures data from other devices is picked up on launch.
+  if (!row || row.n === 0) {
+    await setMetaValue('last_pull_at', '1970-01-01T00:00:00.000Z');
+  }
   await pullRemoteChanges();
 }
 
