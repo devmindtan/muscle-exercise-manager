@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,11 +32,13 @@ import {
 import type { RecentLog } from '@/lib/repository';
 import { MuscleGroup, Exercise } from '@/types/database';
 import { Colors } from '@/constants/colors';
+import { useSync } from '@/context/SyncContext';
 
 const PAGE_SIZE = 10;
 
 export default function LogScreen() {
   const insets = useSafeAreaInsets();
+  const { lastSyncAt } = useSync();
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
@@ -79,6 +81,11 @@ export default function LogScreen() {
       load();
     }, [load]),
   );
+
+  useEffect(() => {
+    if (!lastSyncAt) return;
+    load();
+  }, [lastSyncAt, load]);
 
   const selectGroup = (g: MuscleGroup) => {
     setSelectedGroup(g);

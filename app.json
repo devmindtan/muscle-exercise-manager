@@ -25,6 +25,15 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d76cce92-00b1-4a19-aa20-b2cba4e3d11e"
+      }
+    },
+    "android": {
+      "package": "com.devmindtan.tannguyenkhacminh"
     }
   }
 }

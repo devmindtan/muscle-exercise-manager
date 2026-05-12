@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { syncAll, seedFromSupabase } from '@/lib/sync';
 import { useAuth } from './AuthContext';
 
@@ -64,6 +64,44 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Auto-sync when user signs in
   useEffect(() => {
     if (session) sync();
+  }, [session, sync]);
+
+  // Web: sync when tab becomes visible/focused.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        sync();
+      }
+    };
+
+    const handleFocus = () => sync();
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+    }
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+      }
+    };
+  }, [sync]);
+
+  // Keep pulling remote updates periodically while signed in.
+  useEffect(() => {
+    if (!session) return;
+    const id = setInterval(() => {
+      sync();
+    }, 30000);
+    return () => clearInterval(id);
   }, [session, sync]);
 
   return (
