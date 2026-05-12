@@ -6,6 +6,7 @@ import {
   signOut as authSignOut,
   onAuthStateChange,
 } from '@/lib/auth';
+import { clearLocalData } from '@/lib/localData';
 
 type AuthContextType = {
   user: User | null;
@@ -27,6 +28,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const signOut = async () => {
+    try {
+      await authSignOut();
+    } finally {
+      await clearLocalData();
+      setSession(null);
+    }
+  };
+
   useEffect(() => {
     getSession().then((s) => {
       setSession(s);
@@ -43,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session,
         loading,
         signIn: signInWithGoogle,
-        signOut: authSignOut,
+        signOut,
       }}
     >
       {children}
