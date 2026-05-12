@@ -7,17 +7,24 @@ const TABLES: TableName[] = ['muscle_groups', 'exercises', 'workout_logs'];
 
 // ── Push pending local changes to Supabase ────────────────────────────────────
 export async function pushPendingChanges(): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) return;
+  const userId = sessionData.session.user.id;
+
   const db = await getDB();
 
   for (const table of TABLES) {
-    // Push upserts (non-deleted pending rows)
+    // Push all pending rows, including soft-deleted rows.
+    // This allows other devices to receive deleted_at via pull.
     const toUpsert = await db.getAllAsync<Record<string, unknown>>(
-      `SELECT * FROM ${table} WHERE sync_status = 'pending' AND deleted_at IS NULL`,
+      `SELECT * FROM ${table} WHERE sync_status = 'pending'`,
     );
     if (toUpsert.length > 0) {
       const mapped = toUpsert.map((r) => {
         const row = { ...r };
         delete row.sync_status;
+        delete row.updated_at;
+        row.user_id = userId;
         if (table === 'exercises') row.is_active = r.is_active === 1;
         return row;
       });
@@ -26,22 +33,6 @@ export async function pushPendingChanges(): Promise<void> {
         .upsert(mapped as never[], { onConflict: 'id' });
       if (!error) {
         const ids = toUpsert.map((r) => r.id as string);
-        const ph = ids.map(() => '?').join(',');
-        await db.runAsync(
-          `UPDATE ${table} SET sync_status = 'synced' WHERE id IN (${ph})`,
-          ids,
-        );
-      }
-    }
-
-    // Push deletes (soft-deleted pending rows → hard delete on Supabase)
-    const toDelete = await db.getAllAsync<{ id: string }>(
-      `SELECT id FROM ${table} WHERE sync_status = 'pending' AND deleted_at IS NOT NULL`,
-    );
-    if (toDelete.length > 0) {
-      const ids = toDelete.map((r) => r.id);
-      const { error } = await supabase.from(table).delete().in('id', ids);
-      if (!error) {
         const ph = ids.map(() => '?').join(',');
         await db.runAsync(
           `UPDATE ${table} SET sync_status = 'synced' WHERE id IN (${ph})`,

@@ -87,8 +87,9 @@ export async function pushPendingChanges(): Promise<void> {
     const pending = rows.filter((r) => r.sync_status === 'pending');
     if (pending.length === 0) continue;
 
-    // Upsert rows that are not soft-deleted
-    const toUpsert = pending.filter((r) => !r.deleted_at);
+    // Upsert all pending rows, including soft-deleted rows.
+    // This lets other devices pull deleted_at and hide/delete locally.
+    const toUpsert = pending;
     if (toUpsert.length > 0) {
       const mapped = toUpsert.map((r) => {
         const row = { ...r } as Record<string, unknown>;
@@ -109,25 +110,6 @@ export async function pushPendingChanges(): Promise<void> {
               r as { sync_status: string; user_id?: string | null }
             ).sync_status = 'synced';
             (r as { user_id?: string | null }).user_id = userId;
-          }
-        });
-      }
-    }
-
-    // Hard-delete on Supabase rows that were soft-deleted locally
-    const toDelete = pending.filter((r) => !!r.deleted_at);
-    if (toDelete.length > 0) {
-      const ids = toDelete.map((r) => (r as { id: string }).id);
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .in('id', ids)
-        .eq('user_id', userId);
-      if (!error) {
-        const idSet = new Set(ids);
-        (state[table] as AnyRow[]).forEach((r) => {
-          if (idSet.has((r as { id: string }).id)) {
-            (r as { sync_status: string }).sync_status = 'synced';
           }
         });
       }

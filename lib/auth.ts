@@ -1,6 +1,6 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { Platform, Alert } from 'react-native';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import type { Session, User } from '@supabase/supabase-js';
 
@@ -46,12 +46,6 @@ export async function signInWithGoogle(): Promise<void> {
 
   // On native: open an in-app browser session
   const redirectTo = Linking.createURL('/auth-callback');
-  console.log('🔐 Native OAuth redirectTo:', redirectTo);
-  
-  // Debug: show redirectTo on screen
-  if (Platform.OS === 'android' || Platform.OS === 'ios') {
-    Alert.alert('Debug', `Redirect URL:\n${redirectTo}`, [{ text: 'OK' }]);
-  }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -60,24 +54,19 @@ export async function signInWithGoogle(): Promise<void> {
   if (error || !data.url) throw error ?? new Error('No OAuth URL returned');
 
   const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-  console.log('🔐 OAuth result type:', result.type, 'URL:', result.url);
-  
   if (result.type === 'success') {
     const fragment = result.url.split('#')[1] ?? '';
     const params = new URLSearchParams(fragment);
     const access_token = params.get('access_token');
     const refresh_token = params.get('refresh_token');
-    console.log('🔐 Tokens received, setting session...');
     if (access_token && refresh_token) {
       await supabase.auth.setSession({ access_token, refresh_token });
     }
-  } else {
-    console.error('🔐 OAuth cancelled or error');
   }
 }
 
 export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: 'local' });
 }
 
 export function onAuthStateChange(
