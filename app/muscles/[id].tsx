@@ -128,17 +128,21 @@ export default function MuscleDetailScreen() {
 
   const saveEdit = async () => {
     if (!group || !editForm.name.trim()) return;
-    await updateMuscleGroup(group.id, {
-      name: editForm.name.trim(),
-      target_sets_per_week:
-        parseInt(editForm.target_sets_per_week) || group.target_sets_per_week,
-      target_sets_per_month:
-        parseInt(editForm.target_sets_per_month) || group.target_sets_per_month,
-      color: editForm.color,
-      image_uri: editForm.image_uri.trim() || null,
-    });
+    // Đóng modal trước khi load lại dữ liệu để tránh kẹt overlay
     setEditingGroup(false);
-    load();
+    // Đợi modal đóng xong mới load lại dữ liệu
+    setTimeout(async () => {
+      await updateMuscleGroup(group.id, {
+        name: editForm.name.trim(),
+        target_sets_per_week:
+          parseInt(editForm.target_sets_per_week) || group.target_sets_per_week,
+        target_sets_per_month:
+          parseInt(editForm.target_sets_per_month) || group.target_sets_per_month,
+        color: editForm.color,
+        image_uri: editForm.image_uri.trim() || null,
+      });
+      load();
+    }, 300);
   };
 
   const pickImage = async (onPicked: (uri: string) => void) => {
