@@ -19,7 +19,17 @@ function getWebOAuthRedirectTo(): string {
     const base = configured.replace(/\/$/, '');
     return `${base}/auth-callback`;
   }
-  return `${window.location.origin}/auth-callback`;
+  // Fallback to origin only for localhost dev
+  const origin = window.location.origin;
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    return `${origin}/auth-callback`;
+  }
+  // For production, EXPO_PUBLIC_WEB_URL must be set
+  console.error(
+    'Missing EXPO_PUBLIC_WEB_URL env variable for production OAuth redirect. ' +
+    'Set it in your Vercel environment variables or .env file.'
+  );
+  return `${origin}/auth-callback`; // fallback, will likely fail
 }
 
 export async function signInWithGoogle(): Promise<void> {
