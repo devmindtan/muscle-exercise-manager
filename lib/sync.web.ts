@@ -62,6 +62,12 @@ function saveMeta(meta: LocalMeta): void {
   window.localStorage.setItem(META_KEY, JSON.stringify(meta));
 }
 
+function toEpochMs(value: string | undefined): number {
+  if (!value) return 0;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 // ── Push pending local changes to Supabase ────────────────────────────────────
 export async function pushPendingChanges(): Promise<void> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -87,6 +93,8 @@ export async function pushPendingChanges(): Promise<void> {
       const mapped = toUpsert.map((r) => {
         const row = { ...r } as Record<string, unknown>;
         delete row.sync_status;
+        // Let DB trigger set updated_at to server time to avoid client clock skew.
+        delete row.updated_at;
         row.user_id = userId; // Add current user_id to payload
         return row;
       });
@@ -137,6 +145,11 @@ export async function pullRemoteChanges(): Promise<void> {
   const userId = sessionData.session.user.id;
   const meta = loadMeta();
   const state = loadState();
+  const nowMs = Date.now();
+  // Guard against a cursor accidentally moving into the future.
+  const safeSinceMs = Math.min(toEpochMs(meta.last_pull_at), nowMs);
+  const safeSinceIso = new Date(safeSinceMs).toISOString();
+  let nextLastPullMs = safeSinceMs;
 
   // Filter out rows from other users (safety measure)
   state.muscle_groups = state.muscle_groups.filter(
@@ -152,14 +165,13 @@ export async function pullRemoteChanges(): Promise<void> {
   const tables: TableName[] = ['muscle_groups', 'exercises', 'workout_logs'];
 
   for (const table of tables) {
-    let query = supabase
+    const { data, error } = await supabase
       .from(table)
       .select('*')
       .eq('user_id', userId)
-      .gt('updated_at', meta.last_pull_at)
+      .gte('updated_at', safeSinceIso)
+      .order('updated_at', { ascending: true })
       .limit(500);
-
-    const { data, error } = await query;
 
     if (error || !data || data.length === 0) continue;
 
@@ -167,30 +179,40 @@ export async function pullRemoteChanges(): Promise<void> {
 
     for (const remote of remoteRows) {
       const remoteId = remote.id as string;
-      const remoteDate = new Date((remote.updated_at ?? 0) as string);
+      const remoteUpdatedAt = String(remote.updated_at ?? '');
+      const remoteUpdatedAtMs = toEpochMs(remoteUpdatedAt);
       const existing = (state[table] as AnyRow[]).find(
         (r) => (r as { id: string }).id === remoteId,
-      ) as (Record<string, unknown> & { updated_at?: string }) | undefined;
+      ) as
+        | (Record<string, unknown> & {
+            updated_at?: string;
+            sync_status?: string;
+          })
+        | undefined;
 
-      const localDate = existing?.updated_at
-        ? new Date(existing.updated_at)
-        : new Date(0);
+      // Keep local unsynced edits if any; otherwise remote is source of truth.
+      if (existing?.sync_status === 'pending') continue;
 
-      if (!existing || remoteDate > localDate) {
-        const merged = { ...remote, sync_status: 'synced' } as AnyRow;
-        if (existing) {
-          const idx = (state[table] as AnyRow[]).findIndex(
-            (r) => (r as { id: string }).id === remoteId,
-          );
-          (state[table] as AnyRow[])[idx] = merged;
-        } else {
-          (state[table] as AnyRow[]).push(merged);
-        }
+      const merged = { ...remote, sync_status: 'synced' } as AnyRow;
+      if (existing) {
+        const idx = (state[table] as AnyRow[]).findIndex(
+          (r) => (r as { id: string }).id === remoteId,
+        );
+        (state[table] as AnyRow[])[idx] = merged;
+      } else {
+        (state[table] as AnyRow[]).push(merged);
+      }
+
+      if (remoteUpdatedAtMs > nextLastPullMs) {
+        nextLastPullMs = remoteUpdatedAtMs;
       }
     }
   }
 
-  saveMeta({ last_pull_at: new Date().toISOString(), last_user_id: userId });
+  saveMeta({
+    last_pull_at: new Date(nextLastPullMs).toISOString(),
+    last_user_id: userId,
+  });
   saveState(state);
 }
 
@@ -201,7 +223,6 @@ export async function seedFromSupabase(): Promise<void> {
 
   const currentUserId = sessionData.session.user.id;
   const meta = loadMeta();
-  const state = loadState();
 
   // Check if user has switched: if stored user_id differs from current user_id, clear local state
   if (meta.last_user_id && meta.last_user_id !== currentUserId) {
@@ -215,14 +236,20 @@ export async function seedFromSupabase(): Promise<void> {
     return;
   }
 
-  // First time or same user - check if we have local data
-  const hasData = state.muscle_groups.length > 0;
-  if (hasData) return;
+  // FIX: Always pull remote changes regardless of whether local data exists.
+  // Previously, the `hasData` guard prevented pulling when localStorage already
+  // had data — so changes made on another device (e.g. phone) were never fetched
+  // unless the user manually cleared localStorage on this device.
+  // The pull is cursor-based (last_pull_at), so it only fetches rows updated
+  // since the last sync — no performance concern with existing data.
+  if (!meta.last_user_id) {
+    // First time for this user — reset cursor to epoch so we get everything
+    saveMeta({
+      last_pull_at: '1970-01-01T00:00:00.000Z',
+      last_user_id: currentUserId,
+    });
+  }
 
-  saveMeta({
-    last_pull_at: '1970-01-01T00:00:00.000Z',
-    last_user_id: currentUserId,
-  });
   await pullRemoteChanges();
 }
 
