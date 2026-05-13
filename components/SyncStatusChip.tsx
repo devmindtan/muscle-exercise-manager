@@ -13,14 +13,16 @@ import { useSync } from '@/context/SyncContext';
 import { UserAccountModal } from './UserAccountModal';
 
 export function SyncStatusChip() {
-  const { user, signIn } = useAuth();
+  const { user, signIn, isGuestMode } = useAuth();
   const { status, lastSyncAt, sync } = useSync();
 
   if (!user) {
     return (
       <TouchableOpacity style={styles.chip} onPress={signIn}>
         <CloudOff color={Colors.textMuted} size={12} strokeWidth={1.8} />
-        <Text style={styles.muted}>Đăng nhập</Text>
+        <Text style={styles.muted}>
+          {isGuestMode ? 'Khách' : 'Đăng nhập'}
+        </Text>
       </TouchableOpacity>
     );
   }
