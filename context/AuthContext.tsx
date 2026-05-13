@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import type { Session, User } from '@/lib/auth';
 import {
   getSession,
@@ -6,12 +7,12 @@ import {
   signOut as authSignOut,
   onAuthStateChange,
 } from '@/lib/auth';
-import { clearLocalData } from '@/lib/localData';
 
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isGuestMode: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -20,6 +21,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  isGuestMode: false,
   signIn: async () => {},
   signOut: async () => {},
 });
@@ -32,7 +34,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await authSignOut();
     } finally {
-      await clearLocalData();
+      // Keep native local data so users can continue in guest mode after sign out.
+      // Web requires auth and will not expose data while signed out.
       setSession(null);
     }
   };
@@ -52,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: session?.user ?? null,
         session,
         loading,
+        isGuestMode: Platform.OS !== 'web' && !session,
         signIn: signInWithGoogle,
         signOut,
       }}

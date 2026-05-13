@@ -31,6 +31,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const inFlight = useRef(false);
 
   const sync = useCallback(async () => {
+    if (!session) {
+      setStatus('idle');
+      return;
+    }
     if (inFlight.current) return;
     inFlight.current = true;
     setStatus('syncing');
@@ -43,23 +47,29 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     } finally {
       inFlight.current = false;
     }
-  }, []);
+  }, [session]);
 
-  // On first mount: seed from Supabase if local DB is empty, then sync
+  // Seed/pull once after authentication is available.
   useEffect(() => {
+    if (!session) {
+      setStatus('idle');
+      return;
+    }
+
     seedFromSupabase()
       .then(() => sync())
       .catch(() => setStatus('error'));
-  }, [sync]);
+  }, [session, sync]);
 
   // Auto-sync when app returns to foreground
   useEffect(() => {
+    if (!session) return;
     const handler = (state: AppStateStatus) => {
       if (state === 'active') sync();
     };
     const sub = AppState.addEventListener('change', handler);
     return () => sub.remove();
-  }, [sync]);
+  }, [session, sync]);
 
   // Auto-sync when user signs in
   useEffect(() => {
@@ -68,6 +78,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   // Web: sync when tab becomes visible/focused.
   useEffect(() => {
+    if (!session) return;
     if (Platform.OS !== 'web') return;
 
     const handleVisibility = () => {
@@ -93,7 +104,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         window.removeEventListener('focus', handleFocus);
       }
     };
-  }, [sync]);
+  }, [session, sync]);
 
   // Keep pulling remote updates periodically while signed in.
   useEffect(() => {
