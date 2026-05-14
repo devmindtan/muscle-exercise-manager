@@ -41,6 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Web: show demo mode immediately
+    if (Platform.OS === 'web') {
+      setSession(null);
+      setLoading(false);
+      return;
+    }
+
+    // Native: load actual session
     getSession().then((s) => {
       setSession(s);
       setLoading(false);
