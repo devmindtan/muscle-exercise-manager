@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Muscle Manager",
-    "slug": "Muscle Manager",
+    "slug": "MuscleManager",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -21,19 +21,32 @@
       "expo-font",
       "expo-web-browser",
       "expo-image-picker",
-      "expo-sqlite"
+      "expo-sqlite",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true
     },
+    "android": {
+      "package": "com.devmindtan.muscleexercisemanager",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d76cce92-00b1-4a19-aa20-b2cba4e3d11e"
+        "projectId": "a47e764d-1ac7-453f-87f2-2abaab93c07d"
       }
     },
-    "android": {
-      "package": "com.devmindtan.tannguyenkhacminh"
-    }
+    "owner": "devmindtan"
   }
 }
