@@ -1,8 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
-import { AuthProvider } from '@/context/AuthContext';
-import { SyncProvider } from '@/context/SyncContext';
+import { AuthProvider } from '@/src/context/AuthContext';
+import { SyncProvider } from '@/src/context/SyncContext';
 
 function AppNavigator() {
   return (
@@ -18,8 +17,6 @@ function AppNavigator() {
 }
 
 export default function RootLayout() {
-  useFrameworkReady();
-
   return (
     <AuthProvider>
       <SyncProvider>
