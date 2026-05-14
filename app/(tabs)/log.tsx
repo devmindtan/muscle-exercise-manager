@@ -33,6 +33,7 @@ import type { RecentLog } from '@/lib/repository';
 import { MuscleGroup, Exercise } from '@/types/database';
 import { Colors } from '@/constants/colors';
 import { useSync } from '@/context/SyncContext';
+import { exportDatabase } from "@/lib/db";
 
 const PAGE_SIZE = 10;
 
@@ -163,13 +164,17 @@ export default function LogScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.title, { paddingTop: insets.top + 15 }]}>
-          Ghi lại
-        </Text>
+       <View style={[styles.titleRow, { paddingTop: insets.top + 15 }]}>
+        <Text style={styles.title}>Ghi lại</Text>
+        <TouchableOpacity style={styles.exportBtn} onPress={exportDatabase}>
+          <Text style={styles.exportBtnText}>Xuất dữ liệu</Text>
+        </TouchableOpacity>
+      </View>
 
         {/* Form */}
         <View style={styles.card}>
           {/* Muscle group picker */}
+          
           <Text style={styles.label}>Nhóm cơ</Text>
           <TouchableOpacity
             style={styles.picker}
@@ -492,16 +497,6 @@ export default function LogScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   content: { paddingBottom: 48 },
-
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: Colors.text,
-    letterSpacing: -0.5,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-
   card: {
     marginHorizontal: 20,
     backgroundColor: Colors.surface,
@@ -742,5 +737,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 20,
+  },
+  titleRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  paddingHorizontal: 20,
+  paddingBottom: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.5,
+  },
+  exportBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  exportBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
   },
 });

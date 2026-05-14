@@ -3,13 +3,19 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 /**
  * Compress image before uploading and return a cloud URL from MinIO.
  *
- * Supported configuration:
- * 1) `EXPO_PUBLIC_MINIO_UPLOAD_API`
+ * Supported configuration (in priority order):
+ * 
+ * 1) `EXPO_PUBLIC_MINIO_ENDPOINT` + `EXPO_PUBLIC_MINIO_BUCKET`
+ *    + `EXPO_PUBLIC_MINIO_ACCESS_KEY` + `EXPO_PUBLIC_MINIO_SECRET_KEY`
+ *    - Direct upload to MinIO with Basic Auth (base64 accesskey:secretkey)
+ *    - Most direct and simple for self-hosted MinIO
+ *
+ * 2) `EXPO_PUBLIC_MINIO_UPLOAD_API`
  *    - POST multipart/form-data with field `file`
  *    - Optional bearer token via `EXPO_PUBLIC_MINIO_UPLOAD_TOKEN`
  *    - Expected response contains one of: `url`, `publicUrl`, `location`
  *
- * 2) `EXPO_PUBLIC_MINIO_PUT_BASE_URL` + `EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL`
+ * 3) `EXPO_PUBLIC_MINIO_PUT_BASE_URL` + `EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL`
  *    - Upload by PUT to `${PUT_BASE_URL}/${objectKey}`
  *    - Read from `${PUBLIC_BASE_URL}/${objectKey}`
  *    - Optional bearer token via `EXPO_PUBLIC_MINIO_UPLOAD_TOKEN`
@@ -28,6 +34,45 @@ export async function persistImageLocally(pickerUri: string): Promise<string> {
   const contentType = mimeFromExt(extension);
   const blob = await uriToBlob(sourceUri);
 
+  // Mode 1: Direct upload to MinIO endpoint with Basic Auth
+  const endpoint = process.env.EXPO_PUBLIC_MINIO_ENDPOINT?.trim();
+  const bucket = process.env.EXPO_PUBLIC_MINIO_BUCKET?.trim();
+  const accessKey = process.env.EXPO_PUBLIC_MINIO_ACCESS_KEY?.trim();
+  const secretKey = process.env.EXPO_PUBLIC_MINIO_SECRET_KEY?.trim();
+
+  if (endpoint && bucket && accessKey && secretKey) {
+    try {
+      const objectKey = `muscle-manager/${fileName}`;
+      const uploadUrl = `${endpoint.replace(/\/$/, '')}/${bucket}/${objectKey}`;
+
+      // Create Basic Auth header: base64(accesskey:secretkey)
+      const credentials = btoa(`${accessKey}:${secretKey}`);
+      const headers: Record<string, string> = {
+        'Content-Type': contentType,
+        'Authorization': `Basic ${credentials}`,
+      };
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers,
+        body: blob,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(
+          `MinIO upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`,
+        );
+      }
+
+      // Return the same URL (MinIO serves objects at the same URL)
+      return uploadUrl;
+    } catch (error) {
+      console.error('Mode 1 (Direct MinIO) failed:', error);
+      // Fall through to Mode 2 or 3
+    }
+  }
+
+  // Mode 2: Upload via MINIO_UPLOAD_API
   const uploadApi = process.env.EXPO_PUBLIC_MINIO_UPLOAD_API?.trim();
   const token = process.env.EXPO_PUBLIC_MINIO_UPLOAD_TOKEN?.trim();
 
@@ -68,16 +113,17 @@ export async function persistImageLocally(pickerUri: string): Promise<string> {
     return uploadedUrl;
   }
 
+  // Mode 3: Direct PUT upload
   const putBase = process.env.EXPO_PUBLIC_MINIO_PUT_BASE_URL?.trim();
   const publicBase = process.env.EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL?.trim();
 
   if (!putBase || !publicBase) {
     throw new Error(
-      'Missing MinIO config. Set EXPO_PUBLIC_MINIO_UPLOAD_API or EXPO_PUBLIC_MINIO_PUT_BASE_URL + EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL',
+      'Missing MinIO config. Set EXPO_PUBLIC_MINIO_ENDPOINT + EXPO_PUBLIC_MINIO_BUCKET + EXPO_PUBLIC_MINIO_ACCESS_KEY + EXPO_PUBLIC_MINIO_SECRET_KEY (recommended) OR EXPO_PUBLIC_MINIO_UPLOAD_API OR EXPO_PUBLIC_MINIO_PUT_BASE_URL + EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL',
     );
   }
 
-  const objectKey = `muscle-images/${fileName}`;
+  const objectKey = `muscle-manager/${fileName}`;
   const putUrl = `${putBase.replace(/\/$/, '')}/${objectKey}`;
   const readUrl = `${publicBase.replace(/\/$/, '')}/${objectKey}`;
 

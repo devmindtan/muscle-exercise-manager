@@ -31,6 +31,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const inFlight = useRef(false);
 
   const sync = useCallback(async () => {
+    // Web: no syncing - just demo mode
+    if (Platform.OS === 'web') {
+      setStatus('idle');
+      return;
+    }
+
     if (!session) {
       setStatus('idle');
       return;
@@ -42,7 +48,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       await syncAll();
       setStatus('synced');
       setLastSyncAt(new Date());
-    } catch {
+    } catch (error) {
+      console.error('Sync error:', error);
       setStatus('error');
     } finally {
       inFlight.current = false;
@@ -50,19 +57,37 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   // Seed/pull once after authentication is available.
+  // Add delay to ensure database is ready on native platforms
   useEffect(() => {
+    // Web: skip sync initialization
+    if (Platform.OS === 'web') {
+      setStatus('idle');
+      return;
+    }
+
     if (!session) {
       setStatus('idle');
       return;
     }
 
-    seedFromSupabase()
-      .then(() => sync())
-      .catch(() => setStatus('error'));
+    const initSync = async () => {
+      try {
+        // Small delay to ensure database initialization is complete
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await seedFromSupabase();
+        await sync();
+      } catch (error) {
+        console.error('Initial sync error:', error);
+        setStatus('error');
+      }
+    };
+
+    initSync();
   }, [session, sync]);
 
-  // Auto-sync when app returns to foreground
+  // Auto-sync when app returns to foreground (native only)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     if (!session) return;
     const handler = (state: AppStateStatus) => {
       if (state === 'active') sync();
@@ -71,43 +96,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [session, sync]);
 
-  // Auto-sync when user signs in
+  // Auto-sync when user signs in (native only)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     if (session) sync();
   }, [session, sync]);
 
-  // Web: sync when tab becomes visible/focused.
+  // Keep pulling remote updates periodically while signed in (native only).
   useEffect(() => {
-    if (!session) return;
-    if (Platform.OS !== 'web') return;
-
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        sync();
-      }
-    };
-
-    const handleFocus = () => sync();
-
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility);
-    }
-    if (typeof window !== 'undefined') {
-      window.addEventListener('focus', handleFocus);
-    }
-
-    return () => {
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibility);
-      }
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('focus', handleFocus);
-      }
-    };
-  }, [session, sync]);
-
-  // Keep pulling remote updates periodically while signed in.
-  useEffect(() => {
+    if (Platform.OS === 'web') return;
     if (!session) return;
     const id = setInterval(() => {
       sync();
