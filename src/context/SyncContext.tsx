@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppStateStatus } from 'react-native';
 import { initializeDatabase } from '@/src/db/localDB';
-import { syncData, SyncResult } from '@/src/services/syncService';
+import { syncData } from '@/src/services/syncService';
 import { useAuth } from '@/src/context/AuthContext';
 
 // Simple UUID v4 generator
@@ -47,6 +47,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [deviceId, setDeviceId] = useState<string>('');
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isSyncingRef = useRef(false);
 
   // Initialize device ID and database
   useEffect(() => {
@@ -77,31 +78,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     initializeSync();
   }, []);
 
-  // Subscribe to app state changes
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription.remove();
-  }, []);
-
-  const handleAppStateChange = useCallback(
-    (newState: AppStateStatus) => {
-      if (newState === 'active' && appStateRef.current !== 'active' && isAuthenticated && deviceId) {
-        // App returned to foreground
-        try {
-          performSync();
-        } catch (err) {
-          console.error('Failed to sync on app resume:', err);
-        }
-      }
-      appStateRef.current = newState;
-    },
-    [isAuthenticated, deviceId]
-  );
-
   const performSync = useCallback(async () => {
-    if (!isAuthenticated || !deviceId || status === 'syncing') {
+    if (!isAuthenticated || !deviceId || isSyncingRef.current) {
       return;
     }
+
+    isSyncingRef.current = true;
 
     try {
       setStatus('syncing');
@@ -125,8 +107,29 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setStatus('error');
       setSyncError(errorMessage);
       console.error('Sync error:', err);
+    } finally {
+      isSyncingRef.current = false;
     }
-  }, [isAuthenticated, deviceId, status]);
+  }, [isAuthenticated, deviceId]);
+
+  const handleAppStateChange = useCallback(
+    (newState: AppStateStatus) => {
+      if (newState === 'active' && appStateRef.current !== 'active' && isAuthenticated && deviceId) {
+        // App returned to foreground
+        void performSync().catch((err) => {
+          console.error('Failed to sync on app resume:', err);
+        });
+      }
+      appStateRef.current = newState;
+    },
+    [isAuthenticated, deviceId, performSync]
+  );
+
+  // Subscribe to app state changes
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [handleAppStateChange]);
 
   // Start auto-sync interval
   useEffect(() => {
@@ -138,11 +141,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Perform initial sync
-    performSync();
+    void performSync().catch((err) => {
+      console.error('Initial sync failed:', err);
+    });
 
     // Set up recurring sync
     syncIntervalRef.current = setInterval(() => {
-      performSync();
+      void performSync().catch((err) => {
+        console.error('Interval sync failed:', err);
+      });
     }, SYNC_INTERVAL);
 
     return () => {

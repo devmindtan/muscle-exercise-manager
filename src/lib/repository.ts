@@ -250,27 +250,28 @@ export async function getWorkoutLogById(id: string) {
   return LocalDB.getWorkoutLogById(id);
 }
 
-export async function createWorkoutLog(data: {
-  exerciseId: string;
-  muscleGroupId: string;
-  sets?: number;
-  reps?: number;
-  weight?: number;
-  note?: string;
-  loggedAt?: string;
-}) {
+export async function createWorkoutLog(data: any) {
   const id = generateUUID();
   const now = new Date().toISOString();
 
+  // Accept both camelCase and snake_case keys
+  const exerciseId = data.exerciseId || data.exercise_id;
+  const muscleGroupId = data.muscleGroupId || data.muscle_group_id;
+
+  if (!exerciseId || !muscleGroupId) {
+    console.warn('Workout log missing exerciseId or muscleGroupId', { data });
+    throw new Error('Workout log must have exerciseId and muscleGroupId');
+  }
+
   const log: any = {
     id,
-    exercise_id: data.exerciseId,
-    muscle_group_id: data.muscleGroupId,
+    exercise_id: exerciseId,
+    muscle_group_id: muscleGroupId,
     sets: data.sets,
     reps: data.reps,
     weight: data.weight,
     note: data.note,
-    logged_at: data.loggedAt || now,
+    logged_at: data.loggedAt || data.logged_at || now,
     created_at: now,
     updated_at: now,
     dirty: 1,
@@ -282,15 +283,7 @@ export async function createWorkoutLog(data: {
 }
 
 export async function insertWorkoutLog(data: any) {
-  return createWorkoutLog({
-    exerciseId: data.exerciseId || data.exercise_id,
-    muscleGroupId: data.muscleGroupId || data.muscle_group_id,
-    sets: data.sets,
-    reps: data.reps,
-    weight: data.weight,
-    note: data.note,
-    loggedAt: data.loggedAt || data.logged_at,
-  });
+  return createWorkoutLog(data);
 }
 
 export async function getSetCounts(
@@ -310,16 +303,40 @@ export async function softDeleteWorkoutLog(id: string) {
 
 export async function getRecentLogs(limit = 20) {
   const logs = await LocalDB.getWorkoutLogs();
-  return logs.slice(0, limit).map((log) => ({
-    id: log.id,
-    exercise_id: log.exercise_id,
-    muscleGroupId: log.muscle_group_id,
-    sets: log.sets,
-    reps: log.reps || undefined,
-    weight: log.weight || undefined,
-    note: log.note || undefined,
-    logged_at: log.logged_at,
-  }));
+  return logs.slice(0, limit).map((log) => {
+    // Get exercise name from repository
+    return {
+      id: log.id,
+      exercise_id: log.exercise_id,
+      muscleGroupId: log.muscle_group_id,
+      sets: log.sets,
+      reps: log.reps || undefined,
+      weight: log.weight || undefined,
+      note: log.note || undefined,
+      logged_at: log.logged_at,
+    };
+  });
+}
+
+export async function getRecentLogsWithNames(limit = 20) {
+  const logs = await LocalDB.getWorkoutLogs();
+  const recentLogs: RecentLog[] = [];
+  
+  for (const log of logs.slice(0, limit)) {
+    const exercise = await LocalDB.getExerciseById(log.exercise_id);
+    recentLogs.push({
+      id: log.id,
+      exercise_id: log.exercise_id,
+      muscleGroupId: log.muscle_group_id,
+      sets: log.sets,
+      reps: log.reps || undefined,
+      weight: log.weight || undefined,
+      note: log.note || undefined,
+      logged_at: log.logged_at,
+      exerciseName: exercise?.name || 'Unknown',
+    });
+  }
+  return recentLogs;
 }
 
 export interface RecentLog {
@@ -370,11 +387,10 @@ export async function uploadMuscleGroupImage(
   fileUri: string,
   fileName: string,
   muscleGroupId: string,
-  mimeType?: string,
-  onProgress?: (progress: ImageUploadProgress) => void
+  mimeType?: string
 ) {
   try {
-    const result = await uploadImage(fileUri, fileName, mimeType, onProgress);
+    const result = await uploadImage(fileUri, fileName, mimeType || 'image/jpeg');
     
     if (result.success && result.url) {
       // Update muscle group with new image URL
@@ -397,11 +413,10 @@ export async function uploadExerciseImage(
   fileUri: string,
   fileName: string,
   exerciseId: string,
-  mimeType?: string,
-  onProgress?: (progress: ImageUploadProgress) => void
+  mimeType?: string
 ) {
   try {
-    const result = await uploadImage(fileUri, fileName, mimeType, onProgress);
+    const result = await uploadImage(fileUri, fileName, mimeType || 'image/jpeg');
     
     if (result.success && result.url) {
       // Update exercise with new image URL

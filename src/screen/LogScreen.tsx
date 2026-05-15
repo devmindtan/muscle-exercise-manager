@@ -25,6 +25,7 @@ import {
   getMuscleGroups,
   getActiveExercises,
   getRecentLogs,
+  getRecentLogsWithNames,
   insertWorkoutLog,
   softDeleteWorkoutLog,
 } from '@/src/lib/repository';
@@ -67,7 +68,7 @@ export default function LogScreen() {
   const load = useCallback(async () => {
     const [groups, logs] = await Promise.all([
       getMuscleGroups(),
-      getRecentLogs(50),
+      getRecentLogsWithNames(50),
     ]);
     setMuscleGroups(groups);
     setRecentLogs(logs);

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Plus, Trash2, X, Pencil } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
+import { uploadImage } from '@/src/services/imageUpload';
 import {
   getMuscleGroup,
   updateMuscleGroup,
@@ -145,6 +146,9 @@ export default function MuscleDetailScreen() {
     }, 300);
   };
 
+  // Track xem ảnh đang upload không — dùng để block nút Save
+  const [uploadingImage, setUploadingImage] = useState(false);
+
   const pickImage = async (onPicked: (uri: string) => void) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -159,8 +163,35 @@ export default function MuscleDetailScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      const permanent = await persistImageLocally(result.assets[0].uri);
-      onPicked(permanent);
+      const asset = result.assets[0];
+
+      // Hiển thị preview local ngay lập tức
+      const localUri = await persistImageLocally(asset.uri);
+      onPicked(localUri);
+
+      // Upload lên MinIO — block Save cho đến khi xong
+      setUploadingImage(true);
+      try {
+        const fileName = asset.fileName || `image_${Date.now()}.jpg`;
+        const mimeType = asset.mimeType || 'image/jpeg';
+        const uploadResult = await uploadImage(localUri, fileName, mimeType);
+
+        if (uploadResult.success && uploadResult.url) {
+          // Cập nhật URI thành URL MinIO trước khi cho phép Save
+          onPicked(uploadResult.url);
+        } else {
+          // Upload thất bại: xoá preview, báo lỗi, không cho lưu local path
+          onPicked('');
+          setExError('Không thể upload ảnh lên server. Vui lòng thử lại.');
+          console.warn('MinIO upload failed:', uploadResult.error);
+        }
+      } catch (uploadErr: any) {
+        onPicked('');
+        setExError('Lỗi upload ảnh: ' + uploadErr.message);
+        console.warn('Image upload error:', uploadErr.message);
+      } finally {
+        setUploadingImage(false);
+      }
     }
   };
 
@@ -470,12 +501,12 @@ export default function MuscleDetailScreen() {
           ) : null}
           {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
           <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, (saving || uploadingImage) && styles.saveBtnDisabled]}
             onPress={addExercise}
-            disabled={saving}
+            disabled={saving || uploadingImage}
           >
             <Text style={styles.saveBtnText}>
-              {saving ? 'Đang lưu...' : 'Thêm bài tập'}
+              {uploadingImage ? 'Đang upload ảnh...' : saving ? 'Đang lưu...' : 'Thêm bài tập'}
             </Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>
@@ -567,8 +598,14 @@ export default function MuscleDetailScreen() {
               style={styles.previewImage}
             />
           ) : null}
-          <TouchableOpacity style={styles.saveBtn} onPress={saveEdit}>
-            <Text style={styles.saveBtnText}>Lưu thay đổi</Text>
+          <TouchableOpacity
+            style={[styles.saveBtn, uploadingImage && styles.saveBtnDisabled]}
+            onPress={saveEdit}
+            disabled={uploadingImage}
+          >
+            <Text style={styles.saveBtnText}>
+              {uploadingImage ? 'Đang upload ảnh...' : 'Lưu thay đổi'}
+            </Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
@@ -655,12 +692,12 @@ export default function MuscleDetailScreen() {
           {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, (saving || uploadingImage) && styles.saveBtnDisabled]}
             onPress={saveExercise}
-            disabled={saving}
+            disabled={saving || uploadingImage}
           >
             <Text style={styles.saveBtnText}>
-              {saving ? 'Đang lưu...' : 'Lưu bài tập'}
+              {uploadingImage ? 'Đang upload ảnh...' : saving ? 'Đang lưu...' : 'Lưu bài tập'}
             </Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>
