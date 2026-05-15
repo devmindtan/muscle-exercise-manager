@@ -19,14 +19,31 @@ export type LocalWorkoutLog = Database['public']['Tables']['workout_logs']['Row'
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
+let dbInitPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 async function getDatabase() {
-  if (!db) {
-    db = await SQLite.openDatabaseAsync(DB_NAME);
-    // Enable WAL mode for better concurrency
-    await db.execAsync('PRAGMA journal_mode = WAL;');
+  if (db) {
+    return db;
   }
-  return db;
+
+  if (!dbInitPromise) {
+    dbInitPromise = SQLite.openDatabaseAsync(DB_NAME)
+      .then(async (database) => {
+        // Enable WAL mode for better concurrency
+        await database.execAsync('PRAGMA journal_mode = WAL;');
+        db = database;
+        return database;
+      })
+      .catch((error) => {
+        db = null;
+        throw error;
+      })
+      .finally(() => {
+        dbInitPromise = null;
+      });
+  }
+
+  return dbInitPromise;
 }
 
 async function ensureColumn(
@@ -150,6 +167,8 @@ export async function getMuscleGroupById(id: string) {
 
 export async function upsertMuscleGroup(group: LocalMuscleGroup) {
   const database = await getDatabase();
+  const dirty = group.dirty ?? 0;
+  const deleted = group.deleted ?? 0;
   await database.runAsync(
     `INSERT INTO muscle_groups (id, name, color, target_sets_per_week, target_sets_per_month, image_uri, created_at, updated_at, dirty, deleted)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -171,8 +190,8 @@ export async function upsertMuscleGroup(group: LocalMuscleGroup) {
       group.image_uri || null,
       group.created_at,
       group.updated_at || new Date().toISOString(),
-      0,
-      0,
+      dirty,
+      deleted,
     ]
   );
 }
@@ -215,6 +234,8 @@ export async function getExerciseById(id: string) {
 
 export async function upsertExercise(exercise: LocalExercise) {
   const database = await getDatabase();
+  const dirty = exercise.dirty ?? 0;
+  const deleted = exercise.deleted ?? 0;
   await database.runAsync(
     `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, created_at, updated_at, dirty, deleted)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -235,8 +256,8 @@ export async function upsertExercise(exercise: LocalExercise) {
       exercise.is_active ? 1 : 0,
       exercise.created_at,
       exercise.updated_at || new Date().toISOString(),
-      0,
-      0,
+      dirty,
+      deleted,
     ]
   );
 }
@@ -285,6 +306,8 @@ export async function getWorkoutLogById(id: string) {
 
 export async function upsertWorkoutLog(log: LocalWorkoutLog) {
   const database = await getDatabase();
+  const dirty = log.dirty ?? 0;
+  const deleted = log.deleted ?? 0;
   await database.runAsync(
     `INSERT INTO workout_logs (id, exercise_id, muscle_group_id, sets, reps, weight, note, logged_at, created_at, updated_at, dirty, deleted)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -308,8 +331,8 @@ export async function upsertWorkoutLog(log: LocalWorkoutLog) {
       log.logged_at,
       log.created_at,
       log.updated_at || new Date().toISOString(),
-      0,
-      0,
+      dirty,
+      deleted,
     ]
   );
 }
@@ -326,10 +349,54 @@ export async function markWorkoutLogClean(id: string) {
   await database.runAsync('UPDATE workout_logs SET dirty = 0 WHERE id = ?', [id]);
 }
 
+// Clear all local data (for logout or account switch)
+export async function clearAllLocalData() {
+  const database = await getDatabase();
+  try {
+    await database.runAsync('DELETE FROM workout_logs');
+    await database.runAsync('DELETE FROM exercises');
+    await database.runAsync('DELETE FROM muscle_groups');
+  } catch (err) {
+    console.error('Error clearing local data:', err);
+    throw err;
+  }
+}
+
+export async function hasAnyLocalData() {
+  const database = await getDatabase();
+  const [groups, exercises, logs] = await Promise.all([
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_groups'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercises'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM workout_logs'),
+  ]);
+
+  return (
+    (groups?.count ?? 0) > 0 ||
+    (exercises?.count ?? 0) > 0 ||
+    (logs?.count ?? 0) > 0
+  );
+}
+
 // Cleanup
 export async function closeDatabase() {
   if (db) {
     await db.closeAsync();
     db = null;
   }
+}
+
+export async function saveImageUriToMuscleGroup(id: string, imageUri: string) {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE muscle_groups SET image_uri = ?, dirty = 1 WHERE id = ?`,
+    [imageUri, id]
+  );
+}
+
+export async function saveImageUriToExercise(id: string, imageUri: string) {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE exercises SET image_uri = ?, dirty = 1 WHERE id = ?`,
+    [imageUri, id]
+  );
 }

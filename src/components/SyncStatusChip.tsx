@@ -13,15 +13,20 @@ import { useSync } from '@/src/context/SyncContext';
 import { UserAccountModal } from './UserAccountModal';
 
 export function SyncStatusChip() {
-  const { user, signIn, isGuestMode } = useAuth();
-  const { status, lastSyncAt, sync } = useSync();
+  const { user, signIn, isGuestMode, loading, error: authError } = useAuth();
+  const { status, lastSyncAt, sync, syncError } = useSync();
 
   if (!user) {
+    const showAuthError = !!authError;
     return (
-      <TouchableOpacity style={styles.chip} onPress={signIn}>
+      <TouchableOpacity
+        style={[styles.chip, showAuthError && styles.chipError]}
+        onPress={signIn}
+        disabled={loading}
+      >
         <CloudOff color={Colors.textMuted} size={12} strokeWidth={1.8} />
-        <Text style={styles.muted}>
-          {isGuestMode ? 'Khách' : 'Đăng nhập'}
+        <Text style={[styles.muted, showAuthError && styles.errorText]} numberOfLines={1}>
+          {loading ? 'Đang đăng nhập...' : showAuthError ? 'Lỗi đăng nhập' : isGuestMode ? 'Khách' : 'Đăng nhập'}
         </Text>
       </TouchableOpacity>
     );
@@ -47,7 +52,7 @@ export function SyncStatusChip() {
       break;
     case 'error':
       icon = <AlertCircle color={Colors.error} size={12} strokeWidth={1.8} />;
-      label = 'Lỗi đồng bộ';
+      label = syncError || 'Lỗi đồng bộ';
       errorBorder = true;
       break;
     default:
@@ -62,10 +67,7 @@ export function SyncStatusChip() {
         onPress={sync}
       >
         {icon}
-        <Text
-          style={[styles.label, errorBorder && { color: Colors.error }]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.label, errorBorder && styles.errorText]} numberOfLines={1}>
           {label}
         </Text>
       </TouchableOpacity>
@@ -104,5 +106,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textMuted,
     fontWeight: '500',
+  },
+  errorText: {
+    color: Colors.error,
   },
 });

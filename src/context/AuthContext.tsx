@@ -1,24 +1,54 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/src/lib/supabase';
+import * as LocalDB from '@/src/db/localDB';
 
 type GoogleSigninLike = {
   configure: (options: Record<string, any>) => Promise<void> | void;
-  signIn: () => Promise<void>;
-  getTokens: () => Promise<{ idToken: string }>;
+  signIn: () => Promise<any>;
+  getTokens: () => Promise<{ idToken?: string }>;
   signOut: () => Promise<void>;
 };
 
+type GoogleSigninModuleLike = {
+  GoogleSignin: GoogleSigninLike;
+  statusCodes?: {
+    SIGN_IN_CANCELLED?: string;
+    IN_PROGRESS?: string;
+  };
+};
+
 let GoogleSignin: GoogleSigninLike | null = null;
-const statusCodes = {
+let googleStatusCodes = {
   SIGN_IN_CANCELLED: 'SIGN_IN_CANCELLED',
   IN_PROGRESS: 'IN_PROGRESS',
 };
 
-try {
-  const googleModule = require('@react-native-google-signin/google-signin');
-  GoogleSignin = googleModule.GoogleSignin as GoogleSigninLike;
-} catch {
-  GoogleSignin = null;
+async function ensureGoogleSigninLoaded() {
+  if (GoogleSignin) {
+    return true;
+  }
+
+  try {
+    const googleModule = (await import(
+      '@react-native-google-signin/google-signin'
+    )) as unknown as GoogleSigninModuleLike;
+    GoogleSignin = googleModule.GoogleSignin;
+    if (googleModule.statusCodes) {
+      googleStatusCodes = {
+        SIGN_IN_CANCELLED:
+          googleModule.statusCodes.SIGN_IN_CANCELLED ||
+          googleStatusCodes.SIGN_IN_CANCELLED,
+        IN_PROGRESS:
+          googleModule.statusCodes.IN_PROGRESS ||
+          googleStatusCodes.IN_PROGRESS,
+      };
+    }
+    return true;
+  } catch {
+    GoogleSignin = null;
+    return false;
+  }
 }
 
 export interface AuthUser {
@@ -42,6 +72,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const CURRENT_USER_ID_KEY = 'current_user_id';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,12 +84,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initGoogleSignIn = async () => {
       try {
-        if (!GoogleSignin) {
+        const loaded = await ensureGoogleSigninLoaded();
+        if (!loaded || !GoogleSignin) {
           return;
         }
+
+        const webClientId = process.env.EXPO_PUBLIC_WEB_CLIENT_ID;
+
         await GoogleSignin.configure({
-          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-          offlineAccess: true,
+          webClientId,
+          // offlineAccess requires a valid Web client ID from Google Cloud Console.
+          offlineAccess: !!webClientId,
           scopes: ['profile', 'email'],
         });
       } catch (err: any) {
@@ -73,8 +110,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkSession = async () => {
       try {
         const { data } = await supabase.auth.getSession();
+        const previousUserId = await AsyncStorage.getItem(CURRENT_USER_ID_KEY);
+
         if (data.session?.user) {
           const authUser = data.session.user;
+          const newUserId = authUser.id;
+
+          // If user changed, clear local data
+          if (previousUserId && previousUserId !== newUserId) {
+            console.log(`User switched from ${previousUserId} to ${newUserId}, clearing local data`);
+            await LocalDB.clearAllLocalData();
+            await AsyncStorage.removeItem('last_sync_time'); // Reset sync timer for new user
+          }
+
+          // Save new user ID
+          await AsyncStorage.setItem(CURRENT_USER_ID_KEY, newUserId);
+
           setUser({
             id: authUser.id,
             email: authUser.email || '',
@@ -98,9 +149,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession();
 
     // Subscribe to auth state changes
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const authUser = session.user;
+        const newUserId = authUser.id;
+        const previousUserId = await AsyncStorage.getItem(CURRENT_USER_ID_KEY);
+
+        // If user changed, clear local data
+        if (previousUserId && previousUserId !== newUserId) {
+          console.log(`User switched from ${previousUserId} to ${newUserId}, clearing local data`);
+          await LocalDB.clearAllLocalData();
+          await AsyncStorage.removeItem('last_sync_time'); // Reset sync timer for new user
+        }
+
+        // Save new user ID
+        await AsyncStorage.setItem(CURRENT_USER_ID_KEY, newUserId);
+
         setUser({
           id: authUser.id,
           email: authUser.email || '',
@@ -126,12 +190,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setLoading(true);
 
-      if (!GoogleSignin) {
+      const loaded = await ensureGoogleSigninLoaded();
+      if (!loaded || !GoogleSignin) {
         throw new Error('Google Sign-In requires a development build. Expo Go is not supported.');
+      }
+
+      const webClientId = process.env.EXPO_PUBLIC_WEB_CLIENT_ID;
+
+      if (!webClientId) {
+        throw new Error('Missing Google Web Client ID. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID or EXPO_PUBLIC_WEB_CLIENT_ID in .env');
       }
 
       await GoogleSignin.signIn();
       const { idToken } = await GoogleSignin.getTokens();
+
+      if (!idToken) {
+        throw new Error('Google Sign-In did not return idToken. Check Web Client ID configuration.');
+      }
 
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
@@ -154,9 +229,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       let errorMessage = 'Login failed';
-      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+      if (err.code === googleStatusCodes.SIGN_IN_CANCELLED) {
         errorMessage = 'Sign in cancelled';
-      } else if (err.code === statusCodes.IN_PROGRESS) {
+      } else if (err.code === googleStatusCodes.IN_PROGRESS) {
         errorMessage = 'Sign in in progress';
       } else if (err.message) {
         errorMessage = err.message;
@@ -171,6 +246,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     try {
       setLoading(true);
+      
+      // Clear local data before signing out
+      await LocalDB.clearAllLocalData();
+      await AsyncStorage.removeItem(CURRENT_USER_ID_KEY);
+      await AsyncStorage.removeItem('last_sync_time'); // Reset sync timer
+      
       await supabase.auth.signOut();
       try {
         await GoogleSignin?.signOut();

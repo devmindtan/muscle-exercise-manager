@@ -1,8 +1,9 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { supabase } from '@/src/lib/supabase';
 
 const MINIO_ENDPOINT = process.env.EXPO_PUBLIC_MINIO_ENDPOINT;
-const BUCKET_NAME = 'muscle-manager';
-const BASE_URL = `${MINIO_ENDPOINT}/${BUCKET_NAME}`;
+const BUCKET_NAME = process.env.EXPO_PUBLIC_MINIO_BUCKET ?? 'muscle-manager';
+const BASE_URL = MINIO_ENDPOINT ? `${MINIO_ENDPOINT}/${BUCKET_NAME}` : '';
 
 export interface ImageUploadProgress {
   loaded: number;
@@ -25,15 +26,18 @@ function makeImageKey(fileName: string): string {
     .trim()
     .replace(/\s+/g, '_')
     .replace(/[^a-zA-Z0-9._-]/g, '');
-  return `images/${Date.now()}_${clean}`;
+  return `${Date.now()}_${clean}`;
 }
 
-function toImageUrl(key: string): string {
-  const encodedKey = key
+function encodeObjectKey(key: string): string {
+  return key
     .split('/')
     .map((part) => encodeURIComponent(part))
     .join('/');
-  return `${normalizeEndpoint(BASE_URL)}/${encodedKey}`;
+}
+
+function toImageUrl(key: string): string {
+  return `${normalizeEndpoint(BASE_URL)}/${encodeObjectKey(key)}`;
 }
 
 export async function uploadImage(
@@ -43,15 +47,31 @@ export async function uploadImage(
   onProgress?: (progress: ImageUploadProgress) => void
 ): Promise<ImageUploadResult> {
   try {
-    const key = makeImageKey(fileName);
-    const uploadUrl = `${normalizeEndpoint(BASE_URL)}/${encodeURIComponent(key)}`;
+    if (!MINIO_ENDPOINT) {
+      return { success: false, error: 'Missing EXPO_PUBLIC_MINIO_ENDPOINT' };
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return {
+        success: false,
+        error: userError?.message || 'No authenticated user for image upload',
+      };
+    }
+
+    const key = `users/${user.id}/images/${makeImageKey(fileName)}`;
+    const uploadUrl = `${normalizeEndpoint(BASE_URL)}/${encodeObjectKey(key)}`;
 
     const task = FileSystem.createUploadTask(
       uploadUrl,
       fileUri,
       {
         httpMethod: 'PUT',
-        uploadType: 'binary' as any,
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: { 'Content-Type': mimeType },
       },
       (progress: { totalBytesSent: number; totalBytesExpectedToSend: number }) => {
@@ -64,6 +84,7 @@ export async function uploadImage(
 
     await task.uploadAsync();
 
+    // Trả về URL đầy đủ để lưu vào image_uri
     return {
       success: true,
       key,
@@ -71,7 +92,6 @@ export async function uploadImage(
     };
   } catch (err: any) {
     const errorMessage = err?.message || 'Image upload failed';
-    console.error('Image upload error:', err);
     return {
       success: false,
       error: errorMessage,
@@ -81,7 +101,7 @@ export async function uploadImage(
 
 export async function deleteImage(key: string): Promise<boolean> {
   try {
-    const deleteUrl = `${normalizeEndpoint(BASE_URL)}/${encodeURIComponent(key)}`;
+    const deleteUrl = `${normalizeEndpoint(BASE_URL)}/${encodeObjectKey(key)}`;
     const response = await fetch(deleteUrl, {
       method: 'DELETE',
     });

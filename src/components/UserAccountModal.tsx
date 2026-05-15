@@ -7,8 +7,9 @@ import {
   Modal,
   ScrollView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
-import { X, LogOut, User as UserIcon } from 'lucide-react-native';
+import { X, LogOut, User as UserIcon, Mail, Hash, Shield } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 
@@ -21,10 +22,14 @@ export function UserAccountModal() {
   }
 
   const userName =
-    user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+    user.name || user.user_metadata?.name || user.email?.split('@')[0] || 'User';
   const userEmail = user.email || 'No email';
   const userId = user.id;
-  const provider = user.app_metadata?.providers?.[0] || 'google';
+  const providers = user.app_metadata?.providers;
+  const rawProvider = Array.isArray(providers)
+    ? providers[0]
+    : user.app_metadata?.provider || 'google';
+  const provider = typeof rawProvider === 'string' ? rawProvider : 'google';
 
   const handleSignOut = async () => {
     try {
@@ -35,12 +40,39 @@ export function UserAccountModal() {
     }
   };
 
+  const InfoRow = ({
+    icon,
+    label,
+    value,
+    isCode = false,
+  }: {
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+    isCode?: boolean;
+  }) => (
+    <View style={styles.infoRow}>
+      <View style={styles.infoIconWrap}>{icon}</View>
+      <View style={styles.infoTextWrap}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text
+          style={isCode ? styles.infoValueCode : styles.infoValue}
+          numberOfLines={isCode ? 1 : undefined}
+          ellipsizeMode={isCode ? 'middle' : undefined}
+        >
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+
   return (
     <>
-      {/* Trigger Button - shown as icon/text in header or toolbar */}
+      {/* Trigger Button */}
       <TouchableOpacity
         style={styles.triggerButton}
         onPress={() => setVisible(true)}
+        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
       >
         <UserIcon color={Colors.accent} size={20} strokeWidth={1.8} />
       </TouchableOpacity>
@@ -50,87 +82,96 @@ export function UserAccountModal() {
         visible={visible}
         animationType="slide"
         transparent={true}
+        statusBarTranslucent
         onRequestClose={() => setVisible(false)}
       >
         <View style={styles.overlay}>
-          <View style={styles.container}>
+          <TouchableOpacity
+            style={styles.backdropTouch}
+            activeOpacity={1}
+            onPress={() => setVisible(false)}
+          />
+
+          <View style={styles.sheet}>
+            {/* Drag Handle */}
+            <View style={styles.dragHandle} />
+
             {/* Header */}
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Tài khoản của bạn</Text>
               <TouchableOpacity
+                style={styles.closeButton}
                 onPress={() => setVisible(false)}
                 hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
               >
-                <X color={Colors.text} size={24} strokeWidth={1.8} />
+                <X color={Colors.textMuted} size={18} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
             <ScrollView
-              style={styles.content}
+              contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
+              bounces={false}
             >
-              {/* Avatar / Icon */}
+              {/* Avatar Section */}
               <View style={styles.avatarSection}>
-                <View style={styles.avatar}>
-                  <UserIcon color={Colors.accent} size={48} strokeWidth={1.5} />
+                <View style={styles.avatarRing}>
+                  <View style={styles.avatar}>
+                    <UserIcon color={Colors.accent} size={40} strokeWidth={1.5} />
+                  </View>
                 </View>
+                <Text style={styles.displayName}>{userName}</Text>
+                <Text style={styles.displayEmail}>{userEmail}</Text>
               </View>
 
-              {/* User Info Card */}
+              {/* Info Card */}
               <View style={styles.infoCard}>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Tên</Text>
-                  <Text style={styles.infoValue}>{userName}</Text>
-                </View>
-
+                <InfoRow
+                  icon={<UserIcon color={Colors.accent} size={16} strokeWidth={1.8} />}
+                  label="Tên"
+                  value={userName}
+                />
                 <View style={styles.divider} />
-
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Email</Text>
-                  <Text style={styles.infoValue}>{userEmail}</Text>
-                </View>
-
+                <InfoRow
+                  icon={<Mail color={Colors.accent} size={16} strokeWidth={1.8} />}
+                  label="Email"
+                  value={userEmail}
+                />
                 <View style={styles.divider} />
-
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>User ID (UUID)</Text>
-                  <Text style={styles.infoValueCode}>{userId}</Text>
-                </View>
-
+                <InfoRow
+                  icon={<Hash color={Colors.accent} size={16} strokeWidth={1.8} />}
+                  label="User ID"
+                  value={userId}
+                  isCode
+                />
                 <View style={styles.divider} />
-
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Nhà cung cấp</Text>
-                  <Text style={styles.infoValue}>
-                    {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                  </Text>
-                </View>
+                <InfoRow
+                  icon={<Shield color={Colors.accent} size={16} strokeWidth={1.8} />}
+                  label="Nhà cung cấp"
+                  value={provider.charAt(0).toUpperCase() + provider.slice(1)}
+                />
               </View>
 
-              {/* Info text */}
-              <View style={styles.infoSection}>
-                <Text style={styles.infoText}>
-                  Thông tin tài khoản này được cung cấp bởi Google. Dữ liệu tập
-                  thể dục của bạn được lưu trữ an toàn trên Supabase và được
-                  tách riêng theo UUID này.
+              {/* Notice */}
+              <View style={styles.noticeBox}>
+                <Text style={styles.noticeText}>
+                  Thông tin tài khoản được cung cấp bởi Google. Dữ liệu tập thể dục của bạn được lưu trữ an toàn và tách riêng theo UUID.
                 </Text>
               </View>
 
-              {/* Separator */}
-              <View style={styles.separator} />
-
-              {/* Sign Out Button */}
+              {/* Sign Out */}
               <TouchableOpacity
                 style={styles.signOutButton}
                 onPress={handleSignOut}
+                activeOpacity={0.75}
               >
-                <LogOut color={Colors.error} size={20} strokeWidth={1.8} />
-                <Text style={styles.signOutButtonText}>Đăng xuất</Text>
+                <LogOut color={Colors.error} size={18} strokeWidth={2} />
+                <Text style={styles.signOutText}>Đăng xuất</Text>
               </TouchableOpacity>
-
-              {/* Footer spacing */}
-              <View style={{ height: 20 }} />
             </ScrollView>
+
+            {/* Safe area bottom padding */}
+            <SafeAreaView style={styles.safeBottom} />
           </View>
         </View>
       </Modal>
@@ -142,62 +183,132 @@ const styles = StyleSheet.create({
   triggerButton: {
     padding: 8,
   },
+
+  // Overlay + Sheet
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
-  container: {
-    backgroundColor: Colors.bg,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '85%',
-    paddingTop: 16,
-    paddingHorizontal: 16,
+  backdropTouch: {
+    flex: 1,
   },
+  sheet: {
+    backgroundColor: Colors.bg,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    // KEY FIX: use maxHeight instead of relying on ScrollView flex
+    maxHeight: '85%',
+  },
+
+  // Drag handle
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.textMuted,
+    alignSelf: 'center',
+    opacity: 0.4,
+    marginBottom: 16,
+  },
+
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  content: {
-    flex: 1,
-  },
-  avatarSection: {
-    alignItems: 'center',
     marginBottom: 24,
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  // Scroll
+  scrollContent: {
+    paddingBottom: 16,
+  },
+
+  // Avatar
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  avatarRing: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     borderWidth: 2,
     borderColor: Colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    opacity: 0.9,
   },
+  avatar: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  displayName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+    letterSpacing: -0.2,
+  },
+  displayEmail: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    fontWeight: '400',
+  },
+
+  // Info card
   infoCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
   infoRow: {
-    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 14,
+  },
+  infoIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: `${Colors.accent}18`,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoTextWrap: {
+    flex: 1,
   },
   infoLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     color: Colors.textMuted,
-    marginBottom: 4,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   infoValue: {
     fontSize: 14,
@@ -211,40 +322,44 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   divider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: Colors.bg,
-    marginVertical: 8,
+    marginLeft: 46,
   },
-  infoSection: {
+
+  // Notice
+  noticeBox: {
     backgroundColor: Colors.surface,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 10,
+    padding: 14,
     marginBottom: 20,
   },
-  infoText: {
+  noticeText: {
     fontSize: 12,
     lineHeight: 18,
     color: Colors.textMuted,
   },
-  separator: {
-    height: 1,
-    backgroundColor: Colors.surface,
-    marginBottom: 16,
-  },
+
+  // Sign out
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: `${Colors.error}15`,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: `${Colors.error}12`,
     borderWidth: 1,
-    borderColor: Colors.error,
+    borderColor: `${Colors.error}40`,
+    marginBottom: 4,
   },
-  signOutButtonText: {
-    fontSize: 14,
+  signOutText: {
+    fontSize: 15,
     fontWeight: '600',
     color: Colors.error,
+  },
+
+  safeBottom: {
+    backgroundColor: Colors.bg,
   },
 });
