@@ -35,3 +35,8 @@ yarn-error.*
 *.tsbuildinfo
 my-agent-skills
 my-agent-skills/*
+eas.json
+*.apk
+android/*
+android
+*.zip
