@@ -18,6 +18,7 @@ export type Database = {
           target_sets_per_week?: number;
           target_sets_per_month?: number;
           image_uri?: string | null;
+          category?: string | null;
           created_at?: string;
         };
         Update: {
@@ -26,6 +27,7 @@ export type Database = {
           target_sets_per_week?: number;
           target_sets_per_month?: number;
           image_uri?: string | null;
+          category?: string | null;
         };
         Relationships: [];
       };
@@ -116,6 +118,7 @@ export type MuscleGroup = {
   target_sets_per_week: number;
   target_sets_per_month: number;
   image_uri: string | null;
+  category: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

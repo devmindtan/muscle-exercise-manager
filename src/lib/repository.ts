@@ -77,6 +77,7 @@ export async function createMuscleGroup(data: {
   color?: string;
   targetSetsPerWeek?: number;
   targetSetsPerMonth?: number;
+  category?: string;
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
@@ -87,6 +88,7 @@ export async function createMuscleGroup(data: {
     color: data.color,
     target_sets_per_week: data.targetSetsPerWeek || 10,
     target_sets_per_month: data.targetSetsPerMonth || 40,
+    category: data.category || null,
     created_at: now,
     updated_at: now,
     image_uri: null,
@@ -299,6 +301,10 @@ export async function getSetCounts(
 
 export async function softDeleteWorkoutLog(id: string) {
   return deleteWorkoutLog(id);
+}
+
+export async function getMonthlyVolume(startDate: string, endDate: string): Promise<number> {
+  return LocalDB.getMonthlyVolume(startDate, endDate);
 }
 
 export async function getRecentLogs(limit = 20) {

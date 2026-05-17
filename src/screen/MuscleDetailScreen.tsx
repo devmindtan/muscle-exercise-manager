@@ -59,6 +59,7 @@ export default function MuscleDetailScreen() {
   const [exImageUri, setExImageUri] = useState('');
   const [saving, setSaving] = useState(false);
   const [exError, setExError] = useState('');
+  const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -324,9 +325,16 @@ export default function MuscleDetailScreen() {
         <View style={styles.groupHeader}>
           <View style={[styles.groupDot, { backgroundColor: group.color }]} />
           <Text style={styles.groupName}>{group.name}</Text>
+          {group.category ? (
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText}>{group.category}</Text>
+            </View>
+          ) : null}
         </View>
         {group.image_uri ? (
-          <Image source={{ uri: group.image_uri }} style={styles.groupImage} />
+          <TouchableOpacity onPress={() => setPreviewImageUri(group.image_uri)}>
+            <Image source={{ uri: group.image_uri }} style={styles.groupImage} />
+          </TouchableOpacity>
         ) : null}
 
         {/* Stats */}
@@ -414,7 +422,9 @@ export default function MuscleDetailScreen() {
                 style={[styles.exAccent, { backgroundColor: group.color }]}
               />
               {ex.image_uri ? (
-                <Image source={{ uri: ex.image_uri }} style={styles.exThumb} />
+                <TouchableOpacity onPress={() => setPreviewImageUri(ex.image_uri)}>
+                  <Image source={{ uri: ex.image_uri }} style={styles.exThumb} />
+                </TouchableOpacity>
               ) : null}
               <View style={styles.exBody}>
                 <View style={styles.exTopRow}>
@@ -702,6 +712,25 @@ export default function MuscleDetailScreen() {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Full-size image preview */}
+      <Modal
+        visible={!!previewImageUri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImageUri(null)}
+      >
+        <Pressable
+          style={styles.previewOverlay}
+          onPress={() => setPreviewImageUri(null)}
+        >
+          <Image
+            source={{ uri: previewImageUri! }}
+            style={styles.previewFullImage}
+            resizeMode="contain"
+          />
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -736,6 +765,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text,
     letterSpacing: -0.5,
+  },
+  categoryBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textMuted,
   },
   groupImage: {
     marginHorizontal: 20,
@@ -808,6 +850,17 @@ const styles = StyleSheet.create({
   },
   exAccent: { width: 3, alignSelf: 'stretch' },
   exThumb: { width: 44, height: 44, borderRadius: 10, marginLeft: 12 },
+
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewFullImage: {
+    width: '100%',
+    height: '80%',
+  },
   exBody: { flex: 1, padding: 14 },
   exTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   exName: { fontSize: 15, fontWeight: '600', color: Colors.text },

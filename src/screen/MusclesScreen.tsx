@@ -23,6 +23,8 @@ import { getMuscleGroups, createMuscleGroup } from '@/src/lib/repository';
 import { MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 
+const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng/Core', 'Khác'];
+
 export default function MusclesScreen() {
   const insets = useSafeAreaInsets();
   const [groups, setGroups] = useState<MuscleGroup[]>([]);
@@ -35,6 +37,7 @@ export default function MusclesScreen() {
     target_sets_per_month: '40',
     color: Colors.muscleColors[0],
     image_uri: '',
+    category: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -63,6 +66,7 @@ export default function MusclesScreen() {
       target_sets_per_month: '40',
       color: Colors.muscleColors[groups.length % Colors.muscleColors.length],
       image_uri: '',
+      category: '',
     });
     setError('');
     setShowAdd(true);
@@ -80,6 +84,7 @@ export default function MusclesScreen() {
          color: form.color,
          targetSetsPerWeek: parseInt(form.target_sets_per_week) || 10,
          targetSetsPerMonth: parseInt(form.target_sets_per_month) || 40,
+         category: form.category || undefined,
       });
       setShowAdd(false);
       load();
@@ -136,42 +141,65 @@ export default function MusclesScreen() {
             </Text>
           </View>
         ) : (
-          groups.map((g) => (
-            <TouchableOpacity
-              key={g.id}
-              style={styles.card}
-              onPress={() => router.push(`/muscles/${g.id}`)}
-              activeOpacity={0.75}
-            >
-              <View style={[styles.colorBar, { backgroundColor: g.color }]} />
-              <View style={styles.cardBody}>
-                <Text style={styles.cardName}>{g.name}</Text>
-                <View style={styles.targets}>
-                  <View style={styles.target}>
-                    <Text style={styles.targetNum}>
-                      {g.target_sets_per_week}
+          MUSCLE_CATEGORIES.map((cat) => {
+            const catGroups = groups.filter(
+              (g) => (g.category || 'Khác') === cat,
+            );
+            if (catGroups.length === 0) return null;
+            return (
+              <View key={cat}>
+                <View style={styles.categoryHeader}>
+                  <Text style={styles.categoryName}>{cat}</Text>
+                  <View style={styles.categoryBadge}>
+                    <Text style={styles.categoryBadgeText}>
+                      {catGroups.length}
                     </Text>
-                    <Text style={styles.targetLabel}>sets/tuần</Text>
-                  </View>
-                  <View style={styles.targetDivider} />
-                  <View style={styles.target}>
-                    <Text style={styles.targetNum}>
-                      {g.target_sets_per_month}
-                    </Text>
-                    <Text style={styles.targetLabel}>sets/tháng</Text>
                   </View>
                 </View>
+                {catGroups.map((g) => (
+                  <TouchableOpacity
+                    key={g.id}
+                    style={styles.card}
+                    onPress={() => router.push(`/muscles/${g.id}`)}
+                    activeOpacity={0.75}
+                  >
+                    <View
+                      style={[styles.colorBar, { backgroundColor: g.color }]}
+                    />
+                    <View style={styles.cardBody}>
+                      <Text style={styles.cardName}>{g.name}</Text>
+                      <View style={styles.targets}>
+                        <View style={styles.target}>
+                          <Text style={styles.targetNum}>
+                            {g.target_sets_per_week}
+                          </Text>
+                          <Text style={styles.targetLabel}>sets/tuần</Text>
+                        </View>
+                        <View style={styles.targetDivider} />
+                        <View style={styles.target}>
+                          <Text style={styles.targetNum}>
+                            {g.target_sets_per_month}
+                          </Text>
+                          <Text style={styles.targetLabel}>sets/tháng</Text>
+                        </View>
+                      </View>
+                    </View>
+                    {g.image_uri ? (
+                      <Image
+                        source={{ uri: g.image_uri }}
+                        style={styles.cardImage}
+                      />
+                    ) : null}
+                    <ChevronRight
+                      color={Colors.textMuted}
+                      size={18}
+                      strokeWidth={1.8}
+                    />
+                  </TouchableOpacity>
+                ))}
               </View>
-              {g.image_uri ? (
-                <Image source={{ uri: g.image_uri }} style={styles.cardImage} />
-              ) : null}
-              <ChevronRight
-                color={Colors.textMuted}
-                size={18}
-                strokeWidth={1.8}
-              />
-            </TouchableOpacity>
-          ))
+            );
+          })
         )}
       </ScrollView>
 
@@ -243,6 +271,34 @@ export default function MusclesScreen() {
                 ]}
                 onPress={() => setForm((f) => ({ ...f, color: c }))}
               />
+            ))}
+          </View>
+
+          <Text style={styles.label}>Danh mục</Text>
+          <View style={styles.categoryPicker}>
+            {MUSCLE_CATEGORIES.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryChip,
+                  form.category === cat && styles.categoryChipActive,
+                ]}
+                onPress={() =>
+                  setForm((f) => ({
+                    ...f,
+                    category: f.category === cat ? '' : cat,
+                  }))
+                }
+              >
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    form.category === cat && styles.categoryChipTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </TouchableOpacity>
             ))}
           </View>
 
@@ -327,6 +383,63 @@ const styles = StyleSheet.create({
   targetNum: { fontSize: 18, fontWeight: '700', color: Colors.accent },
   targetLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
   targetDivider: { width: 1, height: 24, backgroundColor: Colors.border },
+
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  categoryName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  categoryBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+
+  categoryPicker: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 20,
+  },
+  categoryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  categoryChipActive: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  categoryChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  categoryChipTextActive: {
+    color: Colors.bg,
+    fontWeight: '700',
+  },
 
   emptyBox: {
     margin: 20,
