@@ -7,9 +7,9 @@ import {
   Modal,
   ScrollView,
   Platform,
-  SafeAreaView,
   Switch,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, LogOut, User as UserIcon, Mail, Hash, Shield } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
@@ -163,19 +163,14 @@ export function UserAccountModal() {
               </View>
 
               <View style={styles.toggleCard}>
-                <View style={styles.toggleTextWrap}>
-                  <Text style={styles.toggleTitle}>Mô phỏng offline</Text>
-                  <Text style={styles.toggleSubtitle}>
-                    Bật để test luồng offline dù vẫn đang có mạng.
-                  </Text>
-                </View>
+                <Text style={styles.toggleTitle}>Mô phỏng offline</Text>
                 <Switch
                   value={offlineTestMode}
                   onValueChange={(value) => {
                     void setOfflineTestMode(value);
                   }}
-                  trackColor={{ false: Colors.border, true: `${Colors.accent}88` }}
-                  thumbColor={offlineTestMode ? Colors.accent : '#f4f3f4'}
+                  trackColor={{ false: Colors.border, true: Colors.border }}
+                  thumbColor={offlineTestMode ? Colors.error : '#f4f3f4'}
                 />
               </View>
 
@@ -371,19 +366,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  toggleTextWrap: {
-    flex: 1,
-  },
   toggleTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.text,
-    marginBottom: 3,
-  },
-  toggleSubtitle: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    lineHeight: 17,
   },
 
   // Sign out
