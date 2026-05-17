@@ -68,6 +68,7 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   // Keep migrations idempotent so initialize can run safely on every launch.
   await ensureColumn(database, 'muscle_groups', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'muscle_groups', 'deleted', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'muscle_groups', 'category', 'TEXT');
 
   await ensureColumn(database, 'exercises', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'exercises', 'deleted', 'INTEGER DEFAULT 0');
@@ -88,6 +89,7 @@ export async function initializeDatabase() {
       target_sets_per_week INTEGER DEFAULT 10,
       target_sets_per_month INTEGER DEFAULT 40,
       image_uri TEXT,
+      category TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       dirty INTEGER DEFAULT 0,
@@ -170,14 +172,15 @@ export async function upsertMuscleGroup(group: LocalMuscleGroup) {
   const dirty = group.dirty ?? 0;
   const deleted = group.deleted ?? 0;
   await database.runAsync(
-    `INSERT INTO muscle_groups (id, name, color, target_sets_per_week, target_sets_per_month, image_uri, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO muscle_groups (id, name, color, target_sets_per_week, target_sets_per_month, image_uri, category, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = COALESCE(excluded.name, name),
        color = COALESCE(excluded.color, color),
        target_sets_per_week = COALESCE(excluded.target_sets_per_week, target_sets_per_week),
        target_sets_per_month = COALESCE(excluded.target_sets_per_month, target_sets_per_month),
        image_uri = COALESCE(excluded.image_uri, image_uri),
+       category = excluded.category,
        updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
@@ -188,6 +191,7 @@ export async function upsertMuscleGroup(group: LocalMuscleGroup) {
       group.target_sets_per_week || 10,
       group.target_sets_per_month || 40,
       group.image_uri || null,
+      group.category || null,
       group.created_at,
       group.updated_at || new Date().toISOString(),
       dirty,
@@ -399,4 +403,17 @@ export async function saveImageUriToExercise(id: string, imageUri: string) {
     `UPDATE exercises SET image_uri = ?, dirty = 1 WHERE id = ?`,
     [imageUri, id]
   );
+}
+
+export async function getMonthlyVolume(startDate: string, endDate: string): Promise<number> {
+  const database = await getDatabase();
+  const result = await database.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(CAST(sets AS REAL) * CAST(weight AS REAL)), 0) as total
+     FROM workout_logs
+     WHERE logged_at BETWEEN ? AND ? AND deleted = 0
+       AND sets IS NOT NULL AND sets > 0
+       AND weight IS NOT NULL AND weight > 0`,
+    [startDate, endDate]
+  );
+  return result?.total ?? 0;
 }

@@ -10,8 +10,8 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { TrendingUp, ChevronRight } from 'lucide-react-native';
-import { getMuscleGroupsWithWeeklyStats } from '@/src/lib/repository';
+import { TrendingUp, ChevronRight, Dumbbell } from 'lucide-react-native';
+import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume } from '@/src/lib/repository';
 import type { WeekStat } from '@/src/lib/repository';
 import { SyncStatusChip } from '@/src/components/SyncStatusChip';
 import { Colors } from '@/src/constants/colors';
@@ -26,6 +26,15 @@ function getWeekRange() {
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
   return { start: monday.toISOString(), end: sunday.toISOString() };
+}
+
+function getMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 function ProgressBar({
@@ -58,6 +67,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<WeekStat[]>([]);
   const [totalSets, setTotalSets] = useState(0);
+  const [monthlyVolume, setMonthlyVolume] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -68,6 +78,10 @@ export default function DashboardScreen() {
       const sorted = [...result].sort((a, b) => a.progress - b.progress);
       setStats(sorted);
       setTotalSets(result.reduce((s, r) => s + r.weekly_sets, 0));
+
+      const { start: mStart, end: mEnd } = getMonthRange();
+      const volume = await getMonthlyVolume(mStart, mEnd);
+      setMonthlyVolume(volume);
     } finally {
       setLoading(false);
     }
@@ -131,6 +145,20 @@ export default function DashboardScreen() {
             {stats.filter((s) => s.progress >= 1).length}/{stats.length} nhóm cơ
             đạt mục tiêu
           </Text>
+        </View>
+
+        {/* Monthly volume card */}
+        <View style={styles.volumeCard}>
+          <View style={styles.summaryRow}>
+            <Dumbbell color={Colors.textSecondary} size={16} strokeWidth={2} />
+            <Text style={styles.volumeLabel}>Tổng khối lượng tháng này</Text>
+          </View>
+          <Text style={styles.volumeNumber}>
+            {monthlyVolume >= 1000
+              ? `${(monthlyVolume / 1000).toFixed(1)}t`
+              : `${Math.round(monthlyVolume).toLocaleString('vi-VN')} kg`}
+          </Text>
+          <Text style={styles.summaryHint}>sets × trọng lượng (kg)</Text>
         </View>
 
         {/* Muscle group list */}
@@ -249,6 +277,28 @@ const styles = StyleSheet.create({
     lineHeight: 52,
   },
   summaryHint: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
+
+  volumeCard: {
+    marginHorizontal: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 24,
+  },
+  volumeLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  volumeNumber: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: Colors.text,
+    lineHeight: 36,
+    marginTop: 4,
+  },
 
   sectionTitle: {
     fontSize: 13,
