@@ -30,6 +30,8 @@ interface SyncContextType {
   lastSyncAt: Date | null;
   syncError: string | null;
   deviceId: string;
+  offlineTestMode: boolean;
+  setOfflineTestMode: (enabled: boolean) => Promise<void>;
   sync: () => Promise<void>;
 }
 
@@ -37,6 +39,7 @@ const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
 const DEVICE_ID_KEY = 'device_id';
 const LAST_SYNC_KEY = 'last_sync_time';
+const OFFLINE_TEST_MODE_KEY = 'offline_test_mode';
 const SYNC_INTERVAL = 60000; // 60 seconds
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
@@ -45,6 +48,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
+  const [offlineTestMode, setOfflineTestModeState] = useState(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isSyncingRef = useRef(false);
@@ -69,6 +73,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         if (lastSync) {
           setLastSyncAt(new Date(lastSync));
         }
+
+        const offlineMode = await AsyncStorage.getItem(OFFLINE_TEST_MODE_KEY);
+        setOfflineTestModeState(offlineMode === '1');
       } catch (err) {
         console.error('Failed to initialize sync:', err);
         setSyncError('Failed to initialize sync');
@@ -80,6 +87,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const performSync = useCallback(async () => {
     if (!isAuthenticated || !deviceId || isSyncingRef.current) {
+      return;
+    }
+
+    if (offlineTestMode) {
+      setStatus('error');
+      setSyncError('Chế độ mô phỏng offline đang bật');
       return;
     }
 
@@ -110,7 +123,21 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isSyncingRef.current = false;
     }
-  }, [isAuthenticated, deviceId]);
+  }, [isAuthenticated, deviceId, offlineTestMode]);
+
+  const setOfflineTestMode = useCallback(async (enabled: boolean) => {
+    setOfflineTestModeState(enabled);
+    await AsyncStorage.setItem(OFFLINE_TEST_MODE_KEY, enabled ? '1' : '0');
+
+    if (enabled) {
+      setStatus('error');
+      setSyncError('Chế độ mô phỏng offline đang bật');
+      return;
+    }
+
+    setSyncError(null);
+    setStatus('idle');
+  }, []);
 
   const handleAppStateChange = useCallback(
     (newState: AppStateStatus) => {
@@ -164,6 +191,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     lastSyncAt,
     syncError,
     deviceId,
+    offlineTestMode,
+    setOfflineTestMode,
     sync: performSync,
   };
 

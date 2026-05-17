@@ -58,6 +58,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           target_sets_per_week: group.target_sets_per_week,
           target_sets_per_month: group.target_sets_per_month,
           image_uri: group.image_uri,
+          category: group.category,
           deleted_at: isDeleted ? new Date().toISOString() : null,
         }) as any);
         if (error) {

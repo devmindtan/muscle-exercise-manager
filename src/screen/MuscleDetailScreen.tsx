@@ -68,6 +68,7 @@ export default function MuscleDetailScreen() {
     target_sets_per_month: '',
     color: '',
     image_uri: '',
+    category: '',
   });
 
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
@@ -124,6 +125,7 @@ export default function MuscleDetailScreen() {
       target_sets_per_month: String(group.target_sets_per_month),
       color: group.color,
       image_uri: group.image_uri || '',
+      category: group.category || '',
     });
     setEditingGroup(true);
   };
@@ -142,6 +144,7 @@ export default function MuscleDetailScreen() {
           parseInt(editForm.target_sets_per_month) || group.target_sets_per_month,
         color: editForm.color,
         image_uri: editForm.image_uri.trim() || null,
+        category: editForm.category || null,
       });
       load();
     }, 300);
@@ -199,11 +202,11 @@ export default function MuscleDetailScreen() {
   const deleteGroup = () => {
     Alert.alert(
       'Xoá nhóm cơ',
-      `Xoà "${group?.name}"? Tất cả bài tập và lịch sử sẽ bị ẩn.`,
+      `Xoá "${group?.name}"? Tất cả bài tập và lịch sử sẽ bị ẩn.`,
       [
         { text: 'Huỷ', style: 'cancel' },
         {
-          text: 'Xoà',
+          text: 'Xoá',
           style: 'destructive',
           onPress: async () => {
             await softDeleteMuscleGroup(id as string);
@@ -577,6 +580,33 @@ export default function MuscleDetailScreen() {
               />
             </View>
           </View>
+          <Text style={styles.label}>Danh mục</Text>
+          <View style={styles.categoryPicker}>
+            {['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'].map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryChip,
+                  editForm.category === cat && styles.categoryChipActive,
+                ]}
+                onPress={() =>
+                  setEditForm((f) => ({
+                    ...f,
+                    category: f.category === cat ? '' : cat,
+                  }))
+                }
+              >
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    editForm.category === cat && styles.categoryChipTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <Text style={styles.label}>Màu sắc</Text>
           <View style={styles.colorPicker}>
             {Colors.muscleColors.map((c) => (
@@ -778,6 +808,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: Colors.textMuted,
+  },
+  categoryPicker: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  categoryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryChipActive: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  categoryChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+    fontWeight: '600',
   },
   groupImage: {
     marginHorizontal: 20,
