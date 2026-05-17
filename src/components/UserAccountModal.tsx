@@ -8,13 +8,16 @@ import {
   ScrollView,
   Platform,
   SafeAreaView,
+  Switch,
 } from 'react-native';
 import { X, LogOut, User as UserIcon, Mail, Hash, Shield } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
+import { useSync } from '@/src/context/SyncContext';
 
 export function UserAccountModal() {
   const { user, signOut } = useAuth();
+  const { offlineTestMode, setOfflineTestMode } = useSync();
   const [visible, setVisible] = useState(false);
 
   if (!user) {
@@ -157,6 +160,23 @@ export function UserAccountModal() {
                 <Text style={styles.noticeText}>
                   Thông tin tài khoản được cung cấp bởi Google. Dữ liệu tập thể dục của bạn được lưu trữ an toàn và tách riêng theo UUID.
                 </Text>
+              </View>
+
+              <View style={styles.toggleCard}>
+                <View style={styles.toggleTextWrap}>
+                  <Text style={styles.toggleTitle}>Mô phỏng offline</Text>
+                  <Text style={styles.toggleSubtitle}>
+                    Bật để test luồng offline dù vẫn đang có mạng.
+                  </Text>
+                </View>
+                <Switch
+                  value={offlineTestMode}
+                  onValueChange={(value) => {
+                    void setOfflineTestMode(value);
+                  }}
+                  trackColor={{ false: Colors.border, true: `${Colors.accent}88` }}
+                  thumbColor={offlineTestMode ? Colors.accent : '#f4f3f4'}
+                />
               </View>
 
               {/* Sign Out */}
@@ -338,6 +358,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: Colors.textMuted,
+  },
+
+  toggleCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  toggleTextWrap: {
+    flex: 1,
+  },
+  toggleTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 3,
+  },
+  toggleSubtitle: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    lineHeight: 17,
   },
 
   // Sign out
