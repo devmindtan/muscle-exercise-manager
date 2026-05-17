@@ -1,13 +1,17 @@
 {
   "expo": {
-    "name": "Muscle Manager",
-    "slug": "MuscleManager",
+    "name": "muscle-exercise-manager",
+    "slug": "muscle-exercise-manager",
+    "scheme": "musclemanager",
     "version": "1.0.0",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "web": {
       "bundler": "metro",
       "output": "single",
       "favicon": "./assets/images/favicon.png"
+    },
+    "android": {
+      "package": "com.devmindtan.muscleexercisemanager"
     },
     "experiments": {
       "typedRoutes": true
@@ -18,6 +22,9 @@
         "projectId": "a47e764d-1ac7-453f-87f2-2abaab93c07d"
       }
     },
-    "owner": "devmindtan"
+    "owner": "devmindtan",
+    "plugins": [
+      "expo-build-properties"
+    ]
   }
 }
