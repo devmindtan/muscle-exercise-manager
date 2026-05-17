@@ -1,10 +1,16 @@
 {
   "expo": {
     "name": "muscle-exercise-manager",
-    "slug": "muscle-exercise-manager",
+    "slug": "MuscleManager",
     "scheme": "musclemanager",
     "version": "1.0.0",
     "newArchEnabled": true,
+    "icon": "./assets/images/icon.png", 
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff" 
+    },
     "web": {
       "bundler": "metro",
       "output": "single",
@@ -12,6 +18,14 @@
     },
     "android": {
       "package": "com.devmindtan.muscleexercisemanager"
+    },
+    "ios": {
+      "bundleIdentifier": "com.devmindtan.muscleexercisemanager",
+      "deploymentTarget": "13.0",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "experiments": {
       "typedRoutes": true
@@ -24,7 +38,17 @@
     },
     "owner": "devmindtan",
     "plugins": [
-      "expo-build-properties"
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "newArchEnabled": true
+          },
+          "ios": {
+            "newArchEnabled": true
+          }
+        }
+      ]
     ]
   }
 }

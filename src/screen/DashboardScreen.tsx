@@ -37,6 +37,8 @@ function getMonthRange() {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
+
 function ProgressBar({
   value,
   color,
@@ -70,13 +72,13 @@ export default function DashboardScreen() {
   const [monthlyVolume, setMonthlyVolume] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
       const { start, end } = getWeekRange();
       const result = await getMuscleGroupsWithWeeklyStats(start, end);
-      const sorted = [...result].sort((a, b) => a.progress - b.progress);
-      setStats(sorted);
+      setStats(result);
       setTotalSets(result.reduce((s, r) => s + r.weekly_sets, 0));
 
       const { start: mStart, end: mEnd } = getMonthRange();
@@ -101,6 +103,23 @@ export default function DashboardScreen() {
 
   const { start, end } = getWeekRange();
   const weekLabel = `${new Date(start).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} – ${new Date(end).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`;
+
+  const toggleCategory = (cat: string) => {
+    const updated = new Set(selectedCategories);
+    if (updated.has(cat)) {
+      updated.delete(cat);
+    } else {
+      updated.add(cat);
+    }
+    setSelectedCategories(updated);
+  };
+
+  const filteredStats = selectedCategories.size === 0
+    ? stats
+    : stats.filter(s => {
+        const category = (s.category || 'Khác') as string;
+        return selectedCategories.has(category);
+      });
 
   if (loading) {
     return (
@@ -155,11 +174,36 @@ export default function DashboardScreen() {
           </View>
           <Text style={styles.volumeNumber}>
             {monthlyVolume >= 1000
-              ? `${(monthlyVolume / 1000).toFixed(1)}t`
+              ? `${(monthlyVolume / 1000).toFixed(1)} tấn`
               : `${Math.round(monthlyVolume).toLocaleString('vi-VN')} kg`}
           </Text>
-          <Text style={styles.summaryHint}>sets × trọng lượng (kg)</Text>
+          <Text style={styles.summaryHint}>sets × reps × trọng lượng (kg)</Text>
         </View>
+
+        {/* Category filter badges */}
+        {stats.length > 0 && (
+          <View style={styles.filterSection}>
+            <View style={styles.filterWrap}>
+              {CATEGORIES.map((cat) => {
+                const isSelected = selectedCategories.has(cat);
+                const count = stats.filter(s => (s.category || 'Khác') === cat).length;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                    onPress={() => toggleCategory(cat)}
+                  >
+                    <Text
+                      style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}
+                    >
+                      {cat} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* Muscle group list */}
         {stats.length === 0 ? (
@@ -169,10 +213,17 @@ export default function DashboardScreen() {
               Vào tab &quot;Nhóm cơ&quot; để thêm nhóm cơ và bài tập
             </Text>
           </View>
+        ) : filteredStats.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyTitle}>Không có nhóm cơ nào</Text>
+            <Text style={styles.emptyText}>
+              Không có nhóm cơ nào trong danh mục được chọn
+            </Text>
+          </View>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>Tiến độ nhóm cơ</Text>
-            {stats.map((s) => (
+            <Text style={styles.sectionTitle}>Tiến độ nhóm cơ ({filteredStats.length})</Text>
+            {filteredStats.map((s) => (
               <TouchableOpacity
                 key={s.id}
                 style={styles.muscleCard}
@@ -182,7 +233,12 @@ export default function DashboardScreen() {
                 <View style={styles.muscleRow}>
                   <View style={[styles.dot, { backgroundColor: s.color }]} />
                   <View style={styles.muscleInfo}>
-                    <Text style={styles.muscleName}>{s.name}</Text>
+                    <Text style={styles.muscleName}>{s.name}
+                      <Text style={styles.exerciseCount}>
+                      {" "} - {s.exerciseCount} bài tập
+                      </Text>
+                    </Text>
+                    
                     <View style={styles.setsRow}>
                       <Text
                         style={[
@@ -200,6 +256,7 @@ export default function DashboardScreen() {
                         {s.targetSetsPerWeek} sets
                       </Text>
                     </View>
+                    
                   </View>
                   <ChevronRight
                     color={Colors.textMuted}
@@ -327,6 +384,12 @@ const styles = StyleSheet.create({
   setsActual: { fontSize: 20, fontWeight: '700' },
   setsSlash: { fontSize: 14, color: Colors.textMuted },
   setsTarget: { fontSize: 13, color: Colors.textMuted },
+  exerciseCount: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
 
   progressTrack: {
     height: 4,
@@ -364,5 +427,36 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  filterSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  filterWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  filterChipTextActive: {
+    color: Colors.bg,
+    fontWeight: '700',
   },
 });

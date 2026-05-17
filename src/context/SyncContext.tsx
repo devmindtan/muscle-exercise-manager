@@ -92,7 +92,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     if (offlineTestMode) {
       setStatus('error');
-      setSyncError('Chế độ mô phỏng offline đang bật');
+      setSyncError('offline');
       return;
     }
 
@@ -131,7 +131,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     if (enabled) {
       setStatus('error');
-      setSyncError('Chế độ mô phỏng offline đang bật');
+      setSyncError('offline');
       return;
     }
 

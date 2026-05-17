@@ -25,9 +25,11 @@ import { Colors } from '@/src/constants/colors';
 
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng/Core', 'Khác'];
 
+type MuscleGroupWithCount = MuscleGroup & { exercise_count?: number };
+
 export default function MusclesScreen() {
   const insets = useSafeAreaInsets();
-  const [groups, setGroups] = useState<MuscleGroup[]>([]);
+  const [groups, setGroups] = useState<MuscleGroupWithCount[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -43,7 +45,7 @@ export default function MusclesScreen() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    const data = await getMuscleGroups();
+    const data = (await getMuscleGroups()) as MuscleGroupWithCount[];
     setGroups(data);
   }, []);
 
@@ -167,7 +169,11 @@ export default function MusclesScreen() {
                       style={[styles.colorBar, { backgroundColor: g.color }]}
                     />
                     <View style={styles.cardBody}>
-                      <Text style={styles.cardName}>{g.name}</Text>
+                      <Text style={styles.cardName}>{g.name}
+                        <Text style={styles.exerciseCountText}>
+                        {" "} - {g.exercise_count || 0} bài tập
+                        </Text>
+                      </Text>
                       <View style={styles.targets}>
                         <View style={styles.target}>
                           <Text style={styles.targetNum}>
@@ -383,6 +389,12 @@ const styles = StyleSheet.create({
   targetNum: { fontSize: 18, fontWeight: '700', color: Colors.accent },
   targetLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
   targetDivider: { width: 1, height: 24, backgroundColor: Colors.border },
+  exerciseCountText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
 
   categoryHeader: {
     flexDirection: 'row',

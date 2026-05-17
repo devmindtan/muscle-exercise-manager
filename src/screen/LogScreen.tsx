@@ -24,7 +24,6 @@ import {
 import {
   getMuscleGroups,
   getActiveExercises,
-  getRecentLogs,
   getRecentLogsWithNames,
   insertWorkoutLog,
   softDeleteWorkoutLog,
@@ -321,11 +320,7 @@ export default function LogScreen() {
             </View>
 
             {/* Filter chips */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterRow}
-            >
+            <View style={styles.filterRow}>
               <TouchableOpacity
                 style={[
                   styles.filterChip,
@@ -371,7 +366,7 @@ export default function LogScreen() {
                   </Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
 
             {displayedLogs.length === 0 ? (
               <Text style={styles.noResults}>Không tìm thấy kết quả</Text>
@@ -606,7 +601,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    paddingHorizontal: 20,
     marginBottom: 10,
   },
   recentHeader: {
@@ -631,6 +625,8 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: Colors.text, fontSize: 14 },
   filterRow: {
     paddingHorizontal: 20,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
@@ -638,7 +634,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,

@@ -153,7 +153,22 @@ export async function initializeDatabase() {
 export async function getMuscleGroups() {
   const database = await getDatabase();
   const result = await database.getAllAsync<LocalMuscleGroup>(
-    'SELECT * FROM muscle_groups WHERE deleted = 0 ORDER BY created_at DESC'
+    `SELECT mg.*, COALESCE(ec.exercise_count, 0) AS exercise_count
+     FROM muscle_groups mg
+     LEFT JOIN (
+       SELECT muscle_group_id, COUNT(*) AS exercise_count
+       FROM exercises
+       WHERE deleted = 0
+       GROUP BY muscle_group_id
+     ) ec ON ec.muscle_group_id = mg.id
+     LEFT JOIN (
+       SELECT muscle_group_id, MAX(logged_at) AS last_logged_at
+       FROM workout_logs
+       WHERE deleted = 0
+       GROUP BY muscle_group_id
+     ) wl ON wl.muscle_group_id = mg.id
+     WHERE mg.deleted = 0
+     ORDER BY COALESCE(wl.last_logged_at, mg.updated_at, mg.created_at) DESC`
   );
   return result;
 }
@@ -218,12 +233,30 @@ export async function getExercises(muscleGroupId?: string) {
   const database = await getDatabase();
   if (muscleGroupId) {
     return database.getAllAsync<LocalExercise>(
-      'SELECT * FROM exercises WHERE muscle_group_id = ? AND deleted = 0 ORDER BY created_at DESC',
+      `SELECT e.*
+       FROM exercises e
+       LEFT JOIN (
+         SELECT exercise_id, MAX(logged_at) AS last_logged_at
+         FROM workout_logs
+         WHERE deleted = 0
+         GROUP BY exercise_id
+       ) wl ON wl.exercise_id = e.id
+       WHERE e.muscle_group_id = ? AND e.deleted = 0
+       ORDER BY COALESCE(wl.last_logged_at, e.updated_at, e.created_at) DESC`,
       [muscleGroupId]
     );
   }
   return database.getAllAsync<LocalExercise>(
-    'SELECT * FROM exercises WHERE deleted = 0 ORDER BY muscle_group_id, created_at DESC'
+    `SELECT e.*
+     FROM exercises e
+     LEFT JOIN (
+       SELECT exercise_id, MAX(logged_at) AS last_logged_at
+       FROM workout_logs
+       WHERE deleted = 0
+       GROUP BY exercise_id
+     ) wl ON wl.exercise_id = e.id
+     WHERE e.deleted = 0
+     ORDER BY COALESCE(wl.last_logged_at, e.updated_at, e.created_at) DESC`
   );
 }
 
@@ -408,10 +441,11 @@ export async function saveImageUriToExercise(id: string, imageUri: string) {
 export async function getMonthlyVolume(startDate: string, endDate: string): Promise<number> {
   const database = await getDatabase();
   const result = await database.getFirstAsync<{ total: number }>(
-    `SELECT COALESCE(SUM(CAST(sets AS REAL) * CAST(weight AS REAL)), 0) as total
+    `SELECT COALESCE(SUM(CAST(sets AS REAL) * CAST(reps AS REAL) * CAST(weight AS REAL)), 0) as total
      FROM workout_logs
      WHERE logged_at BETWEEN ? AND ? AND deleted = 0
        AND sets IS NOT NULL AND sets > 0
+       AND reps IS NOT NULL AND reps > 0
        AND weight IS NOT NULL AND weight > 0`,
     [startDate, endDate]
   );
