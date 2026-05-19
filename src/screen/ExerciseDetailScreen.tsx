@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import {
+  Alert,
   View,
   Text,
   ScrollView,
@@ -32,8 +33,11 @@ import {
   getExerciseById,
   updateExercise,
   getWorkoutLogs,
+  setExerciseActive,
+  softDeleteExercise,
+  getMuscleGroups,
 } from '@/src/lib/repository';
-import { Exercise, WorkoutLog } from '@/src/types/database';
+import { Exercise, WorkoutLog, MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 
 function formatDate(iso: string) {
@@ -60,18 +64,23 @@ export default function ExerciseDetailScreen() {
     name: '',
     notes: '',
     image_uri: '',
+    muscle_group_id: '',
   });
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [editError, setEditError] = useState('');
+  const [logFilter, setLogFilter] = useState<'all' | 'notes' | 'no-notes'>('all');
+  const [allMuscleGroups, setAllMuscleGroups] = useState<MuscleGroup[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [ex, allLogs] = await Promise.all([
+    const [ex, allLogs, groups] = await Promise.all([
       getExerciseById(id),
       getWorkoutLogs(undefined, undefined, id),
+      getMuscleGroups(),
     ]);
     if (ex) setExercise(ex);
+    setAllMuscleGroups(groups);
     // Sort mới nhất lên đầu
     setLogs((allLogs as WorkoutLog[]).filter((l) => !l.deleted_at).sort(
       (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
@@ -86,7 +95,8 @@ export default function ExerciseDetailScreen() {
 
   // --- Stats ---
   const totalSets = logs.reduce((s, l) => s + (l.sets || 0), 0);
-  const totalSessions = logs.length;
+  // Count distinct calendar days (each unique date = 1 session)
+  const totalSessions = new Set(logs.map((l) => l.logged_at.slice(0, 10))).size;
   const bestWeight = logs.reduce((best, l) => Math.max(best, l.weight || 0), 0);
   const bestSetLoad = logs.reduce((best, l) => {
     const load = (l.reps || 0) * (l.weight || 0);
@@ -117,6 +127,7 @@ export default function ExerciseDetailScreen() {
       name: exercise.name,
       notes: exercise.notes || '',
       image_uri: exercise.image_uri || '',
+      muscle_group_id: exercise.muscle_group_id,
     });
     setEditError('');
     setEditing(true);
@@ -169,6 +180,7 @@ export default function ExerciseDetailScreen() {
         name: editForm.name.trim(),
         notes: editForm.notes.trim() || null,
         image_uri: editForm.image_uri.trim() || null,
+        muscle_group_id: editForm.muscle_group_id || exercise.muscle_group_id,
       });
       setEditing(false);
       load();
@@ -286,26 +298,60 @@ export default function ExerciseDetailScreen() {
               <Text style={styles.emptyText}>Chưa có lịch sử tập nào</Text>
             </View>
           ) : (
-            logs.map((log) => (
-              <View key={log.id} style={styles.logItem}>
-                <View style={styles.logLeft}>
-                  <Text style={styles.logDate}>{formatDate(log.logged_at)}</Text>
-                  {log.note ? (
-                    <Text style={styles.logNote}>{log.note}</Text>
-                  ) : null}
+            <>
+              {/* Filter chips */}
+              {logs.some((l) => l.note?.trim()) && (
+                <View style={styles.logFilterRow}>
+                  {(
+                    [
+                      { key: 'all', label: 'Tất cả', count: logs.length },
+                      { key: 'notes', label: 'Có note', count: logs.filter((l) => l.note?.trim()).length },
+                      { key: 'no-notes', label: 'Không note', count: logs.filter((l) => !l.note?.trim()).length },
+                    ] as const
+                  ).map(({ key, label, count }) => (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.logFilterChip, logFilter === key && styles.logFilterChipActive]}
+                      onPress={() => setLogFilter(key)}
+                    >
+                      <Text style={[styles.logFilterChipText, logFilter === key && styles.logFilterChipTextActive]}>
+                        {label}
+                      </Text>
+                      <View style={[styles.logFilterBadge, logFilter === key && styles.logFilterBadgeActive]}>
+                        <Text style={[styles.logFilterBadgeText, logFilter === key && styles.logFilterBadgeTextActive]}>
+                          {count}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-                <View style={styles.logRight}>
-                  <Text style={styles.logSets}>{log.sets} sets</Text>
-                  {(log.reps || log.weight) ? (
-                    <Text style={styles.logDetail}>
-                      {log.reps ? `${log.reps} reps` : ''}
-                      {log.reps && log.weight ? ' × ' : ''}
-                      {log.weight ? `${log.weight} kg` : ''}
-                    </Text>
-                  ) : null}
+              )}
+              {(logFilter === 'all'
+                ? logs
+                : logFilter === 'notes'
+                ? logs.filter((l) => l.note?.trim())
+                : logs.filter((l) => !l.note?.trim())
+              ).map((log) => (
+                <View key={log.id} style={styles.logItem}>
+                  <View style={styles.logLeft}>
+                    <Text style={styles.logDate}>{formatDate(log.logged_at)}</Text>
+                    {log.note ? (
+                      <Text style={styles.logNote}>{log.note}</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.logRight}>
+                    <Text style={styles.logSets}>{log.sets} sets</Text>
+                    {(log.reps || log.weight) ? (
+                      <Text style={styles.logDetail}>
+                        {log.reps ? `${log.reps} reps` : ''}
+                        {log.reps && log.weight ? ' × ' : ''}
+                        {log.weight ? `${log.weight} kg` : ''}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            ))
+              ))}
+            </>
           )}
         </View>
       </ScrollView>
@@ -403,6 +449,33 @@ export default function ExerciseDetailScreen() {
               </TouchableOpacity>
             ) : null}
 
+            <Text style={styles.label}>Chuyển sang nhóm cơ khác</Text>
+            <View style={styles.muscleGroupPicker}>
+              {allMuscleGroups.map((mg) => (
+                <TouchableOpacity
+                  key={mg.id}
+                  style={[
+                    styles.muscleGroupChip,
+                    editForm.muscle_group_id === mg.id && {
+                      backgroundColor: mg.color,
+                      borderColor: mg.color,
+                    },
+                  ]}
+                  onPress={() => setEditForm((f) => ({ ...f, muscle_group_id: mg.id }))}
+                >
+                  <View style={[styles.chipDot, { backgroundColor: editForm.muscle_group_id === mg.id ? Colors.bg : mg.color }]} />
+                  <Text
+                    style={[
+                      styles.muscleGroupChipText,
+                      editForm.muscle_group_id === mg.id && styles.muscleGroupChipTextActive,
+                    ]}
+                  >
+                    {mg.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {editError ? <Text style={styles.errorText}>{editError}</Text> : null}
 
             <TouchableOpacity
@@ -420,6 +493,60 @@ export default function ExerciseDetailScreen() {
                   ? 'Đang lưu...'
                   : 'Lưu thay đổi'}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.toggleActiveBtn}
+              onPress={() => {
+                if (!exercise) return;
+                const nextActive = !exercise.is_active;
+                Alert.alert(
+                  nextActive ? 'Bật lại bài tập?' : 'Vô hiệu hoá bài tập?',
+                  nextActive
+                    ? 'Bài tập sẽ xuất hiện trở lại trong danh sách.'
+                    : 'Bài tập sẽ bị ẩn khỏi danh sách nhưng lịch sử vẫn được giữ lại.',
+                  [
+                    { text: 'Huỷ', style: 'cancel' },
+                    {
+                      text: nextActive ? 'Bật lại' : 'Vô hiệu hoá',
+                      onPress: async () => {
+                        await setExerciseActive(exercise.id, nextActive);
+                        setEditing(false);
+                        load();
+                      },
+                    },
+                  ],
+                );
+              }}
+            >
+              <Text style={styles.toggleActiveBtnText}>
+                {exercise?.is_active ? 'Vô hiệu hoá bài tập' : 'Bật lại bài tập'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deleteBtn}
+              onPress={() => {
+                if (!exercise) return;
+                Alert.alert(
+                  'Xoá bài tập?',
+                  'Toàn bộ lịch sử tập của bài tập này cũng sẽ bị xoá. Không thể khôi phục.',
+                  [
+                    { text: 'Huỷ', style: 'cancel' },
+                    {
+                      text: 'Xoá',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await softDeleteExercise(exercise.id);
+                        setEditing(false);
+                        router.back();
+                      },
+                    },
+                  ],
+                );
+              }}
+            >
+              <Text style={styles.deleteBtnText}>Xoá bài tập</Text>
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -596,6 +723,15 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   emptyText: { color: Colors.textMuted, fontSize: 13 },
+  logGroupLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+    marginTop: 12,
+  },
   logItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -691,6 +827,76 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { fontSize: 16, fontWeight: '700', color: Colors.bg },
+  toggleActiveBtn: {
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  toggleActiveBtnText: { fontSize: 15, fontWeight: '600', color: Colors.textSecondary },
+  deleteBtn: {
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 24,
+    backgroundColor: '#2a1212',
+    borderWidth: 1,
+    borderColor: '#6b2121',
+  },
+  deleteBtnText: { fontSize: 15, fontWeight: '600', color: '#e05252' },
+
+  // Log filter chips
+  logFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+    flexWrap: 'wrap',
+  },
+  logFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  logFilterChipActive: {
+    backgroundColor: Colors.accent + '20',
+    borderColor: Colors.accent,
+  },
+  logFilterChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  logFilterChipTextActive: { color: Colors.accent, fontWeight: '700' },
+  logFilterBadge: {
+    backgroundColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  logFilterBadgeActive: { backgroundColor: Colors.accent + '30' },
+  logFilterBadgeText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  logFilterBadgeTextActive: { color: Colors.accent },
+
+  // Muscle group transfer picker
+  muscleGroupPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  chipDot: { width: 8, height: 8, borderRadius: 4, marginRight: 4 },
+  muscleGroupChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  muscleGroupChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  muscleGroupChipTextActive: { color: Colors.bg, fontWeight: '700' },
 
   statCardHeader: {
     flexDirection: 'row',

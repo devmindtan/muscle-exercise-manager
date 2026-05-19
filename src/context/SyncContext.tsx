@@ -106,7 +106,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
       if (!result.success && result.errors.length > 0) {
         setStatus('error');
-        setSyncError(result.errors[0]);
+        const firstError = result.errors[0];
+        const isNetworkError = /network|fetch|internet|failed to/i.test(firstError);
+        setSyncError(isNetworkError ? 'Không có internet' : firstError);
       } else {
         setStatus('synced');
         setSyncError(null);
@@ -116,7 +118,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setLastSyncAt(syncTime);
       await AsyncStorage.setItem(LAST_SYNC_KEY, syncTime.toISOString());
     } catch (err: any) {
-      const errorMessage = err.message || 'Sync failed';
+      const isNetworkError = /network|fetch|internet|failed to/i.test(err?.message || '');
+      const errorMessage = isNetworkError ? 'Không có internet' : err.message || 'Sync failed';
       setStatus('error');
       setSyncError(errorMessage);
       console.error('Sync error:', err);
