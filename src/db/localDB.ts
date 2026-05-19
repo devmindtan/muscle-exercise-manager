@@ -11,6 +11,11 @@ export type LocalExercise = Database['public']['Tables']['exercises']['Row'] & {
   deleted?: 0 | 1;
 };
 
+export type ExerciseWithStats = LocalExercise & {
+  last_logged_at?: string | null;
+  weekly_sets?: number;
+};
+
 export type LocalWorkoutLog = Database['public']['Tables']['workout_logs']['Row'] & {
   dirty?: 0 | 1;
   deleted?: 0 | 1;
@@ -72,6 +77,7 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
 
   await ensureColumn(database, 'exercises', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'exercises', 'deleted', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'exercises', 'is_active', 'INTEGER DEFAULT 1');
 
   await ensureColumn(database, 'workout_logs', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
@@ -260,6 +266,94 @@ export async function getExercises(muscleGroupId?: string) {
   );
 }
 
+// Returns active exercises (is_active = 1) only, used for log picker
+export async function getActiveExercises(muscleGroupId: string) {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalExercise>(
+    `SELECT e.*
+     FROM exercises e
+     WHERE e.muscle_group_id = ? AND e.deleted = 0 AND e.is_active = 1
+     ORDER BY e.name ASC`,
+    [muscleGroupId]
+  );
+}
+
+// Returns exercises with last_logged_at + this-week sets — for detail screen cards
+export async function getExercisesWithStats(muscleGroupId: string, weekStart: string) {
+  const database = await getDatabase();
+  return database.getAllAsync<ExerciseWithStats>(
+    `SELECT e.*,
+            wl_last.last_logged_at,
+            COALESCE(wl_week.weekly_sets, 0) AS weekly_sets
+     FROM exercises e
+     LEFT JOIN (
+       SELECT exercise_id, MAX(logged_at) AS last_logged_at
+       FROM workout_logs WHERE deleted = 0
+       GROUP BY exercise_id
+     ) wl_last ON wl_last.exercise_id = e.id
+     LEFT JOIN (
+       SELECT exercise_id, SUM(sets) AS weekly_sets
+       FROM workout_logs WHERE deleted = 0 AND logged_at >= ?
+       GROUP BY exercise_id
+     ) wl_week ON wl_week.exercise_id = e.id
+     WHERE e.muscle_group_id = ? AND e.deleted = 0
+     ORDER BY e.is_active DESC, COALESCE(wl_last.last_logged_at, e.updated_at, e.created_at) DESC`,
+    [weekStart, muscleGroupId]
+  );
+}
+
+// Toggle is_active for a single exercise
+export async function setExerciseActive(id: string, isActive: boolean) {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE exercises SET is_active = ?, updated_at = datetime('now'), dirty = 1 WHERE id = ?`,
+    [isActive ? 1 : 0, id]
+  );
+}
+
+// Efficient single-query fetch of recent logs with exercise name (replaces N+1 approach)
+export interface RecentLogRow {
+  id: string;
+  exercise_id: string;
+  muscle_group_id: string;
+  sets: number;
+  reps: number | null;
+  weight: number | null;
+  note: string | null;
+  logged_at: string;
+  exercise_name: string;
+}
+
+export async function getRecentLogsWithExerciseNames(limit: number): Promise<RecentLogRow[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<RecentLogRow>(
+    `SELECT wl.id, wl.exercise_id, wl.muscle_group_id, wl.sets, wl.reps,
+            wl.weight, wl.note, wl.logged_at,
+            COALESCE(e.name, 'Unknown') AS exercise_name
+     FROM workout_logs wl
+     LEFT JOIN exercises e ON e.id = wl.exercise_id
+     WHERE wl.deleted = 0
+     ORDER BY wl.logged_at DESC
+     LIMIT ?`,
+    [limit]
+  );
+}
+
+// Count of workout_logs per muscle_group_id (all-time, non-deleted)
+export async function getLogCountsByMuscleGroup(): Promise<Record<string, number>> {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<{ muscle_group_id: string; count: number }>(
+    `SELECT muscle_group_id, COUNT(*) AS count
+     FROM workout_logs WHERE deleted = 0
+     GROUP BY muscle_group_id`
+  );
+  const map: Record<string, number> = {};
+  for (const row of rows) {
+    map[row.muscle_group_id] = row.count;
+  }
+  return map;
+}
+
 export async function getExerciseById(id: string) {
   const database = await getDatabase();
   const result = await database.getFirstAsync<LocalExercise>(
@@ -277,11 +371,12 @@ export async function upsertExercise(exercise: LocalExercise) {
     `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, created_at, updated_at, dirty, deleted)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
-       name = COALESCE(excluded.name, name),
-       notes = COALESCE(excluded.notes, notes),
-       image_uri = COALESCE(excluded.image_uri, image_uri),
-       is_active = COALESCE(excluded.is_active, is_active),
-       updated_at = datetime('now'),
+      muscle_group_id = COALESCE(excluded.muscle_group_id, muscle_group_id),
+      name = COALESCE(excluded.name, name),
+      notes = COALESCE(excluded.notes, notes),
+      image_uri = COALESCE(excluded.image_uri, image_uri),
+      is_active = COALESCE(excluded.is_active, is_active),
+      updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
     [

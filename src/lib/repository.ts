@@ -75,11 +75,9 @@ export async function getMuscleGroupsWithWeeklyStats(startDate: string, endDate:
     };
   });
 
+  // Preserve the localDB order which is already sorted by last_logged_at DESC
   return stats.sort((a, b) => {
-    if (b.weekly_sets !== a.weekly_sets) {
-      return b.weekly_sets - a.weekly_sets;
-    }
-    return (groupOrder.get(a.id) || 0) - (groupOrder.get(b.id) || 0);
+    return (groupOrder.get(a.id) ?? 0) - (groupOrder.get(b.id) ?? 0);
   });
 }
 
@@ -234,8 +232,20 @@ export async function insertExercise(data: {
   });
 }
 
-export async function getActiveExercises(muscleGroupId?: string) {
-  return LocalDB.getExercises(muscleGroupId);
+export async function getActiveExercises(muscleGroupId: string) {
+  return LocalDB.getActiveExercises(muscleGroupId);
+}
+
+export async function getExercisesWithStats(muscleGroupId: string, weekStart: string) {
+  return LocalDB.getExercisesWithStats(muscleGroupId, weekStart);
+}
+
+export async function setExerciseActive(id: string, isActive: boolean) {
+  await LocalDB.setExerciseActive(id, isActive);
+}
+
+export async function getLogCountsByMuscleGroup(): Promise<Record<string, number>> {
+  return LocalDB.getLogCountsByMuscleGroup();
 }
 
 export async function softDeleteExercise(id: string) {
@@ -354,25 +364,19 @@ export async function getRecentLogs(limit = 20) {
   });
 }
 
-export async function getRecentLogsWithNames(limit = 20) {
-  const logs = await LocalDB.getWorkoutLogs();
-  const recentLogs: RecentLog[] = [];
-  
-  for (const log of logs.slice(0, limit)) {
-    const exercise = await LocalDB.getExerciseById(log.exercise_id);
-    recentLogs.push({
-      id: log.id,
-      exercise_id: log.exercise_id,
-      muscleGroupId: log.muscle_group_id,
-      sets: log.sets,
-      reps: log.reps || undefined,
-      weight: log.weight || undefined,
-      note: log.note || undefined,
-      logged_at: log.logged_at,
-      exerciseName: exercise?.name || 'Unknown',
-    });
-  }
-  return recentLogs;
+export async function getRecentLogsWithNames(limit = 20): Promise<RecentLog[]> {
+  const rows = await LocalDB.getRecentLogsWithExerciseNames(limit);
+  return rows.map((row) => ({
+    id: row.id,
+    exercise_id: row.exercise_id,
+    muscleGroupId: row.muscle_group_id,
+    sets: row.sets,
+    reps: row.reps || undefined,
+    weight: row.weight || undefined,
+    note: row.note || undefined,
+    logged_at: row.logged_at,
+    exerciseName: row.exercise_name,
+  }));
 }
 
 export async function getExerciseWorkoutInsights(

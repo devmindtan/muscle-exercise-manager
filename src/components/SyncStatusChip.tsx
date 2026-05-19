@@ -52,7 +52,12 @@ export function SyncStatusChip() {
       break;
     case 'error':
       icon = <AlertCircle color={Colors.error} size={12} strokeWidth={1.8} />;
-      label = syncError || 'Lỗi đồng bộ';
+      {
+        const isOffline = syncError
+          ? /network|fetch|internet|failed to/i.test(syncError)
+          : false;
+        label = isOffline ? 'Không có internet' : syncError || 'Lỗi đồng bộ';
+      }
       errorBorder = true;
       break;
     default:

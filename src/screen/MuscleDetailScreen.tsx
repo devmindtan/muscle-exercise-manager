@@ -24,13 +24,32 @@ import {
   getMuscleGroup,
   updateMuscleGroup,
   softDeleteMuscleGroup,
-  getExercises,
+  getExercisesWithStats,
   insertExercise,
   updateExercise,
   getSetCounts,
+  getMuscleGroups,
+  softDeleteExercise,
+  setExerciseActive,
 } from '@/src/lib/repository';
-import { MuscleGroup, Exercise } from '@/src/types/database';
+import { ExerciseWithStats } from '@/src/db/localDB';
+import { MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
+
+const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
+
+function formatRelativeDate(isoString: string | null | undefined): string {
+  if (!isoString) return 'Chưa tập';
+  const now = new Date();
+  const date = new Date(isoString);
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / 86400000);
+  if (diffDays === 0) return 'Hôm nay';
+  if (diffDays === 1) return 'Hôm qua';
+  if (diffDays < 7) return `${diffDays} ngày trước`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} tuần trước`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} tháng trước`;
+  return `${Math.floor(diffDays / 365)} năm trước`;
+}
 
 function getWeekRange() {
   const now = new Date();
@@ -48,7 +67,8 @@ export default function MuscleDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [group, setGroup] = useState<MuscleGroup | null>(null);
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<ExerciseWithStats[]>([]);
+  const [exTab, setExTab] = useState<'active' | 'disabled'>('active');
   const [weeklySets, setWeeklySets] = useState(0);
   const [monthlySets, setMonthlySets] = useState(0);
 
@@ -66,15 +86,21 @@ export default function MuscleDetailScreen() {
     target_sets_per_month: '',
     color: '',
     image_uri: '',
+    category: '',
   });
 
-  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [allMuscleGroups, setAllMuscleGroups] = useState<MuscleGroup[]>([]);
+  const [editingExercise, setEditingExercise] = useState<ExerciseWithStats | null>(null);
   const [showEditExercise, setShowEditExercise] = useState(false);
   const [editExerciseForm, setEditExerciseForm] = useState({
     name: '',
     notes: '',
     image_uri: '',
+    muscle_group_id: '',
   });
+
+  // Track xem ảnh đang upload không — dùng để block nút Save
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -94,17 +120,18 @@ export default function MuscleDetailScreen() {
       59,
     ).toISOString();
 
-    const [g, ex, wSets, mSets] = await Promise.all([
+    const [g, ex, wSets, mSets, allGroups] = await Promise.all([
       getMuscleGroup(id),
-      getExercises(id),
+      getExercisesWithStats(id, weekStart),
       getSetCounts(id, weekStart, weekEnd),
       getSetCounts(id, monthStart, monthEnd),
+      getMuscleGroups(),
     ]);
-
     if (g) setGroup(g);
     setExercises(ex);
     setWeeklySets(wSets);
     setMonthlySets(mSets);
+    setAllMuscleGroups(allGroups);
   }, [id]);
 
   useFocusEffect(
@@ -121,15 +148,14 @@ export default function MuscleDetailScreen() {
       target_sets_per_month: String(group.target_sets_per_month),
       color: group.color,
       image_uri: group.image_uri || '',
+      category: group.category || '',
     });
     setEditingGroup(true);
   };
 
   const saveEdit = async () => {
     if (!group || !editForm.name.trim()) return;
-    // Đóng modal trước khi load lại dữ liệu để tránh kẹt overlay
     setEditingGroup(false);
-    // Đợi modal đóng xong mới load lại dữ liệu
     setTimeout(async () => {
       await updateMuscleGroup(group.id, {
         name: editForm.name.trim(),
@@ -139,57 +165,49 @@ export default function MuscleDetailScreen() {
           parseInt(editForm.target_sets_per_month) || group.target_sets_per_month,
         color: editForm.color,
         image_uri: editForm.image_uri.trim() || null,
+        category: editForm.category || null,
       });
       load();
     }, 300);
   };
 
-  // Track xem ảnh đang upload không — dùng để block nút Save
-  const [uploadingImage, setUploadingImage] = useState(false);
-
   const pickImage = async (onPicked: (uri: string) => void) => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setExError('Cần quyền truy cập thư viện ảnh để chọn hình minh hoạ');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.75,
-      allowsEditing: true,
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-
-      // Hiển thị preview local ngay lập tức
-      const localUri = await persistImageLocally(asset.uri);
-      onPicked(localUri);
-
-      // Upload lên MinIO — block Save cho đến khi xong
-      setUploadingImage(true);
-      try {
-        const fileName = asset.fileName || `image_${Date.now()}.jpg`;
-        const mimeType = asset.mimeType || 'image/jpeg';
-        const uploadResult = await uploadImage(localUri, fileName, mimeType);
-
-        if (uploadResult.success && uploadResult.url) {
-          // Cập nhật URI thành URL MinIO trước khi cho phép Save
-          onPicked(uploadResult.url);
-        } else {
-          // Upload thất bại: xoá preview, báo lỗi, không cho lưu local path
-          onPicked('');
-          setExError('Không thể upload ảnh lên server. Vui lòng thử lại.');
-          console.warn('MinIO upload failed:', uploadResult.error);
-        }
-      } catch (uploadErr: any) {
-        onPicked('');
-        setExError('Lỗi upload ảnh: ' + uploadErr.message);
-        console.warn('Image upload error:', uploadErr.message);
-      } finally {
-        setUploadingImage(false);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setExError('Cần quyền truy cập thư viện ảnh để chọn hình minh hoạ');
+        return;
       }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.75,
+        allowsEditing: true,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const localUri = await persistImageLocally(asset.uri);
+        onPicked(localUri);
+
+        setUploadingImage(true);
+        try {
+          const fileName = asset.fileName || `image_${Date.now()}.jpg`;
+          const mimeType = asset.mimeType || 'image/jpeg';
+          const result = await uploadImage(localUri, fileName, mimeType);
+          if (result.success && result.url) {
+            onPicked(result.url);
+          } else {
+            onPicked('');
+          }
+        } catch (uploadErr: any) {
+          console.error('Upload failed:', uploadErr);
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    } catch (e: any) {
+      setExError('Lỗi chọn ảnh: ' + e.message);
     }
   };
 
@@ -236,14 +254,43 @@ export default function MuscleDetailScreen() {
     }
   };
 
-  const openEditExercise = (exercise: Exercise) => {
+  const openEditExercise = (exercise: ExerciseWithStats) => {
     setEditingExercise(exercise);
     setEditExerciseForm({
       name: exercise.name,
       notes: exercise.notes || '',
       image_uri: exercise.image_uri || '',
+      muscle_group_id: exercise.muscle_group_id,
     });
     setShowEditExercise(true);
+  };
+
+  const deleteExercise = () => {
+    if (!editingExercise) return;
+    Alert.alert(
+      'Xoá bài tập',
+      `Xoá "${editingExercise.name}"? Tất cả lịch sử sẽ bị ẩn.`,
+      [
+        { text: 'Huỷ', style: 'cancel' },
+        {
+          text: 'Xoà',
+          style: 'destructive',
+          onPress: async () => {
+            setSaving(true);
+            try {
+              await softDeleteExercise(editingExercise.id);
+              setShowEditExercise(false);
+              setEditingExercise(null);
+              load();
+            } catch (e: unknown) {
+              setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const saveExercise = async () => {
@@ -258,7 +305,24 @@ export default function MuscleDetailScreen() {
         name: editExerciseForm.name.trim(),
         notes: editExerciseForm.notes.trim() || null,
         image_uri: editExerciseForm.image_uri.trim() || null,
+        muscle_group_id: editExerciseForm.muscle_group_id,
       });
+      setShowEditExercise(false);
+      setEditingExercise(null);
+      load();
+    } catch (e: unknown) {
+      setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleExerciseActive = async () => {
+    if (!editingExercise) return;
+    const newActive = !editingExercise.is_active;
+    setSaving(true);
+    try {
+      await setExerciseActive(editingExercise.id, newActive);
       setShowEditExercise(false);
       setEditingExercise(null);
       load();
@@ -277,171 +341,170 @@ export default function MuscleDetailScreen() {
     );
   }
 
-  const weekPct =
-    group.target_sets_per_week > 0
-      ? Math.min(weeklySets / group.target_sets_per_week, 1)
-      : 0;
-  const monthPct =
-    group.target_sets_per_month > 0
-      ? Math.min(monthlySets / group.target_sets_per_month, 1)
-      : 0;
-
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Top bar */}
-        <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backBtn}
-          >
-            <ArrowLeft color={Colors.text} size={22} strokeWidth={2} />
-          </TouchableOpacity>
-          <View style={styles.topActions}>
-            <TouchableOpacity onPress={openEdit} style={styles.iconBtn}>
-              <Pencil
-                color={Colors.textSecondary}
-                size={18}
-                strokeWidth={1.8}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={deleteGroup} style={styles.iconBtn}>
-              <Trash2 color={Colors.error} size={18} strokeWidth={1.8} />
-            </TouchableOpacity>
-          </View>
-        </View>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <ArrowLeft color={Colors.text} size={24} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{group.name}</Text>
+        <TouchableOpacity onPress={openEdit} style={styles.editBtn}>
+          <Pencil color={Colors.text} size={20} />
+        </TouchableOpacity>
+      </View>
 
-        {/* Group name */}
-        <View style={styles.groupHeader}>
-          <View style={[styles.groupDot, { backgroundColor: group.color }]} />
-          <Text style={styles.groupName}>{group.name}</Text>
-        </View>
-        {group.image_uri ? (
-          <Image source={{ uri: group.image_uri }} style={styles.groupImage} />
-        ) : null}
-
-        {/* Stats */}
+      <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text
-              style={[
-                styles.statNum,
-                { color: weekPct >= 1 ? Colors.success : Colors.accent },
-              ]}
-            >
-              {weeklySets}
-            </Text>
-            <Text style={styles.statLabel}>sets tuần này</Text>
-            <View style={styles.statBar}>
+          <View style={styles.statBox}>
+            <Text style={styles.statVal}>{weeklySets}</Text>
+            <Text style={styles.statLabel}>Tuần này</Text>
+            <View style={styles.progressBg}>
               <View
                 style={[
-                  styles.statFill,
+                  styles.progressFill,
                   {
-                    width: `${weekPct * 100}%`,
-                    backgroundColor:
-                      weekPct >= 1 ? Colors.success : group.color,
+                    width: `${Math.min(100, (weeklySets / group.target_sets_per_week) * 100)}%`,
+                    backgroundColor: group.color,
                   },
                 ]}
               />
             </View>
-            <Text style={styles.statTarget}>
-              Mục tiêu: {group.target_sets_per_week}
-            </Text>
+            <Text style={styles.targetText}>mục tiêu: {group.target_sets_per_week}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text
-              style={[
-                styles.statNum,
-                { color: monthPct >= 1 ? Colors.success : Colors.accent },
-              ]}
-            >
-              {monthlySets}
-            </Text>
-            <Text style={styles.statLabel}>sets tháng này</Text>
-            <View style={styles.statBar}>
+          <View style={styles.statBox}>
+            <Text style={styles.statVal}>{monthlySets}</Text>
+            <Text style={styles.statLabel}>Tháng này</Text>
+            <View style={styles.progressBg}>
               <View
                 style={[
-                  styles.statFill,
+                  styles.progressFill,
                   {
-                    width: `${monthPct * 100}%`,
-                    backgroundColor:
-                      monthPct >= 1 ? Colors.success : group.color,
+                    width: `${Math.min(100, (monthlySets / group.target_sets_per_month) * 100)}%`,
+                    backgroundColor: group.color,
                   },
                 ]}
               />
             </View>
-            <Text style={styles.statTarget}>
-              Mục tiêu: {group.target_sets_per_month}
-            </Text>
+            <Text style={styles.targetText}>mục tiêu: {group.target_sets_per_month}</Text>
           </View>
         </View>
 
-        {/* Exercises */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Bài tập</Text>
           <TouchableOpacity
-            style={styles.addExBtn}
-            onPress={() => {
-              setExName('');
-              setExNotes('');
-              setExImageUri('');
-              setExError('');
-              setShowAddExercise(true);
-            }}
+            style={[styles.addBtn, { backgroundColor: group.color }]}
+            onPress={() => setShowAddExercise(true)}
           >
-            <Plus color={Colors.bg} size={16} strokeWidth={2.5} />
-            <Text style={styles.addExText}>Thêm</Text>
+            <Plus color={Colors.bg} size={20} />
+            <Text style={styles.addBtnText}>Thêm bài</Text>
           </TouchableOpacity>
         </View>
 
-        {exercises.length === 0 ? (
-          <View style={styles.emptyEx}>
-            <Text style={styles.emptyExText}>Chưa có bài tập nào</Text>
-          </View>
-        ) : (
-          exercises.map((ex) => (
-            <TouchableOpacity
-              key={ex.id}
-              style={styles.exCard}
-              onPress={() => router.push(`/muscles/exercises/${ex.id}` as any)}
-              activeOpacity={0.75}
-            >
-              <View
-                style={[styles.exAccent, { backgroundColor: group.color }]}
-              />
-              {ex.image_uri ? (
-                <Image source={{ uri: ex.image_uri }} style={styles.exThumb} />
-              ) : null}
-              <View style={styles.exBody}>
-                <View style={styles.exTopRow}>
-                  <Text style={styles.exName}>{ex.name}</Text>
-                </View>
-                {ex.notes ? (
-                  <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
-                ) : null}
+        {/* Exercise tabs */}
+        <View style={styles.exTabBar}>
+          <TouchableOpacity
+            style={[styles.exTab, exTab === 'active' && styles.exTabActive]}
+            onPress={() => setExTab('active')}
+          >
+            <Text style={[styles.exTabText, exTab === 'active' && styles.exTabTextActive]}>Hoạt động</Text>
+            <View style={[styles.exTabBadge, exTab === 'active' && styles.exTabBadgeActive]}>
+              <Text style={[styles.exTabBadgeText, exTab === 'active' && styles.exTabBadgeTextActive]}>
+                {exercises.filter((e) => !!e.is_active).length}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exTab, exTab === 'disabled' && styles.exTabActive]}
+            onPress={() => setExTab('disabled')}
+          >
+            <Text style={[styles.exTabText, exTab === 'disabled' && styles.exTabTextActive]}>Vô hiệu hoá</Text>
+            <View style={[styles.exTabBadge, exTab === 'disabled' && styles.exTabBadgeActive]}>
+              <Text style={[styles.exTabBadgeText, exTab === 'disabled' && styles.exTabBadgeTextActive]}>
+                {exercises.filter((e) => !e.is_active).length}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {exTab === 'active' && exercises.filter((e) => !!e.is_active).map((ex) => (
+          <TouchableOpacity
+            key={ex.id}
+            style={styles.exCard}
+            onPress={() => router.push(`/muscles/exercises/${ex.id}` as any)}
+          >
+            {ex.image_uri ? (
+              <Image source={{ uri: ex.image_uri }} style={styles.exImg} />
+            ) : (
+              <View style={[styles.exImgPlaceholder, { backgroundColor: group.color + '20' }]}>
+                <Text style={[styles.exImgText, { color: group.color }]}>
+                  {ex.name[0].toUpperCase()}
+                </Text>
               </View>
-              <TouchableOpacity
-                onPress={(e) => { e.stopPropagation(); openEditExercise(ex); }}
-                style={styles.exActionBtn}
-              >
-                <Pencil color={Colors.textMuted} size={16} strokeWidth={1.8} />
-              </TouchableOpacity>
+            )}
+            <View style={styles.exInfo}>
+              <Text style={styles.exName}>{ex.name}</Text>
+              <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
+              {ex.notes ? (
+                <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
+              ) : null}
+            </View>
+            <TouchableOpacity onPress={() => openEditExercise(ex)} style={styles.exEditIcon}>
+              <View style={styles.weeklySetsbadge}>
+                <Text style={styles.weeklySetsBadgeText}>
+                  {(ex.weekly_sets ?? 0) > 0 ? `${ex.weekly_sets}s/w` : '0s/w'}
+                </Text>
+              </View>
             </TouchableOpacity>
-          ))
+          </TouchableOpacity>
+        ))}
+
+        {exTab === 'disabled' && exercises.filter((e) => !e.is_active).length === 0 && (
+          <View style={styles.emptyTab}>
+            <Text style={styles.emptyTabText}>Không có bài tập nào bị vô hiệu hoá</Text>
+          </View>
         )}
+        {exTab === 'disabled' && exercises.filter((e) => !e.is_active).map((ex) => (
+          <TouchableOpacity
+            key={ex.id}
+            style={[styles.exCard, styles.exCardDisabled]}
+            onPress={() => openEditExercise(ex)}
+          >
+            {ex.image_uri ? (
+              <Image source={{ uri: ex.image_uri }} style={[styles.exImg, styles.disabledImage]} />
+            ) : (
+              <View style={[styles.exImgPlaceholder, { backgroundColor: Colors.border }]}>
+                <Text style={[styles.exImgText, { color: Colors.textMuted }]}>
+                  {ex.name[0].toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.exInfo}>
+              <Text style={[styles.exName, styles.disabledText]}>{ex.name}</Text>
+              <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
+              {ex.notes ? (
+                <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
+              ) : null}
+            </View>
+            <View style={styles.exEditIcon}>
+              <Text style={styles.enableHint}>Bật lại</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+
+        <TouchableOpacity style={styles.deleteGroupBtn} onPress={deleteGroup}>
+          <Trash2 color={Colors.error} size={20} />
+          <Text style={styles.deleteGroupText}>Xoá nhóm cơ</Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* Add Exercise Modal */}
+      {/* MODAL ADD EXERCISE */}
       <Modal
         visible={showAddExercise}
         transparent
         animationType="slide"
         onRequestClose={() => setShowAddExercise(false)}
       >
-        <Pressable
-          style={styles.overlay}
-          onPress={() => setShowAddExercise(false)}
-        />
+        <Pressable style={styles.overlay} onPress={() => setShowAddExercise(false)} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.sheet}
@@ -453,60 +516,64 @@ export default function MuscleDetailScreen() {
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.label}>Tên bài tập</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="VD: Bench Press, Pull-up..."
-            placeholderTextColor={Colors.textMuted}
-            value={exName}
-            onChangeText={setExName}
-            autoFocus
-          />
-          <Text style={styles.label}>Ghi chú (tuỳ chọn)</Text>
-          <TextInput
-            style={[styles.input, styles.inputMulti]}
-            placeholder="Kỹ thuật, hướng dẫn..."
-            placeholderTextColor={Colors.textMuted}
-            value={exNotes}
-            onChangeText={setExNotes}
-            multiline
-            numberOfLines={3}
-          />
-          <Text style={styles.label}>Hình minh hoạ (tuỳ chọn)</Text>
-          <TouchableOpacity
-            style={styles.imageBtn}
-            onPress={() => pickImage(setExImageUri)}
-          >
-            <Text style={styles.imageBtnText}>
-              {exImageUri ? 'Đổi hình minh hoạ' : 'Chọn hình minh hoạ'}
-            </Text>
-          </TouchableOpacity>
-          {exImageUri ? (
-            <Image source={{ uri: exImageUri }} style={styles.previewImage} />
-          ) : null}
-          {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
-          <TouchableOpacity
-            style={[styles.saveBtn, (saving || uploadingImage) && styles.saveBtnDisabled]}
-            onPress={addExercise}
-            disabled={saving || uploadingImage}
-          >
-            <Text style={styles.saveBtnText}>
-              {uploadingImage ? 'Đang upload ảnh...' : saving ? 'Đang lưu...' : 'Thêm bài tập'}
-            </Text>
-          </TouchableOpacity>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.label}>Tên bài tập</Text>
+            <TextInput
+              style={styles.input}
+              value={exName}
+              onChangeText={setExName}
+              placeholder="VD: Bench Press, Pull-up..."
+              placeholderTextColor={Colors.textMuted}
+              autoFocus
+            />
+
+            <Text style={styles.label}>Ghi chú (tuỳ chọn)</Text>
+            <TextInput
+              style={[styles.input, styles.inputMulti]}
+              value={exNotes}
+              onChangeText={setExNotes}
+              placeholder="Kỹ thuật, hướng dẫn..."
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              numberOfLines={3}
+            />
+
+            <Text style={styles.label}>Hình minh hoạ (tuỳ chọn)</Text>
+            <TouchableOpacity style={styles.imageBtn} onPress={() => pickImage(setExImageUri)}>
+              <Text style={styles.imageBtnText}>
+                {exImageUri ? 'Đổi hình minh hoạ' : 'Chọn hình minh hoạ'}
+              </Text>
+            </TouchableOpacity>
+            {exImageUri ? (
+              <Image source={{ uri: exImageUri }} style={styles.previewImage} />
+            ) : null}
+
+            {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
+
+            <TouchableOpacity
+              style={[styles.saveBtn, (saving || uploadingImage) && styles.saveBtnDisabled]}
+              onPress={addExercise}
+              disabled={saving || uploadingImage}
+            >
+              <Text style={styles.saveBtnText}>
+                {uploadingImage ? 'Đang upload ảnh...' : saving ? 'Đang lưu...' : 'Thêm bài tập'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Edit Group Modal */}
+      {/* MODAL EDIT EXERCISE */}
       <Modal
-        visible={editingGroup}
+        visible={showEditExercise}
         transparent
         animationType="slide"
-        onRequestClose={() => setEditingGroup(false)}
+        onRequestClose={() => { setShowEditExercise(false); setEditingExercise(null); }}
       >
         <Pressable
           style={styles.overlay}
-          onPress={() => setEditingGroup(false)}
+          onPress={() => { setShowEditExercise(false); setEditingExercise(null); }}
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -514,11 +581,123 @@ export default function MuscleDetailScreen() {
         >
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Chỉnh sửa</Text>
+            <Text style={styles.sheetTitle}>Sửa bài tập</Text>
+            <TouchableOpacity onPress={() => { setShowEditExercise(false); setEditingExercise(null); }}>
+              <X color={Colors.textSecondary} size={20} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.label}>Tên bài tập</Text>
+            <TextInput
+              style={styles.input}
+              value={editExerciseForm.name}
+              onChangeText={(t) => setEditExerciseForm((f) => ({ ...f, name: t }))}
+              placeholderTextColor={Colors.textMuted}
+            />
+
+            <Text style={styles.label}>Ghi chú</Text>
+            <TextInput
+              style={[styles.input, styles.inputMulti]}
+              value={editExerciseForm.notes}
+              onChangeText={(t) => setEditExerciseForm((f) => ({ ...f, notes: t }))}
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              numberOfLines={3}
+            />
+
+            <Text style={styles.label}>Hình minh hoạ (tuỳ chọn)</Text>
+            <TouchableOpacity
+              style={styles.imageBtn}
+              onPress={() => pickImage((uri) => setEditExerciseForm((f) => ({ ...f, image_uri: uri })))}
+            >
+              <Text style={styles.imageBtnText}>
+                {editExerciseForm.image_uri ? 'Đổi hình minh hoạ' : 'Chọn hình minh hoạ'}
+              </Text>
+            </TouchableOpacity>
+            {editExerciseForm.image_uri ? (
+              <Image source={{ uri: editExerciseForm.image_uri }} style={styles.previewImage} />
+            ) : null}
+
+            <Text style={styles.label}>Chuyển sang nhóm cơ khác</Text>
+            <View style={styles.muscleGroupPicker}>
+              {allMuscleGroups.map((mg) => (
+                <TouchableOpacity
+                  key={mg.id}
+                  style={[
+                    styles.muscleGroupChip,
+                    editExerciseForm.muscle_group_id === mg.id && {
+                      backgroundColor: mg.color,
+                      borderColor: mg.color,
+                    },
+                  ]}
+                  onPress={() => setEditExerciseForm((f) => ({ ...f, muscle_group_id: mg.id }))}
+                >
+                  <View style={[styles.chipDot, { backgroundColor: editExerciseForm.muscle_group_id === mg.id ? Colors.bg : mg.color }]} />
+                  <Text
+                    style={[
+                      styles.muscleGroupChipText,
+                      editExerciseForm.muscle_group_id === mg.id && styles.muscleGroupChipTextActive,
+                    ]}
+                  >
+                    {mg.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
+
+            <TouchableOpacity
+              style={[styles.saveBtn, (saving || uploadingImage) && styles.saveBtnDisabled]}
+              onPress={saveExercise}
+              disabled={saving || uploadingImage}
+            >
+              <Text style={styles.saveBtnText}>
+                {uploadingImage ? 'Đang upload ảnh...' : saving ? 'Đang lưu...' : 'Lưu bài tập'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.disableBtn, saving && styles.saveBtnDisabled]}
+              onPress={handleToggleExerciseActive}
+              disabled={saving}
+            >
+              <Text style={styles.disableBtnText}>
+                {editingExercise?.is_active ? 'Vô hiệu hoá bài tập' : 'Bật lại bài tập'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.deleteBtn, saving && styles.saveBtnDisabled]}
+              onPress={deleteExercise}
+              disabled={saving}
+            >
+              <Trash2 color={Colors.bg} size={18} strokeWidth={2} />
+              <Text style={styles.deleteBtnText}>Xoá bài tập</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* MODAL EDIT GROUP */}
+      <Modal
+        visible={editingGroup}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditingGroup(false)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setEditingGroup(false)} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.sheet}
+        >
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Chỉnh sửa nhóm cơ</Text>
             <TouchableOpacity onPress={() => setEditingGroup(false)}>
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
+
           <Text style={styles.label}>Tên nhóm cơ</Text>
           <TextInput
             style={styles.input}
@@ -526,32 +705,30 @@ export default function MuscleDetailScreen() {
             onChangeText={(t) => setEditForm((f) => ({ ...f, name: t }))}
             placeholderTextColor={Colors.textMuted}
           />
-          <View style={styles.row}>
+
+          <View style={styles.rowFields}>
             <View style={styles.halfField}>
-              <Text style={styles.label}>Sets/tuần</Text>
+              <Text style={styles.label}>Sets mục tiêu/tuần</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
                 value={editForm.target_sets_per_week}
-                onChangeText={(t) =>
-                  setEditForm((f) => ({ ...f, target_sets_per_week: t }))
-                }
+                onChangeText={(t) => setEditForm((f) => ({ ...f, target_sets_per_week: t }))}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
             <View style={styles.halfField}>
-              <Text style={styles.label}>Sets/tháng</Text>
+              <Text style={styles.label}>Sets mục tiêu/tháng</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
                 value={editForm.target_sets_per_month}
-                onChangeText={(t) =>
-                  setEditForm((f) => ({ ...f, target_sets_per_month: t }))
-                }
+                onChangeText={(t) => setEditForm((f) => ({ ...f, target_sets_per_month: t }))}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
           </View>
+
           <Text style={styles.label}>Màu sắc</Text>
           <View style={styles.colorPicker}>
             {Colors.muscleColors.map((c) => (
@@ -566,23 +743,48 @@ export default function MuscleDetailScreen() {
               />
             ))}
           </View>
+
+          <Text style={styles.label}>Danh mục</Text>
+          <View style={styles.categoryPicker}>
+            {MUSCLE_CATEGORIES.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryChip,
+                  editForm.category === cat && styles.categoryChipActive,
+                ]}
+                onPress={() =>
+                  setEditForm((f) => ({
+                    ...f,
+                    category: f.category === cat ? '' : cat,
+                  }))
+                }
+              >
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    editForm.category === cat && styles.categoryChipTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <Text style={styles.label}>Hình minh hoạ (tuỳ chọn)</Text>
           <TouchableOpacity
             style={styles.imageBtn}
-            onPress={() =>
-              pickImage((uri) => setEditForm((f) => ({ ...f, image_uri: uri })))
-            }
+            onPress={() => pickImage((uri) => setEditForm((f) => ({ ...f, image_uri: uri })))}
           >
             <Text style={styles.imageBtnText}>
               {editForm.image_uri ? 'Đổi hình minh hoạ' : 'Chọn hình minh hoạ'}
             </Text>
           </TouchableOpacity>
           {editForm.image_uri ? (
-            <Image
-              source={{ uri: editForm.image_uri }}
-              style={styles.previewImage}
-            />
+            <Image source={{ uri: editForm.image_uri }} style={styles.previewImage} />
           ) : null}
+
           <TouchableOpacity
             style={[styles.saveBtn, uploadingImage && styles.saveBtnDisabled]}
             onPress={saveEdit}
@@ -594,244 +796,179 @@ export default function MuscleDetailScreen() {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* Edit Exercise Modal */}
-      <Modal
-        visible={showEditExercise}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowEditExercise(false)}
-      >
-        <Pressable
-          style={styles.overlay}
-          onPress={() => setShowEditExercise(false)}
-        />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.sheet}
-        >
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Sửa bài tập</Text>
-            <TouchableOpacity onPress={() => setShowEditExercise(false)}>
-              <X color={Colors.textSecondary} size={20} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>Tên bài tập</Text>
-          <TextInput
-            style={styles.input}
-            value={editExerciseForm.name}
-            onChangeText={(t) =>
-              setEditExerciseForm((f) => ({ ...f, name: t }))
-            }
-            placeholderTextColor={Colors.textMuted}
-          />
-
-          <Text style={styles.label}>Ghi chú</Text>
-          <TextInput
-            style={[styles.input, styles.inputMulti]}
-            value={editExerciseForm.notes}
-            onChangeText={(t) =>
-              setEditExerciseForm((f) => ({ ...f, notes: t }))
-            }
-            placeholderTextColor={Colors.textMuted}
-            multiline
-            numberOfLines={3}
-          />
-
-          <Text style={styles.label}>Hình minh hoạ (tuỳ chọn)</Text>
-          <TouchableOpacity
-            style={styles.imageBtn}
-            onPress={() =>
-              pickImage((uri) =>
-                setEditExerciseForm((f) => ({ ...f, image_uri: uri })),
-              )
-            }
-          >
-            <Text style={styles.imageBtnText}>
-              {editExerciseForm.image_uri
-                ? 'Đổi hình minh hoạ'
-                : 'Chọn hình minh hoạ'}
-            </Text>
-          </TouchableOpacity>
-          {editExerciseForm.image_uri ? (
-            <Image
-              source={{ uri: editExerciseForm.image_uri }}
-              style={styles.previewImage}
-            />
-          ) : null}
-
-          {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
-
-          <TouchableOpacity
-            style={[styles.saveBtn, (saving || uploadingImage) && styles.saveBtnDisabled]}
-            onPress={saveExercise}
-            disabled={saving || uploadingImage}
-          >
-            <Text style={styles.saveBtnText}>
-              {uploadingImage ? 'Đang upload ảnh...' : saving ? 'Đang lưu...' : 'Lưu bài tập'}
-            </Text>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  center: { alignItems: 'center', justifyContent: 'center' },
-  loadText: { color: Colors.textMuted, fontSize: 15 },
-  content: { paddingBottom: 48 },
-
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  backBtn: { padding: 8 },
-  topActions: { flexDirection: 'row', gap: 8 },
-  iconBtn: { padding: 8 },
-
-  groupHeader: {
+  center: { justifyContent: 'center', alignItems: 'center' },
+  loadText: { color: Colors.textSecondary, fontSize: 16 },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
-  groupDot: { width: 14, height: 14, borderRadius: 7 },
-  groupName: {
-    fontSize: 26,
-    fontWeight: '700',
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '800',
     color: Colors.text,
-    letterSpacing: -0.5,
+    textAlign: 'center',
   },
-  groupImage: {
-    marginHorizontal: 20,
-    height: 140,
-    borderRadius: 14,
-    marginBottom: 20,
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  statCard: {
+  backBtn: { width: 40, height: 40, justifyContent: 'center' },
+  editBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+  scroll: { padding: 20 },
+  statsRow: { flexDirection: 'row', gap: 16, marginBottom: 24 },
+  statBox: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
     borderWidth: 1,
+    borderBottomWidth: 4,
     borderColor: Colors.border,
   },
-  statNum: { fontSize: 32, fontWeight: '800', lineHeight: 36 },
-  statLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 10 },
-  statBar: {
-    height: 3,
+  statVal: { fontSize: 28, fontWeight: '900', color: Colors.text },
+  statLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
+  progressBg: {
+    width: '100%',
+    height: 6,
     backgroundColor: Colors.border,
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  statFill: { height: '100%', borderRadius: 2 },
-  statTarget: { fontSize: 11, color: Colors.textMuted },
-
+  progressFill: { height: '100%', borderRadius: 3 },
+  targetText: { fontSize: 11, color: Colors.textSecondary },
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  addExBtn: {
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+    gap: 4,
   },
-  addExText: { fontSize: 12, fontWeight: '700', color: Colors.bg },
-
+  addBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 13 },
   exCard: {
-    marginHorizontal: 20,
-    marginBottom: 8,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
     borderWidth: 1,
+    borderBottomWidth: 3,
     borderColor: Colors.border,
   },
-  exAccent: { width: 3, alignSelf: 'stretch' },
-  exThumb: { width: 44, height: 44, borderRadius: 10, marginLeft: 12 },
-  exBody: { flex: 1, padding: 14 },
-  exTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  exName: { fontSize: 15, fontWeight: '600', color: Colors.text },
-  exNotes: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  exActionBtn: { paddingHorizontal: 10, paddingVertical: 14 },
-
-  emptyEx: {
-    marginHorizontal: 20,
-    padding: 24,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
+  exImg: { width: 50, height: 50, borderRadius: 10 },
+  exImgPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
   },
-  emptyExText: { color: Colors.textMuted, fontSize: 13 },
-
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 40,
+  exImgText: { fontSize: 20, fontWeight: '800' },
+  exInfo: { flex: 1, marginLeft: 12 },
+  exName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  exNotes: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  exDate: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  exEditIcon: { padding: 8 },
+  weeklySetsbadge: {
+    backgroundColor: Colors.accent + '22',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    backgroundColor: Colors.border,
-    borderRadius: 2,
-    alignSelf: 'center',
+  weeklySetsBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.accent },
+  disabledSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  disabledSectionTitle: { fontSize: 13, color: Colors.textMuted, fontWeight: '600' },
+  exTabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
     marginBottom: 16,
   },
-  sheetHeader: {
+  exTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -1,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
-
+  exTabActive: { borderBottomColor: Colors.accent },
+  exTabText: { fontSize: 14, color: Colors.textMuted, fontWeight: '600' },
+  exTabTextActive: { color: Colors.text },
+  exTabBadge: {
+    backgroundColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  exTabBadgeActive: { backgroundColor: Colors.accent + '25' },
+  exTabBadgeText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  exTabBadgeTextActive: { color: Colors.accent },
+  emptyTab: {
+    padding: 24,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 12,
+  },
+  emptyTabText: { fontSize: 13, color: Colors.textMuted },
+  enableHint: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
+  exCardDisabled: { opacity: 0.6, borderStyle: 'dashed' },
+  disabledImage: { opacity: 0.5 },
+  disabledText: { color: Colors.textSecondary },
+  disableBtn: {
+    borderWidth: 1,
+    borderColor: Colors.textMuted,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  disableBtnText: { fontSize: 15, fontWeight: '600', color: Colors.textSecondary },
+  deleteGroupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    gap: 8,
+    padding: 12,
+  },
+  deleteGroupText: { fontSize: 14, fontWeight: '600', color: Colors.error },
   label: {
     fontSize: 12,
+    fontWeight: '500',
     color: Colors.textMuted,
     marginBottom: 6,
-    fontWeight: '500',
+    marginTop: 16,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
@@ -839,24 +976,75 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     color: Colors.text,
     fontSize: 15,
     marginBottom: 16,
   },
-  inputMulti: { height: 80, textAlignVertical: 'top' },
-  row: { flexDirection: 'row', gap: 12 },
+  imagePicker: {
+    height: 150,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    borderStyle: 'dashed',
+    overflow: 'hidden',
+  },
+  pickedImg: { width: '100%', height: '100%' },
+  imagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  imagePlaceholderText: { color: Colors.textSecondary, fontSize: 14 },
+  errorText: { color: Colors.error, fontSize: 13, marginBottom: 12 },
+  saveBtn: {
+    backgroundColor: Colors.accent,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  saveBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 16 },
+  row: { flexDirection: 'row' },
+  rowFields: { flexDirection: 'row', gap: 12 },
   halfField: { flex: 1 },
-
-  colorPicker: {
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    maxHeight: '90%',
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 20,
   },
+  sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  colorPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   colorOption: { width: 36, height: 36, borderRadius: 18 },
   colorSelected: { borderWidth: 3, borderColor: Colors.text },
+  categoryPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  categoryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  categoryChipActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  categoryChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  categoryChipTextActive: { color: Colors.bg, fontWeight: '700' },
   imageBtn: {
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
@@ -866,24 +1054,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  imageBtnText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  previewImage: {
-    width: '100%',
-    height: 140,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  errorText: { color: Colors.error, fontSize: 13, marginBottom: 12 },
-  saveBtn: {
-    backgroundColor: Colors.accent,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
+  imageBtnText: { color: Colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  previewImage: { width: '100%', height: 140, borderRadius: 12, marginBottom: 16 },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { fontSize: 16, fontWeight: '700', color: Colors.bg },
+  inputMulti: { height: 80, textAlignVertical: 'top' },
+  muscleGroupPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  chipDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  muscleGroupChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  muscleGroupChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  muscleGroupChipTextActive: {
+    color: Colors.bg,
+    fontWeight: '700',
+  },
+  deleteBtn: {
+    backgroundColor: Colors.error,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  deleteBtnText: { fontSize: 15, fontWeight: '700', color: Colors.bg },
 });

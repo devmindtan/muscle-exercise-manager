@@ -23,7 +23,7 @@ import { getMuscleGroups, createMuscleGroup } from '@/src/lib/repository';
 import { MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 
-const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng/Core', 'Khác'];
+const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
 type MuscleGroupWithCount = MuscleGroup & { exercise_count?: number };
 

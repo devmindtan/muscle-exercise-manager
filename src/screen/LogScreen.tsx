@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Alert,
   View,
@@ -27,6 +27,8 @@ import {
   getRecentLogsWithNames,
   insertWorkoutLog,
   softDeleteWorkoutLog,
+  getLogCountsByMuscleGroup,
+  getExerciseById,
 } from '@/src/lib/repository';
 import type { RecentLog } from '@/src/lib/repository';
 import { MuscleGroup, Exercise } from '@/src/types/database';
@@ -41,8 +43,10 @@ export default function LogScreen() {
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
+  const [logCounts, setLogCounts] = useState<Record<string, number>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [filterGroupId, setFilterGroupId] = useState<string | null>(null);
+  const [filterHasNotes, setFilterHasNotes] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const [selectedGroup, setSelectedGroup] = useState<MuscleGroup | null>(null);
@@ -60,17 +64,23 @@ export default function LogScreen() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  // Keep a ref so useFocusEffect always sees the latest selectedExercise
+  const selectedExerciseRef = useRef(selectedExercise);
+  useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
+
   const exportDatabase = useCallback(() => {
     Alert.alert('Thong bao', 'Chuc nang xuat du lieu se duoc bo sung sau.');
   }, []);
 
   const load = useCallback(async () => {
-    const [groups, logs] = await Promise.all([
+    const [groups, logs, counts] = await Promise.all([
       getMuscleGroups(),
       getRecentLogsWithNames(50),
+      getLogCountsByMuscleGroup(),
     ]);
     setMuscleGroups(groups);
     setRecentLogs(logs);
+    setLogCounts(counts);
     setVisibleCount(PAGE_SIZE);
   }, []);
 
@@ -82,6 +92,19 @@ export default function LogScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
+      // Refresh selectedExercise name in case it was renamed elsewhere;
+      // also clear it if it was disabled
+      const current = selectedExerciseRef.current;
+      if (current) {
+        getExerciseById(current.id).then((fresh) => {
+          if (!fresh || !fresh.is_active) {
+            // Exercise was deleted or disabled — clear from picker
+            setSelectedExercise(null);
+          } else {
+            setSelectedExercise(fresh as Exercise);
+          }
+        });
+      }
     }, [load]),
   );
 
@@ -149,6 +172,9 @@ export default function LogScreen() {
     if (filterGroupId) {
       list = list.filter((l) => l.muscleGroupId === filterGroupId);
     }
+    if (filterHasNotes) {
+      list = list.filter((l) => !!l.note?.trim());
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(
@@ -161,7 +187,7 @@ export default function LogScreen() {
       );
     }
     return list;
-  }, [recentLogs, filterGroupId, searchQuery, muscleGroups]);
+  }, [recentLogs, filterGroupId, filterHasNotes, searchQuery, muscleGroups]);
 
   const displayedLogs = filteredLogs.slice(0, visibleCount);
   const hasMore = visibleCount < filteredLogs.length;
@@ -324,48 +350,69 @@ export default function LogScreen() {
               <TouchableOpacity
                 style={[
                   styles.filterChip,
-                  !filterGroupId && styles.filterChipActive,
+                  !filterGroupId && !filterHasNotes && styles.filterChipActive,
                 ]}
                 onPress={() => {
                   setFilterGroupId(null);
+                  setFilterHasNotes(false);
                   setVisibleCount(PAGE_SIZE);
                 }}
               >
                 <Text
                   style={[
                     styles.filterChipText,
-                    !filterGroupId && styles.filterChipTextActive,
+                    !filterGroupId && !filterHasNotes && styles.filterChipTextActive,
                   ]}
                 >
                   Tất cả
                 </Text>
               </TouchableOpacity>
-              {muscleGroups.map((g) => (
-                <TouchableOpacity
-                  key={g.id}
-                  style={[
-                    styles.filterChip,
-                    filterGroupId === g.id && styles.filterChipActive,
-                    filterGroupId === g.id && { borderColor: g.color },
-                  ]}
-                  onPress={() => {
-                    setFilterGroupId(filterGroupId === g.id ? null : g.id);
-                    setVisibleCount(PAGE_SIZE);
-                  }}
-                >
-                  <View
-                    style={[styles.filterDot, { backgroundColor: g.color }]}
-                  />
-                  <Text
+              {muscleGroups.map((g) => {
+                const count = logCounts[g.id] ?? 0;
+                const countLabel = count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+                const isActive = filterGroupId === g.id;
+                return (
+                  <TouchableOpacity
+                    key={g.id}
                     style={[
-                      styles.filterChipText,
-                      filterGroupId === g.id && styles.filterChipTextActive,
+                      styles.filterChip,
+                      isActive && styles.filterChipActive,
+                      isActive && { borderColor: g.color },
                     ]}
+                    onPress={() => {
+                      setFilterGroupId(isActive ? null : g.id);
+                      setVisibleCount(PAGE_SIZE);
+                    }}
                   >
-                    {g.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        isActive && styles.filterChipTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {g.name}
+                    </Text>
+                    {count > 0 && (
+                      <View style={[styles.countBadge, isActive && { backgroundColor: g.color + '33' }]}>
+                        <Text style={[styles.countBadgeText, isActive && { color: g.color }]}>{countLabel}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+              {/* Có ghi chú filter */}
+              <TouchableOpacity
+                style={[styles.filterChip, filterHasNotes && styles.filterChipActive]}
+                onPress={() => {
+                  setFilterHasNotes((v) => !v);
+                  setVisibleCount(PAGE_SIZE);
+                }}
+              >
+                <Text style={[styles.filterChipText, filterHasNotes && styles.filterChipTextActive]}>
+                  Có ghi chú
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {displayedLogs.length === 0 ? (
@@ -651,7 +698,15 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   filterChipTextActive: { color: Colors.accent },
-  filterDot: { width: 6, height: 6, borderRadius: 3 },
+  countBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  countBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.textMuted },
   noResults: {
     textAlign: 'center',
     color: Colors.textMuted,
