@@ -1,16 +1,18 @@
+const variant = process.env.APP_VARIANT || process.env.EAS_BUILD_PROFILE || 'development';
+
 export default {
   expo: {
     name:
-      process.env.EAS_BUILD_PROFILE === 'production'
+      variant === 'production'
         ? 'Muscle Manager'
-        : process.env.EAS_BUILD_PROFILE === 'preview'
+        : variant === 'preview'
           ? 'Muscle Manager [Preview]'
           : 'Muscle Manager [Dev]',
     slug: 'MuscleManager',
     scheme:
-      process.env.EAS_BUILD_PROFILE === 'production'
+      variant === 'production'
         ? 'musclemanager'
-        : process.env.EAS_BUILD_PROFILE === 'preview'
+        : variant === 'preview'
           ? 'musclemanager-preview'
           : 'musclemanager-dev',
     version: '1.0.0',
@@ -28,9 +30,9 @@ export default {
     },
     android: {
       package:
-        process.env.EAS_BUILD_PROFILE === 'production'
+        variant === 'production'
           ? 'com.devmindtan.muscleexercisemanager'
-          : process.env.EAS_BUILD_PROFILE === 'preview'
+          : variant === 'preview'
             ? 'com.devmindtan.muscleexercisemanager.preview'
             : 'com.devmindtan.muscleexercisemanager.dev',
     },

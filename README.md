@@ -55,7 +55,7 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
 ```bash
 npx expo start
 # hoặc build preview:
-eas build --profile preview --platform android
+EAS_LOCAL_BUILD_WORKINGDIR="$PWD/tmp/eas-preview" npx eas-cli@latest build --profile preview --platform android --local --non-interactive
 ```
 
 ## Folder Structure
