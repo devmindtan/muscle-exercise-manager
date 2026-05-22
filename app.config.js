@@ -7,7 +7,12 @@ export default {
           ? 'Muscle Manager [Preview]'
           : 'Muscle Manager [Dev]',
     slug: 'MuscleManager',
-    scheme: 'musclemanager',
+    scheme:
+      process.env.EAS_BUILD_PROFILE === 'production'
+        ? 'musclemanager'
+        : process.env.EAS_BUILD_PROFILE === 'preview'
+          ? 'musclemanager-preview'
+          : 'musclemanager-dev',
     version: '1.0.0',
     newArchEnabled: true,
     icon: './assets/images/icon.png',

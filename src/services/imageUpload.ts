@@ -1,7 +1,9 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '@/src/lib/supabase';
 
-const MINIO_ENDPOINT = process.env.EXPO_PUBLIC_MINIO_ENDPOINT;
+const MINIO_ENDPOINT =
+  process.env.EXPO_PUBLIC_MINIO_ENDPOINT ||
+  process.env.EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL;
 const BUCKET_NAME = process.env.EXPO_PUBLIC_MINIO_BUCKET ?? 'muscle-manager';
 const BASE_URL = MINIO_ENDPOINT ? `${MINIO_ENDPOINT}/${BUCKET_NAME}` : '';
 

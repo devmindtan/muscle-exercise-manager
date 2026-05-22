@@ -24,31 +24,87 @@ export type LocalWorkoutLog = Database['public']['Tables']['workout_logs']['Row'
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
-let dbInitPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+// Single promise guards both open + schema creation so every caller waits for a
+// fully-initialised database. Setting it to null on failure allows a retry.
+let dbReadyPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 async function getDatabase() {
   if (db) {
     return db;
   }
 
-  if (!dbInitPromise) {
-    dbInitPromise = SQLite.openDatabaseAsync(DB_NAME)
-      .then(async (database) => {
-        // Enable WAL mode for better concurrency
-        await database.execAsync('PRAGMA journal_mode = WAL;');
-        db = database;
-        return database;
-      })
-      .catch((error) => {
-        db = null;
-        throw error;
-      })
-      .finally(() => {
-        dbInitPromise = null;
-      });
+  if (!dbReadyPromise) {
+    dbReadyPromise = (async () => {
+      const database = await SQLite.openDatabaseAsync(DB_NAME);
+      await database.execAsync('PRAGMA journal_mode = WAL;');
+      await applySchema(database);
+      db = database;
+      return database;
+    })().catch((error) => {
+      db = null;
+      dbReadyPromise = null;
+      throw error;
+    });
   }
 
-  return dbInitPromise;
+  return dbReadyPromise;
+}
+
+// All CREATE TABLE / index / migration DDL lives here so it runs before any
+// query regardless of whether SyncContext has initialised yet.
+async function applySchema(database: SQLite.SQLiteDatabase) {
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS muscle_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT,
+      target_sets_per_week INTEGER DEFAULT 10,
+      target_sets_per_month INTEGER DEFAULT 40,
+      image_uri TEXT,
+      category TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS exercises (
+      id TEXT PRIMARY KEY,
+      muscle_group_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      notes TEXT,
+      image_uri TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0,
+      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
+    );
+    CREATE TABLE IF NOT EXISTS workout_logs (
+      id TEXT PRIMARY KEY,
+      exercise_id TEXT NOT NULL,
+      muscle_group_id TEXT NOT NULL,
+      sets INTEGER,
+      reps INTEGER,
+      weight REAL,
+      note TEXT,
+      logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0,
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id),
+      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
+    CREATE INDEX IF NOT EXISTS idx_workout_logs_exercise_id ON workout_logs(exercise_id);
+    CREATE INDEX IF NOT EXISTS idx_workout_logs_muscle_group_id ON workout_logs(muscle_group_id);
+    CREATE INDEX IF NOT EXISTS idx_workout_logs_logged_at ON workout_logs(logged_at);
+    CREATE INDEX IF NOT EXISTS idx_dirty_muscle_groups ON muscle_groups(dirty) WHERE dirty = 1;
+    CREATE INDEX IF NOT EXISTS idx_dirty_exercises ON exercises(dirty) WHERE dirty = 1;
+    CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
+  `);
+  await migrateLegacySchema(database);
 }
 
 async function ensureColumn(
@@ -83,76 +139,10 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
 }
 
+// Retained for backward-compat: schema is now applied inside getDatabase(),
+// so this is a no-op that just triggers the initialisation if not yet done.
 export async function initializeDatabase() {
-  const database = await getDatabase();
-
-  // Create muscle_groups table
-  await database.execAsync(`
-    CREATE TABLE IF NOT EXISTS muscle_groups (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      color TEXT,
-      target_sets_per_week INTEGER DEFAULT 10,
-      target_sets_per_month INTEGER DEFAULT 40,
-      image_uri TEXT,
-      category TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      dirty INTEGER DEFAULT 0,
-      deleted INTEGER DEFAULT 0
-    );
-  `);
-
-  // Create exercises table
-  await database.execAsync(`
-    CREATE TABLE IF NOT EXISTS exercises (
-      id TEXT PRIMARY KEY,
-      muscle_group_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      notes TEXT,
-      image_uri TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      dirty INTEGER DEFAULT 0,
-      deleted INTEGER DEFAULT 0,
-      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
-    );
-  `);
-
-  // Create workout_logs table
-  await database.execAsync(`
-    CREATE TABLE IF NOT EXISTS workout_logs (
-      id TEXT PRIMARY KEY,
-      exercise_id TEXT NOT NULL,
-      muscle_group_id TEXT NOT NULL,
-      sets INTEGER,
-      reps INTEGER,
-      weight REAL,
-      note TEXT,
-      logged_at TEXT NOT NULL DEFAULT (datetime('now')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      dirty INTEGER DEFAULT 0,
-      deleted INTEGER DEFAULT 0,
-      FOREIGN KEY (exercise_id) REFERENCES exercises(id),
-      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
-    );
-  `);
-
-  // Create indexes for common queries
-  await migrateLegacySchema(database);
-
-  // Create indexes for common queries
-  await database.execAsync(`
-    CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
-    CREATE INDEX IF NOT EXISTS idx_workout_logs_exercise_id ON workout_logs(exercise_id);
-    CREATE INDEX IF NOT EXISTS idx_workout_logs_muscle_group_id ON workout_logs(muscle_group_id);
-    CREATE INDEX IF NOT EXISTS idx_workout_logs_logged_at ON workout_logs(logged_at);
-    CREATE INDEX IF NOT EXISTS idx_dirty_muscle_groups ON muscle_groups(dirty) WHERE dirty = 1;
-    CREATE INDEX IF NOT EXISTS idx_dirty_exercises ON exercises(dirty) WHERE dirty = 1;
-    CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
-  `);
+  await getDatabase();
 }
 
 // Muscle Groups
