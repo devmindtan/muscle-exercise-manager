@@ -89,7 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const webClientId = process.env.EXPO_PUBLIC_WEB_CLIENT_ID;
+        const webClientId =
+          process.env.EXPO_PUBLIC_WEB_CLIENT_ID ||
+          process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
         await GoogleSignin.configure({
           webClientId,
@@ -195,7 +197,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Google Sign-In requires a development build. Expo Go is not supported.');
       }
 
-      const webClientId = process.env.EXPO_PUBLIC_WEB_CLIENT_ID;
+      const webClientId =
+        process.env.EXPO_PUBLIC_WEB_CLIENT_ID ||
+        process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
       if (!webClientId) {
         throw new Error('Missing Google Web Client ID. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID or EXPO_PUBLIC_WEB_CLIENT_ID in .env');

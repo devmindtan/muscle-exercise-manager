@@ -3,6 +3,7 @@ import {
   Alert,
   View,
   Text,
+  Image,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -489,22 +490,28 @@ export default function LogScreen() {
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Chọn nhóm cơ</Text>
-          {muscleGroups.map((g) => (
-            <TouchableOpacity
-              key={g.id}
-              style={styles.optionRow}
-              onPress={() => selectGroup(g)}
-            >
-              <View style={[styles.optionDot, { backgroundColor: g.color }]} />
-              <Text style={styles.optionText}>{g.name}</Text>
-              {selectedGroup?.id === g.id && (
-                <Check color={Colors.accent} size={18} />
-              )}
-            </TouchableOpacity>
-          ))}
-          {muscleGroups.length === 0 && (
-            <Text style={styles.noData}>Chưa có nhóm cơ nào</Text>
-          )}
+          <ScrollView
+            style={styles.sheetScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {muscleGroups.map((g) => (
+              <TouchableOpacity
+                key={g.id}
+                style={styles.optionRow}
+                onPress={() => selectGroup(g)}
+              >
+                <View style={[styles.optionDot, { backgroundColor: g.color }]} />
+                <Text style={styles.optionText}>{g.name}</Text>
+                {selectedGroup?.id === g.id && (
+                  <Check color={Colors.accent} size={18} />
+                )}
+              </TouchableOpacity>
+            ))}
+            {muscleGroups.length === 0 && (
+              <Text style={styles.noData}>Chưa có nhóm cơ nào</Text>
+            )}
+          </ScrollView>
         </View>
       </Modal>
 
@@ -522,24 +529,39 @@ export default function LogScreen() {
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Chọn bài tập</Text>
-          {exercises.map((ex) => (
-            <TouchableOpacity
-              key={ex.id}
-              style={styles.optionRow}
-              onPress={() => {
-                setSelectedExercise(ex);
-                setShowExPicker(false);
-              }}
-            >
-              <Text style={styles.optionText}>{ex.name}</Text>
-              {selectedExercise?.id === ex.id && (
-                <Check color={Colors.accent} size={18} />
-              )}
-            </TouchableOpacity>
-          ))}
-          {exercises.length === 0 && (
-            <Text style={styles.noData}>Nhóm cơ này chưa có bài tập</Text>
-          )}
+          <ScrollView
+            style={styles.sheetScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {exercises.map((ex) => (
+              <TouchableOpacity
+                key={ex.id}
+                style={styles.optionRow}
+                onPress={() => {
+                  setSelectedExercise(ex);
+                  setShowExPicker(false);
+                }}
+              >
+                {ex.image_uri ? (
+                  <Image
+                    source={{ uri: ex.image_uri }}
+                    style={styles.exThumb}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.exThumbPlaceholder} />
+                )}
+                <Text style={styles.optionText}>{ex.name}</Text>
+                {selectedExercise?.id === ex.id && (
+                  <Check color={Colors.accent} size={18} />
+                )}
+              </TouchableOpacity>
+            ))}
+            {exercises.length === 0 && (
+              <Text style={styles.noData}>Nhóm cơ này chưa có bài tập</Text>
+            )}
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -769,6 +791,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: 40,
+    maxHeight: '75%',
+  },
+  sheetScroll: {
+    flexGrow: 0,
   },
   sheetHandle: {
     width: 36,
@@ -793,6 +819,20 @@ const styles = StyleSheet.create({
   },
   optionDot: { width: 8, height: 8, borderRadius: 4, marginRight: 12 },
   optionText: { flex: 1, fontSize: 15, color: Colors.text },
+  exThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  exThumbPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: Colors.surfaceElevated,
+  },
   noData: {
     color: Colors.textMuted,
     fontSize: 14,

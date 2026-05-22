@@ -196,6 +196,7 @@ export async function createExercise(data: {
   muscleGroupId: string;
   name: string;
   notes?: string;
+  image_uri?: string | null;
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
@@ -205,7 +206,7 @@ export async function createExercise(data: {
     muscle_group_id: data.muscleGroupId,
     name: data.name,
     notes: data.notes,
-    image_uri: null,
+    image_uri: data.image_uri ?? null,
     is_active: 1,
     created_at: now,
     updated_at: now,
@@ -229,6 +230,7 @@ export async function insertExercise(data: {
     muscleGroupId: data.muscleGroupId || data.muscle_group_id || '',
     name: data.name,
     notes: data.notes || undefined,
+    image_uri: data.image_uri ?? null,
   });
 }
 
