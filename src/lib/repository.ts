@@ -366,7 +366,7 @@ export async function getRecentLogs(limit = 20) {
   });
 }
 
-export async function getRecentLogsWithNames(limit = 20): Promise<RecentLog[]> {
+export async function getRecentLogsWithNames(limit?: number): Promise<RecentLog[]> {
   const rows = await LocalDB.getRecentLogsWithExerciseNames(limit);
   return rows.map((row) => ({
     id: row.id,

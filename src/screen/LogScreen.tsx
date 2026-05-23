@@ -76,7 +76,7 @@ export default function LogScreen() {
   const load = useCallback(async () => {
     const [groups, logs, counts] = await Promise.all([
       getMuscleGroups(),
-      getRecentLogsWithNames(50),
+      getRecentLogsWithNames(),
       getLogCountsByMuscleGroup(),
     ]);
     setMuscleGroups(groups);
