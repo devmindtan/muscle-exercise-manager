@@ -11,6 +11,8 @@ export interface SyncResult {
   muscleGroupsSynced: number;
   exercisesSynced: number;
   workoutLogsSynced: number;
+  bodyMeasurementsSynced: number;
+  muscleGoalsSynced: number;
 }
 
 export async function syncData(deviceId: string): Promise<SyncResult> {
@@ -18,6 +20,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
   let muscleGroupsSynced = 0;
   let exercisesSynced = 0;
   let workoutLogsSynced = 0;
+  let bodyMeasurementsSynced = 0;
+  let muscleGoalsSynced = 0;
 
   try {
     const {
@@ -34,6 +38,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         muscleGroupsSynced,
         exercisesSynced,
         workoutLogsSynced,
+        bodyMeasurementsSynced,
+        muscleGoalsSynced,
       };
     }
 
@@ -132,6 +138,61 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     }
 
+    const dirtyMeasurements = await LocalDB.getDirtyBodyMeasurements();
+    for (const measurement of dirtyMeasurements) {
+      try {
+        const isDeleted = !!measurement.deleted;
+        const { error } = await (supabase.from('body_measurements').upsert({
+          id: measurement.id,
+          user_id: userId,
+          metric_key: measurement.metric_key,
+          value: measurement.value,
+          unit: measurement.unit,
+          note: measurement.note,
+          source: measurement.source,
+          measured_at: measurement.measured_at,
+          deleted_at: isDeleted ? new Date().toISOString() : null,
+        }) as any);
+
+        if (error) {
+          errors.push(`Failed to sync body measurement ${measurement.id}: ${error.message}`);
+        } else {
+          await LocalDB.markBodyMeasurementClean(measurement.id);
+          bodyMeasurementsSynced++;
+        }
+      } catch (e: any) {
+        errors.push(`Error syncing body measurement ${measurement.id}: ${e.message}`);
+      }
+    }
+
+    const dirtyGoals = await LocalDB.getDirtyMuscleGoals();
+    for (const goal of dirtyGoals) {
+      try {
+        const isDeleted = !!goal.deleted;
+        const { error } = await (supabase.from('muscle_goals').upsert({
+          id: goal.id,
+          user_id: userId,
+          muscle_group_id: goal.muscle_group_id,
+          metric_key: goal.metric_key,
+          current_value: goal.current_value,
+          target_value: goal.target_value,
+          unit: goal.unit,
+          target_date: goal.target_date,
+          note: goal.note,
+          deleted_at: isDeleted ? new Date().toISOString() : null,
+        }) as any);
+
+        if (error) {
+          errors.push(`Failed to sync muscle goal ${goal.id}: ${error.message}`);
+        } else {
+          await LocalDB.markMuscleGoalClean(goal.id);
+          muscleGoalsSynced++;
+        }
+      } catch (e: any) {
+        errors.push(`Error syncing muscle goal ${goal.id}: ${e.message}`);
+      }
+    }
+
     // 2. PULL: Fetch remote changes
     // lastSyncTime = null → pull toàn bộ (trường hợp đăng nhập lại sau logout)
     // lastSyncTime = timestamp → chỉ pull những gì thay đổi sau lần sync cuối
@@ -205,6 +266,52 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       errors.push(`Error pulling workout logs: ${e.message}`);
     }
 
+    try {
+      let measurementQuery = supabase.from('body_measurements').select('*').eq('user_id', userId);
+      if (lastSyncTime) {
+        measurementQuery = measurementQuery.gte('updated_at', lastSyncTime);
+      }
+      const { data: remoteMeasurements, error: measurementError } = await measurementQuery.order('updated_at', { ascending: false });
+
+      if (measurementError) {
+        errors.push(`Failed to fetch body measurements: ${measurementError.message}`);
+      } else if (remoteMeasurements && Array.isArray(remoteMeasurements)) {
+        for (const measurement of remoteMeasurements) {
+          const measurementData = measurement as any;
+          await LocalDB.upsertBodyMeasurement({
+            ...measurementData,
+            dirty: 0,
+            deleted: measurementData.deleted_at ? 1 : 0,
+          });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling body measurements: ${e.message}`);
+    }
+
+    try {
+      let goalQuery = supabase.from('muscle_goals').select('*').eq('user_id', userId);
+      if (lastSyncTime) {
+        goalQuery = goalQuery.gte('updated_at', lastSyncTime);
+      }
+      const { data: remoteGoals, error: goalError } = await goalQuery.order('updated_at', { ascending: false });
+
+      if (goalError) {
+        errors.push(`Failed to fetch muscle goals: ${goalError.message}`);
+      } else if (remoteGoals && Array.isArray(remoteGoals)) {
+        for (const goal of remoteGoals) {
+          const goalData = goal as any;
+          await LocalDB.upsertMuscleGoal({
+            ...goalData,
+            dirty: 0,
+            deleted: goalData.deleted_at ? 1 : 0,
+          });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling muscle goals: ${e.message}`);
+    }
+
     return {
       success: errors.length === 0,
       syncedAt: new Date().toISOString(),
@@ -212,6 +319,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       muscleGroupsSynced,
       exercisesSynced,
       workoutLogsSynced,
+      bodyMeasurementsSynced,
+      muscleGoalsSynced,
     };
   } catch (e: any) {
     errors.push(`Sync failed: ${e.message}`);
@@ -222,6 +331,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       muscleGroupsSynced,
       exercisesSynced,
       workoutLogsSynced,
+      bodyMeasurementsSynced,
+      muscleGoalsSynced,
     };
   }
 }

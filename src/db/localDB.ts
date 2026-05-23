@@ -524,6 +524,30 @@ export async function markWorkoutLogClean(id: string) {
   await database.runAsync('UPDATE workout_logs SET dirty = 0 WHERE id = ?', [id]);
 }
 
+export async function getDirtyBodyMeasurements() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalBodyMeasurement>(
+    'SELECT * FROM body_measurements WHERE dirty = 1 ORDER BY updated_at ASC'
+  );
+}
+
+export async function markBodyMeasurementClean(id: string) {
+  const database = await getDatabase();
+  await database.runAsync('UPDATE body_measurements SET dirty = 0 WHERE id = ?', [id]);
+}
+
+export async function getDirtyMuscleGoals() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalMuscleGoal>(
+    'SELECT * FROM muscle_goals WHERE dirty = 1 ORDER BY updated_at ASC'
+  );
+}
+
+export async function markMuscleGoalClean(id: string) {
+  const database = await getDatabase();
+  await database.runAsync('UPDATE muscle_goals SET dirty = 0 WHERE id = ?', [id]);
+}
+
 export async function getBodyMeasurements(metricKey?: string, limit?: number) {
   const database = await getDatabase();
   let query = 'SELECT * FROM body_measurements WHERE deleted = 0';

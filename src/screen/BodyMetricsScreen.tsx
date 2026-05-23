@@ -1,7 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
-  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,19 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Activity,
-  Camera,
-  Calendar,
-  Check,
-  Plus,
-  ScanText,
-  Target,
-  Trash2,
-  X,
-} from 'lucide-react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
+import { Activity, Plus, Target, X } from 'lucide-react-native';
 import {
   createBodyMeasurement,
   createMuscleGoal,
@@ -34,33 +20,71 @@ import {
   getMuscleGoals,
   getMuscleGroups,
 } from '@/src/lib/repository';
-import { scanInBodySheetFromImage } from '@/src/services/bodyMetricsScanner';
 import { Colors } from '@/src/constants/colors';
-import type { ScannedMetric } from '@/src/services/bodyMetricsScanner';
 import type { MuscleGoal, BodyMeasurement, MuscleGroup } from '@/src/types/database';
 
-type ScanMetricDraft = ScannedMetric & {
-  enabled: boolean;
-  editableValue: string;
-  editableUnit: string;
+type InBodyFormState = {
+  measuredAt: string;
+  note: string;
+  weight: string;
+  skeletal_muscle_mass: string;
+  body_fat_mass: string;
+  bmi: string;
+  pbf: string;
+  segmental_lean_upper_left: string;
+  segmental_lean_upper_right: string;
+  segmental_lean_center: string;
+  segmental_lean_lower_left: string;
+  segmental_lean_lower_right: string;
+  segmental_fat_upper_left: string;
+  segmental_fat_upper_right: string;
+  segmental_fat_center: string;
+  segmental_fat_lower_left: string;
+  segmental_fat_lower_right: string;
+  waist_hip_ratio: string;
+  visceral_fat_level: string;
 };
 
 const METRIC_OPTIONS = [
-  { key: 'weight', label: 'Cân nặng', unit: 'kg' },
+  { key: 'weight', label: 'Weight', unit: 'kg' },
   { key: 'skeletal_muscle_mass', label: 'SMM', unit: 'kg' },
   { key: 'body_fat_mass', label: 'Body Fat Mass', unit: 'kg' },
-  { key: 'pbf', label: 'PBF', unit: '%' },
   { key: 'bmi', label: 'BMI', unit: 'BMI' },
+  { key: 'pbf', label: 'PBF', unit: '%' },
   { key: 'waist_hip_ratio', label: 'Waist-Hip Ratio', unit: 'ratio' },
   { key: 'visceral_fat_level', label: 'Visceral Fat Level', unit: 'level' },
-  { key: 'other', label: 'Khác', unit: '' },
+  { key: 'segmental_lean_upper_left', label: 'Lean Trên Trái', unit: 'kg' },
+  { key: 'segmental_lean_upper_right', label: 'Lean Trên Phải', unit: 'kg' },
+  { key: 'segmental_lean_center', label: 'Lean Giữa', unit: 'kg' },
+  { key: 'segmental_lean_lower_left', label: 'Lean Dưới Trái', unit: 'kg' },
+  { key: 'segmental_lean_lower_right', label: 'Lean Dưới Phải', unit: 'kg' },
+  { key: 'segmental_fat_upper_left', label: 'Fat Trên Trái', unit: 'kg' },
+  { key: 'segmental_fat_upper_right', label: 'Fat Trên Phải', unit: 'kg' },
+  { key: 'segmental_fat_center', label: 'Fat Giữa', unit: 'kg' },
+  { key: 'segmental_fat_lower_left', label: 'Fat Dưới Trái', unit: 'kg' },
+  { key: 'segmental_fat_lower_right', label: 'Fat Dưới Phải', unit: 'kg' },
 ] as const;
 
-const DEFAULT_MEASUREMENT_FORM = {
-  metricKey: 'weight',
-  value: '',
-  unit: 'kg',
+const DEFAULT_INBODY_FORM: InBodyFormState = {
+  measuredAt: '',
   note: '',
+  weight: '',
+  skeletal_muscle_mass: '',
+  body_fat_mass: '',
+  bmi: '',
+  pbf: '',
+  segmental_lean_upper_left: '',
+  segmental_lean_upper_right: '',
+  segmental_lean_center: '',
+  segmental_lean_lower_left: '',
+  segmental_lean_lower_right: '',
+  segmental_fat_upper_left: '',
+  segmental_fat_upper_right: '',
+  segmental_fat_center: '',
+  segmental_fat_lower_left: '',
+  segmental_fat_lower_right: '',
+  waist_hip_ratio: '',
+  visceral_fat_level: '',
 };
 
 const DEFAULT_GOAL_FORM = {
@@ -92,16 +116,35 @@ function getMetricLabel(metricKey: string) {
   return METRIC_OPTIONS.find((option) => option.key === metricKey)?.label || metricKey;
 }
 
-function getMetricUnit(metricKey: string) {
-  return METRIC_OPTIONS.find((option) => option.key === metricKey)?.unit || '';
-}
-
-function getProgressPercentage(goal: MuscleGoal) {
-  if (!goal.target_value || goal.target_value <= 0 || goal.current_value == null) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min((goal.current_value / goal.target_value) * 100, 100));
+function FormField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  unit,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  unit?: string;
+}) {
+  return (
+    <View style={styles.formField}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.fieldRow}>
+        <TextInput
+          style={[styles.input, styles.formInput]}
+          keyboardType="decimal-pad"
+          value={value}
+          onChangeText={onChange}
+          placeholder={placeholder || 'Nhập số'}
+          placeholderTextColor={Colors.textMuted}
+        />
+        {unit ? <Text style={styles.fieldUnit}>{unit}</Text> : null}
+      </View>
+    </View>
+  );
 }
 
 export default function BodyMetricsScreen() {
@@ -112,25 +155,18 @@ export default function BodyMetricsScreen() {
   const [goals, setGoals] = useState<MuscleGoal[]>([]);
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [selectedMetric, setSelectedMetric] = useState<string>('weight');
-  const [showMeasurementModal, setShowMeasurementModal] = useState(false);
+  const [showInBodyModal, setShowInBodyModal] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
-  const [showCameraModal, setShowCameraModal] = useState(false);
-  const [showReviewModal, setShowReviewModal] = useState(false);
-  const [capturedImageUri, setCapturedImageUri] = useState<string | null>(null);
-  const [measurementForm, setMeasurementForm] = useState(DEFAULT_MEASUREMENT_FORM);
+  const [inBodyForm, setInBodyForm] = useState<InBodyFormState>(DEFAULT_INBODY_FORM);
   const [goalForm, setGoalForm] = useState(DEFAULT_GOAL_FORM);
-  const [scanDrafts, setScanDrafts] = useState<ScanMetricDraft[]>([]);
   const [saving, setSaving] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView | null>(null);
 
   const load = useCallback(async () => {
     try {
       const [measurementRows, goalRows, groupRows] = await Promise.all([
-        getBodyMeasurements(undefined, 120),
+        getBodyMeasurements(undefined, 200),
         getMuscleGoals(),
         getMuscleGroups(),
       ]);
@@ -162,13 +198,11 @@ export default function BodyMetricsScreen() {
 
   const latestMetrics = useMemo(() => {
     const map = new Map<string, BodyMeasurement>();
-
     for (const measurement of measurements) {
       if (!map.has(measurement.metric_key)) {
         map.set(measurement.metric_key, measurement);
       }
     }
-
     return map;
   }, [measurements]);
 
@@ -194,29 +228,78 @@ export default function BodyMetricsScreen() {
       .slice(0, 3);
   }, [goals]);
 
-  const saveMeasurement = async () => {
-    const value = Number(measurementForm.value);
-    if (!Number.isFinite(value)) {
-      setError('Vui lòng nhập giá trị chỉ số hợp lệ');
+  const saveInBodyMetrics = async () => {
+    const measuredAt = inBodyForm.measuredAt.trim()
+      ? new Date(inBodyForm.measuredAt.trim()).toISOString()
+      : new Date().toISOString();
+
+    if (inBodyForm.measuredAt.trim() && Number.isNaN(new Date(inBodyForm.measuredAt.trim()).getTime())) {
+      setError('Ngày đo không hợp lệ. Dùng định dạng YYYY-MM-DD hoặc để trống để lấy hiện tại.');
       return;
+    }
+
+    const entries: { metricKey: keyof InBodyFormState; unit: string; label: string }[] = [
+      { metricKey: 'weight', unit: 'kg', label: 'Weight' },
+      { metricKey: 'skeletal_muscle_mass', unit: 'kg', label: 'SMM' },
+      { metricKey: 'body_fat_mass', unit: 'kg', label: 'Body Fat Mass' },
+      { metricKey: 'bmi', unit: 'BMI', label: 'BMI' },
+      { metricKey: 'pbf', unit: '%', label: 'PBF' },
+      { metricKey: 'segmental_lean_upper_left', unit: 'kg', label: 'Segmental Lean - Trên trái' },
+      { metricKey: 'segmental_lean_upper_right', unit: 'kg', label: 'Segmental Lean - Trên phải' },
+      { metricKey: 'segmental_lean_center', unit: 'kg', label: 'Segmental Lean - Giữa' },
+      { metricKey: 'segmental_lean_lower_left', unit: 'kg', label: 'Segmental Lean - Dưới trái' },
+      { metricKey: 'segmental_lean_lower_right', unit: 'kg', label: 'Segmental Lean - Dưới phải' },
+      { metricKey: 'segmental_fat_upper_left', unit: 'kg', label: 'Segmental Fat - Trên trái' },
+      { metricKey: 'segmental_fat_upper_right', unit: 'kg', label: 'Segmental Fat - Trên phải' },
+      { metricKey: 'segmental_fat_center', unit: 'kg', label: 'Segmental Fat - Giữa' },
+      { metricKey: 'segmental_fat_lower_left', unit: 'kg', label: 'Segmental Fat - Dưới trái' },
+      { metricKey: 'segmental_fat_lower_right', unit: 'kg', label: 'Segmental Fat - Dưới phải' },
+      { metricKey: 'waist_hip_ratio', unit: 'ratio', label: 'Waist-Hip Ratio' },
+      { metricKey: 'visceral_fat_level', unit: 'level', label: 'Visceral Fat Level' },
+    ];
+
+    const filled = entries.filter((entry) => {
+      const value = inBodyForm[entry.metricKey];
+      return typeof value === 'string' && value.trim().length > 0;
+    });
+
+    if (filled.length === 0) {
+      setError('Vui lòng nhập ít nhất một chỉ số để lưu.');
+      return;
+    }
+
+    for (const entry of filled) {
+      const raw = inBodyForm[entry.metricKey] as string;
+      if (!Number.isFinite(Number(raw))) {
+        setError(`Giá trị không hợp lệ ở trường ${entry.label}`);
+        return;
+      }
     }
 
     setSaving(true);
     setError('');
     setStatusMessage('');
+
     try {
-      await createBodyMeasurement({
-        metricKey: measurementForm.metricKey,
-        value,
-        unit: measurementForm.unit.trim() || getMetricUnit(measurementForm.metricKey) || 'đv',
-        note: measurementForm.note.trim() || null,
-        source: 'manual',
-      });
-      setMeasurementForm(DEFAULT_MEASUREMENT_FORM);
-      setShowMeasurementModal(false);
+      for (const entry of filled) {
+        const raw = inBodyForm[entry.metricKey] as string;
+        await createBodyMeasurement({
+          metricKey: entry.metricKey,
+          value: Number(raw),
+          unit: entry.unit,
+          note: inBodyForm.note.trim() || `InBody manual: ${entry.label}`,
+          source: 'manual_inbody',
+          measuredAt,
+        });
+      }
+
+      setSelectedMetric(filled[0].metricKey);
+      setInBodyForm(DEFAULT_INBODY_FORM);
+      setShowInBodyModal(false);
+      setStatusMessage(`Đã lưu ${filled.length} chỉ số InBody.`);
       await load();
     } catch (saveError: any) {
-      setError(saveError?.message || 'Không thể lưu chỉ số');
+      setError(saveError?.message || 'Không thể lưu chỉ số InBody.');
     } finally {
       setSaving(false);
     }
@@ -268,150 +351,6 @@ export default function BodyMetricsScreen() {
     }
   };
 
-  const openCameraScan = async () => {
-    setError('');
-    setStatusMessage('');
-
-    const granted = cameraPermission?.granted || (await requestCameraPermission()).granted;
-    if (!granted) {
-      setError('Cần quyền camera để quét trực tiếp tờ InBody.');
-      return;
-    }
-
-    setShowCameraModal(true);
-  };
-
-  const prepareScanReview = async (imageUri: string) => {
-    const scanResult = await scanInBodySheetFromImage(imageUri);
-
-    if (scanResult.metrics.length === 0) {
-      throw new Error('Không nhận diện được chỉ số quan trọng từ ảnh. Hãy thử ảnh rõ hơn.');
-    }
-
-    const drafts: ScanMetricDraft[] = scanResult.metrics.map((metric) => ({
-      ...metric,
-      enabled: true,
-      editableValue: String(metric.value),
-      editableUnit: metric.unit,
-    }));
-
-    setCapturedImageUri(imageUri);
-    setScanDrafts(drafts);
-    setSelectedMetric(drafts[0].metricKey);
-    setShowReviewModal(true);
-    setStatusMessage(`Đã nhận diện ${drafts.length} chỉ số. Kiểm tra lại trước khi lưu.`);
-  };
-
-  const captureFromCamera = async () => {
-    if (!cameraRef.current) return;
-
-    setScanning(true);
-    setError('');
-    setStatusMessage('');
-
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
-        skipProcessing: true,
-      });
-
-      if (!photo?.uri) {
-        throw new Error('Không thể chụp ảnh. Vui lòng thử lại.');
-      }
-
-      setShowCameraModal(false);
-      await prepareScanReview(photo.uri);
-    } catch (scanError: any) {
-      setError(scanError?.message || 'Quét ảnh thất bại. Vui lòng thử lại hoặc nhập tay.');
-      Alert.alert('Quét thất bại', scanError?.message || 'Vui lòng thử lại hoặc nhập tay.');
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  const scanFromLibrary = async () => {
-    setError('');
-    setStatusMessage('');
-
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setError('Cần quyền truy cập thư viện ảnh để chọn ảnh quét dự phòng.');
-        return;
-      }
-
-      const picked = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.9,
-      });
-
-      if (picked.canceled || picked.assets.length === 0) {
-        return;
-      }
-
-      setScanning(true);
-      setShowCameraModal(false);
-      await prepareScanReview(picked.assets[0].uri);
-    } catch (scanError: any) {
-      setError(scanError?.message || 'Quét ảnh thất bại. Vui lòng thử lại hoặc nhập tay.');
-      Alert.alert('Quét thất bại', scanError?.message || 'Vui lòng thử lại hoặc nhập tay.');
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  const updateScanDraft = (index: number, patch: Partial<ScanMetricDraft>) => {
-    setScanDrafts((current) =>
-      current.map((draft, currentIndex) =>
-        currentIndex === index ? { ...draft, ...patch } : draft,
-      ),
-    );
-  };
-
-  const removeScanDraft = (index: number) => {
-    setScanDrafts((current) => current.filter((_, currentIndex) => currentIndex !== index));
-  };
-
-  const saveScannedMeasurements = async () => {
-    const enabledDrafts = scanDrafts.filter((draft) => draft.enabled);
-    if (enabledDrafts.length === 0) {
-      setError('Hãy giữ lại ít nhất một chỉ số để lưu.');
-      return;
-    }
-
-    for (const draft of enabledDrafts) {
-      if (!Number.isFinite(Number(draft.editableValue))) {
-        setError(`Giá trị không hợp lệ ở ${draft.label}`);
-        return;
-      }
-    }
-
-    setSaving(true);
-    setError('');
-    try {
-      for (const draft of enabledDrafts) {
-        await createBodyMeasurement({
-          metricKey: draft.metricKey,
-          value: Number(draft.editableValue),
-          unit: draft.editableUnit.trim() || draft.unit || 'đv',
-          note: `Auto scan InBody: ${draft.label}`,
-          source: 'scan_inbody',
-        });
-      }
-
-      setShowReviewModal(false);
-      setCapturedImageUri(null);
-      setScanDrafts([]);
-      setSelectedMetric(enabledDrafts[0].metricKey);
-      setStatusMessage(`Đã lưu ${enabledDrafts.length} chỉ số sau khi quét.`);
-      await load();
-    } catch (saveError: any) {
-      setError(saveError?.message || 'Không thể lưu dữ liệu quét.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -435,20 +374,12 @@ export default function BodyMetricsScreen() {
         <View style={[styles.header, { paddingTop: insets.top + 15 }]}> 
           <View>
             <Text style={styles.title}>Chỉ số cơ thể</Text>
-            <Text style={styles.subtitle}>Lưu số đo, theo dõi xu hướng và đặt mục tiêu theo nhóm cơ</Text>
+            <Text style={styles.subtitle}>Nhập InBody theo form chuẩn và theo dõi tiến độ theo thời gian</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowMeasurementModal(true)}>
+            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowInBodyModal(true)}>
               <Plus color={Colors.bg} size={16} strokeWidth={2.4} />
-              <Text style={styles.headerBtnText}>Thêm chỉ số</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.headerBtn, styles.headerBtnScan]}
-              onPress={openCameraScan}
-              disabled={scanning || saving}
-            >
-              <ScanText color={Colors.bg} size={16} strokeWidth={2.2} />
-              <Text style={styles.headerBtnText}>{scanning ? 'Đang quét...' : 'Quét InBody'}</Text>
+              <Text style={styles.headerBtnText}>Nhập InBody</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerBtn, styles.headerBtnGhost]}
@@ -471,7 +402,7 @@ export default function BodyMetricsScreen() {
         </View>
 
         <View style={styles.overviewGrid}>
-          {METRIC_OPTIONS.slice(0, 4).map((metric) => {
+          {METRIC_OPTIONS.slice(0, 6).map((metric) => {
             const latest = latestMetrics.get(metric.key);
             return (
               <TouchableOpacity
@@ -558,48 +489,6 @@ export default function BodyMetricsScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Mục tiêu nhóm cơ</Text>
-            <Text style={styles.sectionHint}>{goals.length} goal</Text>
-          </View>
-          {goals.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>Chưa có goal nào cho nhóm cơ</Text>
-            </View>
-          ) : (
-            goals.map((goal) => {
-              const group = groupMap.get(goal.muscle_group_id);
-              const progress = getProgressPercentage(goal);
-              return (
-                <View key={goal.id} style={styles.goalCard}>
-                  <View style={styles.goalHeader}>
-                    <View>
-                      <Text style={styles.goalTitle}>{group?.name || 'Nhóm cơ'}</Text>
-                      <Text style={styles.goalSubtitle}>{getMetricLabel(goal.metric_key)}</Text>
-                    </View>
-                    <View style={styles.goalDateWrap}>
-                      <Calendar color={Colors.textMuted} size={12} strokeWidth={2} />
-                      <Text style={styles.goalDate}>{formatDateLabel(goal.target_date)}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.goalValuesRow}>
-                    <Text style={styles.goalCurrent}>{goal.current_value ?? 0} {goal.unit}</Text>
-                    <Text style={styles.goalArrow}>→</Text>
-                    <Text style={styles.goalTarget}>{goal.target_value} {goal.unit}</Text>
-                  </View>
-                  <View style={styles.goalTrack}>
-                    <View style={[styles.goalFill, { width: `${progress}%`, backgroundColor: group?.color || Colors.accent }]} />
-                  </View>
-                  <Text style={styles.goalHint}>
-                    {goal.note?.trim() || `${Math.round(progress)}% so với mục tiêu hiện tại`}
-                  </Text>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Lịch sử gần đây</Text>
             <Text style={styles.sectionHint}>{measurements.length} bản ghi</Text>
           </View>
@@ -608,7 +497,7 @@ export default function BodyMetricsScreen() {
               <Text style={styles.emptyText}>Chưa có bản ghi chỉ số nào</Text>
             </View>
           ) : (
-            measurements.slice(0, 12).map((measurement) => (
+            measurements.slice(0, 15).map((measurement) => (
               <View key={measurement.id} style={styles.historyCard}>
                 <View>
                   <Text style={styles.historyTitle}>{getMetricLabel(measurement.metric_key)}</Text>
@@ -625,188 +514,163 @@ export default function BodyMetricsScreen() {
       </ScrollView>
 
       <Modal
-        visible={showMeasurementModal}
+        visible={showInBodyModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowMeasurementModal(false)}
+        onRequestClose={() => setShowInBodyModal(false)}
       >
-        <Pressable style={styles.overlay} onPress={() => setShowMeasurementModal(false)} />
+        <Pressable style={styles.overlay} onPress={() => setShowInBodyModal(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Thêm chỉ số cơ thể</Text>
-            <TouchableOpacity onPress={() => setShowMeasurementModal(false)}>
+            <Text style={styles.sheetTitle}>Nhập chỉ số InBody</Text>
+            <TouchableOpacity onPress={() => setShowInBodyModal(false)}>
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
+
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Loại chỉ số</Text>
-            <View style={styles.chipWrap}>
-              {METRIC_OPTIONS.map((metric) => {
-                const active = measurementForm.metricKey === metric.key;
-                return (
-                  <TouchableOpacity
-                    key={metric.key}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() =>
-                      setMeasurementForm((current) => ({
-                        ...current,
-                        metricKey: metric.key,
-                        unit: metric.unit || current.unit,
-                      }))
-                    }
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{metric.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <Text style={styles.formSectionTitle}>Thông tin chung</Text>
+            <TextInput
+              style={styles.input}
+              value={inBodyForm.measuredAt}
+              onChangeText={(measuredAt) => setInBodyForm((current) => ({ ...current, measuredAt }))}
+              placeholder="Ngày đo (YYYY-MM-DD), để trống = hiện tại"
+              placeholderTextColor={Colors.textMuted}
+            />
+
+            <Text style={styles.formSectionTitle}>1. Muscle-Fat Analysis</Text>
+            <FormField
+              label="Weight"
+              value={inBodyForm.weight}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, weight: value }))}
+              unit="kg"
+            />
+            <FormField
+              label="SMM"
+              value={inBodyForm.skeletal_muscle_mass}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, skeletal_muscle_mass: value }))}
+              unit="kg"
+            />
+            <FormField
+              label="Body Fat Mass"
+              value={inBodyForm.body_fat_mass}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, body_fat_mass: value }))}
+              unit="kg"
+            />
+
+            <Text style={styles.formSectionTitle}>2. Obesity Analysis</Text>
+            <FormField
+              label="BMI"
+              value={inBodyForm.bmi}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, bmi: value }))}
+              unit="BMI"
+            />
+            <FormField
+              label="PBF"
+              value={inBodyForm.pbf}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, pbf: value }))}
+              unit="%"
+            />
+
+            <Text style={styles.formSectionTitle}>3. Segmental Lean Analysis (5 góc)</Text>
+            <View style={styles.segmentGrid}>
+              <FormField
+                label="Trên trái"
+                value={inBodyForm.segmental_lean_upper_left}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_lean_upper_left: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Trên phải"
+                value={inBodyForm.segmental_lean_upper_right}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_lean_upper_right: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Giữa"
+                value={inBodyForm.segmental_lean_center}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_lean_center: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Dưới trái"
+                value={inBodyForm.segmental_lean_lower_left}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_lean_lower_left: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Dưới phải"
+                value={inBodyForm.segmental_lean_lower_right}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_lean_lower_right: value }))}
+                unit="kg"
+              />
             </View>
 
-            <Text style={styles.label}>Giá trị</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="decimal-pad"
-              value={measurementForm.value}
-              onChangeText={(value) => setMeasurementForm((current) => ({ ...current, value }))}
-              placeholder="VD: 72.5"
-              placeholderTextColor={Colors.textMuted}
+            <Text style={styles.formSectionTitle}>4. Segmental Fat Analysis (5 góc)</Text>
+            <View style={styles.segmentGrid}>
+              <FormField
+                label="Trên trái"
+                value={inBodyForm.segmental_fat_upper_left}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_fat_upper_left: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Trên phải"
+                value={inBodyForm.segmental_fat_upper_right}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_fat_upper_right: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Giữa"
+                value={inBodyForm.segmental_fat_center}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_fat_center: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Dưới trái"
+                value={inBodyForm.segmental_fat_lower_left}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_fat_lower_left: value }))}
+                unit="kg"
+              />
+              <FormField
+                label="Dưới phải"
+                value={inBodyForm.segmental_fat_lower_right}
+                onChange={(value) => setInBodyForm((current) => ({ ...current, segmental_fat_lower_right: value }))}
+                unit="kg"
+              />
+            </View>
+
+            <Text style={styles.formSectionTitle}>5. Waist-Hip Ratio</Text>
+            <FormField
+              label="Waist-Hip Ratio"
+              value={inBodyForm.waist_hip_ratio}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, waist_hip_ratio: value }))}
+              unit="ratio"
             />
 
-            <Text style={styles.label}>Đơn vị</Text>
-            <TextInput
-              style={styles.input}
-              value={measurementForm.unit}
-              onChangeText={(unit) => setMeasurementForm((current) => ({ ...current, unit }))}
-              placeholder="kg, %, BMI..."
-              placeholderTextColor={Colors.textMuted}
+            <Text style={styles.formSectionTitle}>6. Visceral Fat Level</Text>
+            <FormField
+              label="Visceral Fat Level"
+              value={inBodyForm.visceral_fat_level}
+              onChange={(value) => setInBodyForm((current) => ({ ...current, visceral_fat_level: value }))}
+              unit="level"
             />
 
-            <Text style={styles.label}>Ghi chú</Text>
+            <Text style={styles.formSectionTitle}>Ghi chú chung</Text>
             <TextInput
               style={[styles.input, styles.noteInput]}
-              value={measurementForm.note}
-              onChangeText={(note) => setMeasurementForm((current) => ({ ...current, note }))}
-              placeholder="VD: Đo buổi sáng sau tập"
+              value={inBodyForm.note}
+              onChangeText={(note) => setInBodyForm((current) => ({ ...current, note }))}
+              placeholder="VD: đo sau khi ngủ đủ, trước ăn sáng"
               placeholderTextColor={Colors.textMuted}
               multiline
             />
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={saveMeasurement} disabled={saving}>
-              <Text style={styles.primaryBtnText}>{saving ? 'Đang lưu...' : 'Lưu chỉ số'}</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showCameraModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowCameraModal(false)}
-      >
-        <View style={styles.cameraModalContainer}>
-          <CameraView ref={cameraRef} style={styles.cameraPreview} facing="back" />
-          <View style={styles.cameraOverlay}>
-            <View style={styles.cameraTopBar}>
-              <TouchableOpacity style={styles.cameraIconBtn} onPress={() => setShowCameraModal(false)}>
-                <X color={Colors.bg} size={20} />
-              </TouchableOpacity>
-              <Text style={styles.cameraTitle}>Chụp tờ InBody</Text>
-              <View style={styles.cameraIconBtnSpacer} />
-            </View>
-
-            <View style={styles.cameraGuideCard}>
-              <Text style={styles.cameraGuideText}>
-                Căn tờ InBody đầy đủ trong khung, giữ phẳng và đủ sáng để OCR nhận diện chính xác.
-              </Text>
-            </View>
-
-            <View style={styles.cameraBottomBar}>
-              <TouchableOpacity style={styles.secondaryActionBtn} onPress={scanFromLibrary} disabled={scanning}>
-                <Text style={styles.secondaryActionText}>Từ thư viện</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.captureBtn} onPress={captureFromCamera} disabled={scanning}>
-                <Camera color={Colors.bg} size={22} strokeWidth={2.2} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showReviewModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowReviewModal(false)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setShowReviewModal(false)} />
-        <View style={styles.sheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Kiểm tra trước khi lưu</Text>
-            <TouchableOpacity
-              onPress={() => {
-                setShowReviewModal(false);
-                setCapturedImageUri(null);
-                setScanDrafts([]);
-              }}
-            >
-              <X color={Colors.textSecondary} size={20} />
-            </TouchableOpacity>
-          </View>
-
-          {capturedImageUri ? (
-            <Image source={{ uri: capturedImageUri }} style={styles.reviewImage} />
-          ) : null}
-
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.reviewHint}>
-              Bạn có thể sửa trực tiếp giá trị, đơn vị, hoặc bỏ qua từng chỉ số trước khi lưu.
-            </Text>
-
-            {scanDrafts.map((draft, index) => (
-              <View key={`${draft.metricKey}-${index}`} style={styles.reviewRow}>
-                <TouchableOpacity
-                  style={[styles.reviewToggle, draft.enabled && styles.reviewToggleActive]}
-                  onPress={() => updateScanDraft(index, { enabled: !draft.enabled })}
-                >
-                  {draft.enabled ? <Check color={Colors.bg} size={14} /> : null}
-                </TouchableOpacity>
-                <View style={styles.reviewContent}>
-                  <View style={styles.reviewHeaderRow}>
-                    <Text style={styles.reviewLabel}>{draft.label}</Text>
-                    <TouchableOpacity onPress={() => removeScanDraft(index)}>
-                      <Trash2 color={Colors.textMuted} size={16} />
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.reviewInputRow}>
-                    <TextInput
-                      style={[styles.input, styles.reviewInput]}
-                      keyboardType="decimal-pad"
-                      value={draft.editableValue}
-                      onChangeText={(value) => updateScanDraft(index, { editableValue: value })}
-                      placeholderTextColor={Colors.textMuted}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.reviewUnitInput]}
-                      value={draft.editableUnit}
-                      onChangeText={(unit) => updateScanDraft(index, { editableUnit: unit })}
-                      placeholderTextColor={Colors.textMuted}
-                    />
-                  </View>
-                  <Text style={styles.reviewMeta}>
-                    {draft.confidence === 'high' ? 'Độ tin cậy cao' : 'Độ tin cậy trung bình'}
-                  </Text>
-                </View>
-              </View>
-            ))}
-
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-            <TouchableOpacity style={styles.primaryBtn} onPress={saveScannedMeasurements} disabled={saving}>
-              <Text style={styles.primaryBtnText}>{saving ? 'Đang lưu...' : 'Lưu các chỉ số đã chọn'}</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={saveInBodyMetrics} disabled={saving}>
+              <Text style={styles.primaryBtnText}>{saving ? 'Đang lưu...' : 'Lưu chỉ số InBody'}</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -839,6 +703,28 @@ export default function BodyMetricsScreen() {
                     onPress={() => setGoalForm((current) => ({ ...current, muscleGroupId: group.id }))}
                   >
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{group.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.label}>Metric cho goal</Text>
+            <View style={styles.chipWrap}>
+              {METRIC_OPTIONS.slice(0, 7).map((metric) => {
+                const active = goalForm.metricKey === metric.key;
+                return (
+                  <TouchableOpacity
+                    key={metric.key}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() =>
+                      setGoalForm((current) => ({
+                        ...current,
+                        metricKey: metric.key,
+                        unit: metric.unit || current.unit,
+                      }))
+                    }
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{metric.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -887,7 +773,7 @@ export default function BodyMetricsScreen() {
               style={[styles.input, styles.noteInput]}
               value={goalForm.note}
               onChangeText={(note) => setGoalForm((current) => ({ ...current, note }))}
-              placeholder="VD: Tăng volume tay trước trong 4 tuần tới"
+              placeholder="VD: tăng volume tay trước trong 4 tuần tới"
               placeholderTextColor={Colors.textMuted}
               multiline
             />
@@ -927,9 +813,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  headerBtnScan: {
-    backgroundColor: Colors.accentDim,
-  },
   headerBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 13 },
   headerBtnGhostText: { color: Colors.accent },
   statusCard: {
@@ -950,103 +833,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   errorCardText: { color: Colors.error, fontSize: 12, fontWeight: '600' },
-  cameraModalContainer: { flex: 1, backgroundColor: Colors.bg },
-  cameraPreview: { flex: 1 },
-  cameraOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
-    padding: 20,
-  },
-  cameraTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cameraIconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cameraIconBtnSpacer: { width: 42, height: 42 },
-  cameraTitle: { color: Colors.bg, fontSize: 16, fontWeight: '700' },
-  cameraGuideCard: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 16,
-    padding: 16,
-  },
-  cameraGuideText: { color: Colors.text, fontSize: 13, lineHeight: 19 },
-  cameraBottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  secondaryActionBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  secondaryActionText: { color: Colors.text, fontWeight: '700', fontSize: 13 },
-  captureBtn: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: 16,
-    marginBottom: 14,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  reviewHint: { fontSize: 12, color: Colors.textMuted, lineHeight: 18, marginBottom: 14 },
-  reviewRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  reviewToggle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-    marginTop: 4,
-  },
-  reviewToggleActive: {
-    backgroundColor: Colors.accent,
-    borderColor: Colors.accent,
-  },
-  reviewContent: { flex: 1 },
-  reviewHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  reviewLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  reviewInputRow: { flexDirection: 'row', gap: 10 },
-  reviewInput: { flex: 1, marginBottom: 0 },
-  reviewUnitInput: { width: 90, marginBottom: 0 },
-  reviewMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 8 },
   overviewGrid: {
     paddingHorizontal: 20,
     gap: 10,
@@ -1132,31 +918,6 @@ const styles = StyleSheet.create({
   priorityInfo: { flex: 1 },
   priorityTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 2 },
   priorityText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
-  goalCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 10,
-  },
-  goalHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
-  goalTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  goalSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 4 },
-  goalDateWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  goalDate: { fontSize: 11, color: Colors.textMuted },
-  goalValuesRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  goalCurrent: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  goalArrow: { fontSize: 16, color: Colors.textMuted },
-  goalTarget: { fontSize: 18, fontWeight: '700', color: Colors.accent },
-  goalTrack: {
-    height: 8,
-    backgroundColor: Colors.border,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  goalFill: { height: '100%', borderRadius: 999 },
-  goalHint: { fontSize: 11, color: Colors.textMuted, marginTop: 8 },
   historyCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -1180,7 +941,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: 36,
-    maxHeight: '80%',
+    maxHeight: '85%',
   },
   sheetHandle: {
     width: 36,
@@ -1197,6 +958,21 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  formSectionTitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '700',
+    marginBottom: 8,
+    marginTop: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  formField: { marginBottom: 12 },
+  fieldLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 6, fontWeight: '600' },
+  fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  fieldUnit: { color: Colors.textMuted, fontSize: 12, fontWeight: '600', minWidth: 48 },
+  formInput: { flex: 1, marginBottom: 0 },
+  segmentGrid: { marginBottom: 6 },
   label: {
     fontSize: 11,
     color: Colors.textMuted,
