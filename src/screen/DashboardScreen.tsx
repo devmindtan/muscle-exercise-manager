@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,60 @@ function getMonthRange() {
 
 const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
+type ProgressTab = 'completed' | 'pending' | 'over';
+
+function getProgressState(stat: WeekStat): ProgressTab {
+  if (stat.targetSetsPerWeek > 0 && stat.weekly_sets > stat.targetSetsPerWeek) {
+    return 'over';
+  }
+  if (stat.targetSetsPerWeek > 0 && stat.weekly_sets === stat.targetSetsPerWeek) {
+    return 'completed';
+  }
+  return 'pending';
+}
+
+function getProgressCopy(stat: WeekStat) {
+  const status = getProgressState(stat);
+  const remaining = Math.max(stat.targetSetsPerWeek - stat.weekly_sets, 0);
+  const exceeded = Math.max(stat.weekly_sets - stat.targetSetsPerWeek, 0);
+  const progressPercent =
+    stat.targetSetsPerWeek > 0
+      ? Math.round((stat.weekly_sets / stat.targetSetsPerWeek) * 100)
+      : 0;
+
+  if (status === 'over') {
+    return {
+      status,
+      badgeLabel: 'Vượt',
+      badgeStyle: styles.statusOver,
+      badgeTextStyle: styles.statusOverText,
+      helperText: `Vượt ${exceeded} sets so với mục tiêu tuần`,
+      accentColor: Colors.success,
+      progressText: `${progressPercent}%`,
+    };
+  }
+  if (status === 'completed') {
+    return {
+      status,
+      badgeLabel: 'Hoàn thành',
+      badgeStyle: styles.statusCompleted,
+      badgeTextStyle: styles.statusCompletedText,
+      helperText: 'Đã chạm đúng mục tiêu tuần',
+      accentColor: Colors.accent,
+      progressText: `${progressPercent}%`,
+    };
+  }
+  return {
+    status,
+    badgeLabel: 'Chưa đủ',
+    badgeStyle: styles.statusPending,
+    badgeTextStyle: styles.statusPendingText,
+    helperText: `Còn ${remaining} sets để đạt mục tiêu`,
+    accentColor: Colors.accent,
+    progressText: `${progressPercent}%`,
+  };
+}
+
 function ProgressBar({
   value,
   color,
@@ -65,6 +119,30 @@ function ProgressBar({
   );
 }
 
+// Segmented goal bar in summary card
+function GoalSegmentBar({
+  completed,
+  over,
+  total,
+}: {
+  completed: number;
+  over: number;
+  total: number;
+}) {
+  const pctDone = total > 0 ? (completed / total) * 100 : 0;
+  const pctOver = total > 0 ? (over / total) * 100 : 0;
+  return (
+    <View style={styles.segmentTrack}>
+      {pctDone > 0 && (
+        <View style={[styles.segmentFill, { width: `${pctDone}%`, backgroundColor: Colors.accent }]} />
+      )}
+      {pctOver > 0 && (
+        <View style={[styles.segmentFill, { width: `${pctOver}%`, backgroundColor: Colors.success }]} />
+      )}
+    </View>
+  );
+}
+
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<WeekStat[]>([]);
@@ -73,6 +151,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [progressTab, setProgressTab] = useState<ProgressTab>('pending');
 
   const load = useCallback(async () => {
     try {
@@ -114,12 +193,29 @@ export default function DashboardScreen() {
     setSelectedCategories(updated);
   };
 
-  const filteredStats = selectedCategories.size === 0
-    ? stats
-    : stats.filter(s => {
-        const category = (s.category || 'Khác') as string;
-        return selectedCategories.has(category);
-      });
+  const categoryFilteredStats =
+    selectedCategories.size === 0
+      ? stats
+      : stats.filter((s) => {
+          const category = (s.category || 'Khác') as string;
+          return selectedCategories.has(category);
+        });
+
+  const progressCounts = useMemo(
+    () => ({
+      completed: categoryFilteredStats.filter((s) => getProgressState(s) === 'completed').length,
+      pending: categoryFilteredStats.filter((s) => getProgressState(s) === 'pending').length,
+      over: categoryFilteredStats.filter((s) => getProgressState(s) === 'over').length,
+    }),
+    [categoryFilteredStats],
+  );
+
+  const filteredStats = categoryFilteredStats.filter((s) => getProgressState(s) === progressTab);
+
+  const monthlyVolumeLabel =
+    monthlyVolume >= 1000
+      ? `${(monthlyVolume / 1000).toFixed(1)} tấn`
+      : `${Math.round(monthlyVolume).toLocaleString('vi-VN')} kg`;
 
   if (loading) {
     return (
@@ -142,7 +238,7 @@ export default function DashboardScreen() {
           />
         }
       >
-        {/* Header */}
+        {/* ── Header (giữ nguyên bản gốc) ── */}
         <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
           <View style={styles.headerRow}>
             <View>
@@ -153,40 +249,70 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Summary card */}
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <TrendingUp color={Colors.accent} size={20} strokeWidth={2} />
-            <Text style={styles.summaryLabel}>Tổng sets tuần này</Text>
+        {/* ── 2-col stat grid: sets + volume ── */}
+        <View style={styles.statGrid}>
+          <View style={styles.statCard}>
+            <View style={styles.statLabelRow}>
+              <TrendingUp color={Colors.accent} size={14} strokeWidth={2} />
+              <Text style={styles.statLabel}>Sets tuần này</Text>
+            </View>
+            <Text style={[styles.statValue, { color: Colors.accent }]}>{totalSets}</Text>
+            <Text style={styles.statHint}>
+              {stats.filter((s) => getProgressState(s) !== 'pending').length}/{stats.length} nhóm cơ
+            </Text>
           </View>
-          <Text style={styles.summaryNumber}>{totalSets}</Text>
-          <Text style={styles.summaryHint}>
-            {stats.filter((s) => s.progress >= 1).length}/{stats.length} nhóm cơ
-            đạt mục tiêu
-          </Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statLabelRow}>
+              <Dumbbell color={Colors.textSecondary} size={14} strokeWidth={2} />
+              <Text style={styles.statLabel}>Khối lượng tháng</Text>
+            </View>
+            <Text style={styles.statValue}>{monthlyVolumeLabel}</Text>
+            <Text style={styles.statHint}>sets × reps × kg</Text>
+          </View>
         </View>
 
-        {/* Monthly volume card */}
-        <View style={styles.volumeCard}>
-          <View style={styles.summaryRow}>
-            <Dumbbell color={Colors.textSecondary} size={16} strokeWidth={2} />
-            <Text style={styles.volumeLabel}>Tổng khối lượng tháng này</Text>
+        {/* ── Goal progress summary với segmented bar ── */}
+        <View style={styles.goalCard}>
+          <View style={styles.goalHeader}>
+            <Text style={styles.goalTitle}>Mục tiêu tuần</Text>
+            <Text style={styles.goalRatio}>
+              {progressCounts.completed + progressCounts.over}/{stats.length} nhóm cơ
+            </Text>
           </View>
-          <Text style={styles.volumeNumber}>
-            {monthlyVolume >= 1000
-              ? `${(monthlyVolume / 1000).toFixed(1)} tấn`
-              : `${Math.round(monthlyVolume).toLocaleString('vi-VN')} kg`}
-          </Text>
-          <Text style={styles.summaryHint}>sets × reps × trọng lượng (kg)</Text>
+
+          <GoalSegmentBar
+            completed={progressCounts.completed}
+            over={progressCounts.over}
+            total={stats.length}
+          />
+
+          <View style={styles.goalChipRow}>
+            <View style={[styles.goalChip, styles.statusCompleted]}>
+              <Text style={[styles.goalChipText, styles.statusCompletedText]}>
+                Hoàn thành {progressCounts.completed}
+              </Text>
+            </View>
+            <View style={[styles.goalChip, styles.statusPending]}>
+              <Text style={[styles.goalChipText, styles.statusPendingText]}>
+                Chưa {progressCounts.pending}
+              </Text>
+            </View>
+            <View style={[styles.goalChip, styles.statusOver]}>
+              <Text style={[styles.goalChipText, styles.statusOverText]}>
+                Vượt {progressCounts.over}
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Category filter badges */}
+        {/* ── Category filter badges ── */}
         {stats.length > 0 && (
           <View style={styles.filterSection}>
             <View style={styles.filterWrap}>
               {CATEGORIES.map((cat) => {
                 const isSelected = selectedCategories.has(cat);
-                const count = stats.filter(s => (s.category || 'Khác') === cat).length;
+                const count = stats.filter((s) => (s.category || 'Khác') === cat).length;
                 return (
                   <TouchableOpacity
                     key={cat}
@@ -205,7 +331,7 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Muscle group list */}
+        {/* ── Muscle group list ── */}
         {stats.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>Chưa có nhóm cơ nào</Text>
@@ -217,68 +343,109 @@ export default function DashboardScreen() {
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>Không có nhóm cơ nào</Text>
             <Text style={styles.emptyText}>
-              Không có nhóm cơ nào trong danh mục được chọn
+              {progressTab === 'completed'
+                ? 'Chưa có nhóm cơ nào hoàn thành đúng mục tiêu trong bộ lọc hiện tại'
+                : progressTab === 'over'
+                  ? 'Chưa có nhóm cơ nào vượt mục tiêu trong bộ lọc hiện tại'
+                  : 'Tất cả nhóm cơ trong bộ lọc hiện tại đã đạt hoặc vượt mục tiêu'}
             </Text>
           </View>
         ) : (
           <>
             <Text style={styles.sectionTitle}>Tiến độ nhóm cơ ({filteredStats.length})</Text>
-            {filteredStats.map((s) => (
-              <TouchableOpacity
-                key={s.id}
-                style={styles.muscleCard}
-                onPress={() => router.push(`/muscles/${s.id}`)}
-                activeOpacity={0.75}
-              >
-                <View style={styles.muscleRow}>
-                  <View style={[styles.dot, { backgroundColor: s.color }]} />
-                  <View style={styles.muscleInfo}>
-                    <Text style={styles.muscleName}>{s.name}
-                      <Text style={styles.exerciseCount}>
-                      {" "} - {s.exerciseCount} bài tập
-                      </Text>
+
+            {/* Progress tabs */}
+            <View style={styles.progressTabs}>
+              {(
+                [
+                  { key: 'completed', label: 'Hoàn thành', count: progressCounts.completed },
+                  { key: 'pending', label: 'Chưa', count: progressCounts.pending },
+                  { key: 'over', label: 'Vượt', count: progressCounts.over },
+                ] as const
+              ).map((tab) => {
+                const isActive = progressTab === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    style={[styles.progressTab, isActive && styles.progressTabActive]}
+                    onPress={() => setProgressTab(tab.key)}
+                  >
+                    <Text
+                      style={[styles.progressTabText, isActive && styles.progressTabTextActive]}
+                    >
+                      {tab.label}
                     </Text>
-                    
-                    <View style={styles.setsRow}>
+                    <View
+                      style={[
+                        styles.progressTabBadge,
+                        isActive && styles.progressTabBadgeActive,
+                      ]}
+                    >
                       <Text
                         style={[
-                          styles.setsActual,
-                          {
-                            color:
-                              s.progress >= 1 ? Colors.success : Colors.accent,
-                          },
+                          styles.progressTabBadgeText,
+                          isActive && styles.progressTabBadgeTextActive,
                         ]}
                       >
-                        {s.weekly_sets}
-                      </Text>
-                      <Text style={styles.setsSlash}> / </Text>
-                      <Text style={styles.setsTarget}>
-                        {s.targetSetsPerWeek} sets
+                        {tab.count}
                       </Text>
                     </View>
-                    
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Muscle cards */}
+            {filteredStats.map((s) => {
+              const progressCopy = getProgressCopy(s);
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  style={styles.muscleCard}
+                  onPress={() => router.push(`/muscles/${s.id}`)}
+                  activeOpacity={0.75}
+                >
+                  {/* Row 1: dot + name + exercise count + badge + chevron */}
+                  <View style={styles.muscleRow}>
+                    <View style={[styles.dot, { backgroundColor: s.color }]} />
+                    <View style={styles.muscleInfo}>
+                      <View style={styles.muscleNameRow}>
+                        <Text style={styles.muscleName}>{s.name}</Text>
+                        <Text style={styles.exerciseCount}> · {s.exerciseCount} bài</Text>
+                      </View>
+                    </View>
+                    <View style={[styles.statusChip, progressCopy.badgeStyle]}>
+                      <Text style={[styles.statusChipText, progressCopy.badgeTextStyle]}>
+                        {progressCopy.badgeLabel}
+                      </Text>
+                    </View>
+                    <ChevronRight color={Colors.textMuted} size={16} strokeWidth={1.8} />
                   </View>
-                  <ChevronRight
-                    color={Colors.textMuted}
-                    size={16}
-                    strokeWidth={1.8}
+
+                  {/* Row 2: sets actual / target */}
+                  <View style={styles.setsRow}>
+                    <Text style={[styles.setsActual, { color: progressCopy.accentColor }]}>
+                      {s.weekly_sets}
+                    </Text>
+                    <Text style={styles.setsSlash}> / </Text>
+                    <Text style={styles.setsTarget}>{s.targetSetsPerWeek} sets</Text>
+                  </View>
+
+                  {/* Progress bar */}
+                  <ProgressBar
+                    value={s.weekly_sets}
+                    target={s.targetSetsPerWeek}
+                    color={progressCopy.accentColor || s.color || Colors.accent}
                   />
-                </View>
-                <ProgressBar
-                  value={s.weekly_sets}
-                  target={s.targetSetsPerWeek}
-                  color={s.color || Colors.accent}
-                />
-                {s.targetSetsPerWeek > s.weekly_sets && (
-                  <Text style={styles.remaining}>
-                    Còn {s.targetSetsPerWeek - s.weekly_sets} sets
-                  </Text>
-                )}
-                {s.progress >= 1 && (
-                  <Text style={styles.done}>Đã đạt mục tiêu tuần</Text>
-                )}
-              </TouchableOpacity>
-            ))}
+
+                  {/* Row 3: helper text + percent */}
+                  <View style={styles.progressMetaRow}>
+                    <Text style={styles.progressHelper}>{progressCopy.helperText}</Text>
+                    <Text style={styles.progressPercent}>{progressCopy.progressText}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </>
         )}
       </ScrollView>
@@ -293,6 +460,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 32 },
 
+  // ── Header (giữ nguyên) ──
   header: { paddingHorizontal: 20, paddingBottom: 16 },
   headerRow: {
     flexDirection: 'row',
@@ -307,137 +475,80 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
 
-  summaryCard: {
+  // ── 2-col stat grid ──
+  statGrid: {
+    flexDirection: 'row',
     marginHorizontal: 20,
+    gap: 12,
+    marginBottom: 14,
+  },
+  statCard: {
+    flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 24,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-  summaryNumber: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: Colors.accent,
-    lineHeight: 52,
-  },
-  summaryHint: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
-
-  volumeCard: {
-    marginHorizontal: 20,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.border,
-    marginBottom: 24,
   },
-  volumeLabel: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '500',
+  statLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
   },
-  volumeNumber: {
+  statLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  statValue: {
     fontSize: 32,
     fontWeight: '800',
     color: Colors.text,
     lineHeight: 36,
-    marginTop: 4,
   },
+  statHint: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
 
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-
-  muscleCard: {
+  // ── Goal progress card ──
+  goalCard: {
     marginHorizontal: 20,
     backgroundColor: Colors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.border,
-    marginBottom: 10,
-  },
-  muscleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
-  muscleInfo: { flex: 1 },
-  muscleName: { fontSize: 15, fontWeight: '600', color: Colors.text },
-  setsRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 2 },
-  setsActual: { fontSize: 20, fontWeight: '700' },
-  setsSlash: { fontSize: 14, color: Colors.textMuted },
-  setsTarget: { fontSize: 13, color: Colors.textMuted },
-  exerciseCount: {
-    marginTop: 4,
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: '500',
-  },
-
-  progressTrack: {
-    height: 4,
-    backgroundColor: Colors.border,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', borderRadius: 2 },
-
-  remaining: { fontSize: 11, color: Colors.textMuted, marginTop: 8 },
-  done: {
-    fontSize: 11,
-    color: Colors.success,
-    marginTop: 8,
-    fontWeight: '500',
-  },
-
-  emptyBox: {
-    margin: 20,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  filterSection: {
-    paddingHorizontal: 20,
     marginBottom: 20,
   },
-  filterWrap: {
+  goalHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
+  goalTitle: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  goalRatio: { fontSize: 12, color: Colors.textMuted },
+
+  segmentTrack: {
+    height: 6,
+    backgroundColor: Colors.border,
+    borderRadius: 3,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  segmentFill: { height: '100%' },
+
+  goalChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  goalChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  goalChipText: { fontSize: 11, fontWeight: '700' },
+
+  // ── Category filter ──
+  filterSection: { paddingHorizontal: 20, marginBottom: 20 },
+  filterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   filterChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -450,13 +561,125 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent,
     borderColor: Colors.accent,
   },
-  filterChipText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Colors.textSecondary,
+  filterChipText: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary },
+  filterChipTextActive: { color: Colors.bg, fontWeight: '700' },
+
+  // ── Section title + tabs ──
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginHorizontal: 20,
+    marginBottom: 12,
   },
-  filterChipTextActive: {
-    color: Colors.bg,
-    fontWeight: '700',
+  progressTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  progressTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  progressTabActive: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  progressTabText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  progressTabTextActive: { color: Colors.accent },
+  progressTabBadge: {
+    minWidth: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: Colors.border,
+    alignItems: 'center',
+  },
+  progressTabBadgeActive: { backgroundColor: Colors.accent + '20' },
+  progressTabBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  progressTabBadgeTextActive: { color: Colors.accent },
+
+  // ── Muscle cards ──
+  muscleCard: {
+    marginHorizontal: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 10,
+  },
+  muscleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  dot: { width: 9, height: 9, borderRadius: 5 },
+  muscleInfo: { flex: 1 },
+  muscleNameRow: { flexDirection: 'row', alignItems: 'baseline' },
+  muscleName: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  exerciseCount: { fontSize: 12, color: Colors.textMuted, fontWeight: '400' },
+
+  setsRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 8 },
+  setsActual: { fontSize: 22, fontWeight: '700' },
+  setsSlash: { fontSize: 14, color: Colors.textMuted },
+  setsTarget: { fontSize: 13, color: Colors.textMuted },
+
+  progressTrack: {
+    height: 3,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  progressFill: { height: '100%', borderRadius: 2 },
+
+  progressMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  progressHelper: { fontSize: 11, color: Colors.textMuted, flex: 1 },
+  progressPercent: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
+
+  // ── Status chips ──
+  statusChip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+  statusChipText: { fontSize: 11, fontWeight: '700' },
+  statusCompleted: { backgroundColor: Colors.accent + '20' },
+  statusCompletedText: { color: Colors.accent },
+  statusPending: { backgroundColor: Colors.textMuted + '1a' },
+  statusPendingText: { color: Colors.textSecondary },
+  statusOver: { backgroundColor: Colors.success + '20' },
+  statusOverText: { color: Colors.success },
+
+  // ── Empty states ──
+  emptyBox: {
+    margin: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.text, marginBottom: 8 },
+  emptyText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

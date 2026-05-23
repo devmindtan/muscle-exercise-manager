@@ -314,19 +314,21 @@ export interface RecentLogRow {
   exercise_name: string;
 }
 
-export async function getRecentLogsWithExerciseNames(limit: number): Promise<RecentLogRow[]> {
+export async function getRecentLogsWithExerciseNames(limit?: number): Promise<RecentLogRow[]> {
   const database = await getDatabase();
-  return database.getAllAsync<RecentLogRow>(
-    `SELECT wl.id, wl.exercise_id, wl.muscle_group_id, wl.sets, wl.reps,
+  const baseQuery = `SELECT wl.id, wl.exercise_id, wl.muscle_group_id, wl.sets, wl.reps,
             wl.weight, wl.note, wl.logged_at,
             COALESCE(e.name, 'Unknown') AS exercise_name
      FROM workout_logs wl
      LEFT JOIN exercises e ON e.id = wl.exercise_id
      WHERE wl.deleted = 0
-     ORDER BY wl.logged_at DESC
-     LIMIT ?`,
-    [limit]
-  );
+     ORDER BY wl.logged_at DESC`;
+
+  if (typeof limit === 'number') {
+    return database.getAllAsync<RecentLogRow>(`${baseQuery}\n     LIMIT ?`, [limit]);
+  }
+
+  return database.getAllAsync<RecentLogRow>(baseQuery);
 }
 
 // Count of workout_logs per muscle_group_id (all-time, non-deleted)
