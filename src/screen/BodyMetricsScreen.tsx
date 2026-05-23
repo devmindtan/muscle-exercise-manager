@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -13,7 +14,18 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Activity, Calendar, Plus, ScanText, Target, X } from 'lucide-react-native';
+import {
+  Activity,
+  Camera,
+  Calendar,
+  Check,
+  Plus,
+  ScanText,
+  Target,
+  Trash2,
+  X,
+} from 'lucide-react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import {
   createBodyMeasurement,
@@ -24,7 +36,14 @@ import {
 } from '@/src/lib/repository';
 import { scanInBodySheetFromImage } from '@/src/services/bodyMetricsScanner';
 import { Colors } from '@/src/constants/colors';
+import type { ScannedMetric } from '@/src/services/bodyMetricsScanner';
 import type { MuscleGoal, BodyMeasurement, MuscleGroup } from '@/src/types/database';
+
+type ScanMetricDraft = ScannedMetric & {
+  enabled: boolean;
+  editableValue: string;
+  editableUnit: string;
+};
 
 const METRIC_OPTIONS = [
   { key: 'weight', label: 'Cân nặng', unit: 'kg' },
@@ -95,12 +114,18 @@ export default function BodyMetricsScreen() {
   const [selectedMetric, setSelectedMetric] = useState<string>('weight');
   const [showMeasurementModal, setShowMeasurementModal] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [capturedImageUri, setCapturedImageUri] = useState<string | null>(null);
   const [measurementForm, setMeasurementForm] = useState(DEFAULT_MEASUREMENT_FORM);
   const [goalForm, setGoalForm] = useState(DEFAULT_GOAL_FORM);
+  const [scanDrafts, setScanDrafts] = useState<ScanMetricDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const cameraRef = useRef<CameraView | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -243,14 +268,75 @@ export default function BodyMetricsScreen() {
     }
   };
 
-  const scanAndAutofillInBody = async () => {
+  const openCameraScan = async () => {
+    setError('');
+    setStatusMessage('');
+
+    const granted = cameraPermission?.granted || (await requestCameraPermission()).granted;
+    if (!granted) {
+      setError('Cần quyền camera để quét trực tiếp tờ InBody.');
+      return;
+    }
+
+    setShowCameraModal(true);
+  };
+
+  const prepareScanReview = async (imageUri: string) => {
+    const scanResult = await scanInBodySheetFromImage(imageUri);
+
+    if (scanResult.metrics.length === 0) {
+      throw new Error('Không nhận diện được chỉ số quan trọng từ ảnh. Hãy thử ảnh rõ hơn.');
+    }
+
+    const drafts: ScanMetricDraft[] = scanResult.metrics.map((metric) => ({
+      ...metric,
+      enabled: true,
+      editableValue: String(metric.value),
+      editableUnit: metric.unit,
+    }));
+
+    setCapturedImageUri(imageUri);
+    setScanDrafts(drafts);
+    setSelectedMetric(drafts[0].metricKey);
+    setShowReviewModal(true);
+    setStatusMessage(`Đã nhận diện ${drafts.length} chỉ số. Kiểm tra lại trước khi lưu.`);
+  };
+
+  const captureFromCamera = async () => {
+    if (!cameraRef.current) return;
+
+    setScanning(true);
+    setError('');
+    setStatusMessage('');
+
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        skipProcessing: true,
+      });
+
+      if (!photo?.uri) {
+        throw new Error('Không thể chụp ảnh. Vui lòng thử lại.');
+      }
+
+      setShowCameraModal(false);
+      await prepareScanReview(photo.uri);
+    } catch (scanError: any) {
+      setError(scanError?.message || 'Quét ảnh thất bại. Vui lòng thử lại hoặc nhập tay.');
+      Alert.alert('Quét thất bại', scanError?.message || 'Vui lòng thử lại hoặc nhập tay.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const scanFromLibrary = async () => {
     setError('');
     setStatusMessage('');
 
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        setError('Cần quyền truy cập thư viện ảnh để quét tờ chỉ số.');
+        setError('Cần quyền truy cập thư viện ảnh để chọn ảnh quét dự phòng.');
         return;
       }
 
@@ -264,34 +350,65 @@ export default function BodyMetricsScreen() {
       }
 
       setScanning(true);
-
-      const scanResult = await scanInBodySheetFromImage(picked.assets[0].uri);
-
-      if (scanResult.metrics.length === 0) {
-        setError('Không nhận diện được chỉ số quan trọng từ ảnh. Hãy thử ảnh rõ hơn.');
-        return;
-      }
-
-      for (const metric of scanResult.metrics) {
-        await createBodyMeasurement({
-          metricKey: metric.metricKey,
-          value: metric.value,
-          unit: metric.unit,
-          note: `Auto scan InBody: ${metric.label}`,
-          source: 'scan_inbody',
-        });
-      }
-
-      setSelectedMetric(scanResult.metrics[0].metricKey);
-      setStatusMessage(
-        `Đã tự điền ${scanResult.metrics.length} chỉ số quan trọng từ ảnh InBody.`
-      );
-      await load();
+      setShowCameraModal(false);
+      await prepareScanReview(picked.assets[0].uri);
     } catch (scanError: any) {
       setError(scanError?.message || 'Quét ảnh thất bại. Vui lòng thử lại hoặc nhập tay.');
       Alert.alert('Quét thất bại', scanError?.message || 'Vui lòng thử lại hoặc nhập tay.');
     } finally {
       setScanning(false);
+    }
+  };
+
+  const updateScanDraft = (index: number, patch: Partial<ScanMetricDraft>) => {
+    setScanDrafts((current) =>
+      current.map((draft, currentIndex) =>
+        currentIndex === index ? { ...draft, ...patch } : draft,
+      ),
+    );
+  };
+
+  const removeScanDraft = (index: number) => {
+    setScanDrafts((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const saveScannedMeasurements = async () => {
+    const enabledDrafts = scanDrafts.filter((draft) => draft.enabled);
+    if (enabledDrafts.length === 0) {
+      setError('Hãy giữ lại ít nhất một chỉ số để lưu.');
+      return;
+    }
+
+    for (const draft of enabledDrafts) {
+      if (!Number.isFinite(Number(draft.editableValue))) {
+        setError(`Giá trị không hợp lệ ở ${draft.label}`);
+        return;
+      }
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      for (const draft of enabledDrafts) {
+        await createBodyMeasurement({
+          metricKey: draft.metricKey,
+          value: Number(draft.editableValue),
+          unit: draft.editableUnit.trim() || draft.unit || 'đv',
+          note: `Auto scan InBody: ${draft.label}`,
+          source: 'scan_inbody',
+        });
+      }
+
+      setShowReviewModal(false);
+      setCapturedImageUri(null);
+      setScanDrafts([]);
+      setSelectedMetric(enabledDrafts[0].metricKey);
+      setStatusMessage(`Đã lưu ${enabledDrafts.length} chỉ số sau khi quét.`);
+      await load();
+    } catch (saveError: any) {
+      setError(saveError?.message || 'Không thể lưu dữ liệu quét.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -327,7 +444,7 @@ export default function BodyMetricsScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerBtn, styles.headerBtnScan]}
-              onPress={scanAndAutofillInBody}
+              onPress={openCameraScan}
               disabled={scanning || saving}
             >
               <ScanText color={Colors.bg} size={16} strokeWidth={2.2} />
@@ -584,6 +701,118 @@ export default function BodyMetricsScreen() {
       </Modal>
 
       <Modal
+        visible={showCameraModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCameraModal(false)}
+      >
+        <View style={styles.cameraModalContainer}>
+          <CameraView ref={cameraRef} style={styles.cameraPreview} facing="back" />
+          <View style={styles.cameraOverlay}>
+            <View style={styles.cameraTopBar}>
+              <TouchableOpacity style={styles.cameraIconBtn} onPress={() => setShowCameraModal(false)}>
+                <X color={Colors.bg} size={20} />
+              </TouchableOpacity>
+              <Text style={styles.cameraTitle}>Chụp tờ InBody</Text>
+              <View style={styles.cameraIconBtnSpacer} />
+            </View>
+
+            <View style={styles.cameraGuideCard}>
+              <Text style={styles.cameraGuideText}>
+                Căn tờ InBody đầy đủ trong khung, giữ phẳng và đủ sáng để OCR nhận diện chính xác.
+              </Text>
+            </View>
+
+            <View style={styles.cameraBottomBar}>
+              <TouchableOpacity style={styles.secondaryActionBtn} onPress={scanFromLibrary} disabled={scanning}>
+                <Text style={styles.secondaryActionText}>Từ thư viện</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.captureBtn} onPress={captureFromCamera} disabled={scanning}>
+                <Camera color={Colors.bg} size={22} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showReviewModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setShowReviewModal(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Kiểm tra trước khi lưu</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setShowReviewModal(false);
+                setCapturedImageUri(null);
+                setScanDrafts([]);
+              }}
+            >
+              <X color={Colors.textSecondary} size={20} />
+            </TouchableOpacity>
+          </View>
+
+          {capturedImageUri ? (
+            <Image source={{ uri: capturedImageUri }} style={styles.reviewImage} />
+          ) : null}
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.reviewHint}>
+              Bạn có thể sửa trực tiếp giá trị, đơn vị, hoặc bỏ qua từng chỉ số trước khi lưu.
+            </Text>
+
+            {scanDrafts.map((draft, index) => (
+              <View key={`${draft.metricKey}-${index}`} style={styles.reviewRow}>
+                <TouchableOpacity
+                  style={[styles.reviewToggle, draft.enabled && styles.reviewToggleActive]}
+                  onPress={() => updateScanDraft(index, { enabled: !draft.enabled })}
+                >
+                  {draft.enabled ? <Check color={Colors.bg} size={14} /> : null}
+                </TouchableOpacity>
+                <View style={styles.reviewContent}>
+                  <View style={styles.reviewHeaderRow}>
+                    <Text style={styles.reviewLabel}>{draft.label}</Text>
+                    <TouchableOpacity onPress={() => removeScanDraft(index)}>
+                      <Trash2 color={Colors.textMuted} size={16} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.reviewInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.reviewInput]}
+                      keyboardType="decimal-pad"
+                      value={draft.editableValue}
+                      onChangeText={(value) => updateScanDraft(index, { editableValue: value })}
+                      placeholderTextColor={Colors.textMuted}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.reviewUnitInput]}
+                      value={draft.editableUnit}
+                      onChangeText={(unit) => updateScanDraft(index, { editableUnit: unit })}
+                      placeholderTextColor={Colors.textMuted}
+                    />
+                  </View>
+                  <Text style={styles.reviewMeta}>
+                    {draft.confidence === 'high' ? 'Độ tin cậy cao' : 'Độ tin cậy trung bình'}
+                  </Text>
+                </View>
+              </View>
+            ))}
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <TouchableOpacity style={styles.primaryBtn} onPress={saveScannedMeasurements} disabled={saving}>
+              <Text style={styles.primaryBtnText}>{saving ? 'Đang lưu...' : 'Lưu các chỉ số đã chọn'}</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal
         visible={showGoalModal}
         transparent
         animationType="slide"
@@ -721,6 +950,103 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   errorCardText: { color: Colors.error, fontSize: 12, fontWeight: '600' },
+  cameraModalContainer: { flex: 1, backgroundColor: Colors.bg },
+  cameraPreview: { flex: 1 },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    padding: 20,
+  },
+  cameraTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cameraIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraIconBtnSpacer: { width: 42, height: 42 },
+  cameraTitle: { color: Colors.bg, fontSize: 16, fontWeight: '700' },
+  cameraGuideCard: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 16,
+    padding: 16,
+  },
+  cameraGuideText: { color: Colors.text, fontSize: 13, lineHeight: 19 },
+  cameraBottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  secondaryActionBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  secondaryActionText: { color: Colors.text, fontWeight: '700', fontSize: 13 },
+  captureBtn: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: Colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    marginBottom: 14,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  reviewHint: { fontSize: 12, color: Colors.textMuted, lineHeight: 18, marginBottom: 14 },
+  reviewRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  reviewToggle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    marginTop: 4,
+  },
+  reviewToggleActive: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  reviewContent: { flex: 1 },
+  reviewHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  reviewLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  reviewInputRow: { flexDirection: 'row', gap: 10 },
+  reviewInput: { flex: 1, marginBottom: 0 },
+  reviewUnitInput: { width: 90, marginBottom: 0 },
+  reviewMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 8 },
   overviewGrid: {
     paddingHorizontal: 20,
     gap: 10,
