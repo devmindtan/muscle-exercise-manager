@@ -3,15 +3,21 @@ import { LayoutDashboard, Dumbbell, ClipboardList, Activity } from 'lucide-react
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/colors';
+import { useAuth } from '@/src/context/AuthContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { user, isAuthenticated } = useAuth();
   const tabBarHeight = 65 + insets.bottom;
+  const tabsKey = isAuthenticated ? `auth-${user?.id || 'unknown'}` : 'guest';
 
   return (
     <Tabs
+      key={tabsKey}
       screenOptions={{
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
         tabBarStyle: [
           styles.tabBar,
           { height: tabBarHeight, paddingBottom: insets.bottom + 4 },
