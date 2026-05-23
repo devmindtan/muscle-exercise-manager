@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Dumbbell, ClipboardList } from 'lucide-react-native';
+import { LayoutDashboard, Dumbbell, ClipboardList, Activity } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/colors';
@@ -37,6 +37,15 @@ export default function TabLayout() {
           title: 'Nhóm cơ',
           tabBarIcon: ({ color, size }) => (
             <Dumbbell color={color} size={size} strokeWidth={1.8} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="metrics"
+        options={{
+          title: 'Chỉ số',
+          tabBarIcon: ({ color, size }) => (
+            <Activity color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />

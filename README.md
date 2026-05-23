@@ -46,9 +46,12 @@ EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL=
 EXPO_PUBLIC_MINIO_BUCKET=muscle-manager
 EXPO_PUBLIC_WEB_CLIENT_ID=
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+EXPO_PUBLIC_OCR_SPACE_API_KEY=
 
 `EXPO_PUBLIC_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` are treated as aliases, and `EXPO_PUBLIC_MINIO_ENDPOINT` and `EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL` are treated as aliases.
 ```
+
+`EXPO_PUBLIC_OCR_SPACE_API_KEY` is required if you want to use the InBody scan autofill feature in the `Chỉ số` tab.
 
 ## Running The Application
 

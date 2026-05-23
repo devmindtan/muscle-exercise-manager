@@ -48,6 +48,25 @@ export interface ExerciseWorkoutInsight {
   history: ExerciseHistoryItem[];
 }
 
+export interface BodyMeasurementInput {
+  metricKey: string;
+  value: number;
+  unit: string;
+  note?: string | null;
+  source?: string | null;
+  measuredAt?: string;
+}
+
+export interface MuscleGoalInput {
+  muscleGroupId: string;
+  metricKey?: string;
+  currentValue?: number | null;
+  targetValue: number;
+  unit: string;
+  targetDate?: string | null;
+  note?: string | null;
+}
+
 // Muscle Groups
 export async function getMuscleGroupsWithWeeklyStats(startDate: string, endDate: string) {
   const localGroups = await LocalDB.getMuscleGroups();
@@ -347,6 +366,55 @@ export async function softDeleteWorkoutLog(id: string) {
 
 export async function getMonthlyVolume(startDate: string, endDate: string): Promise<number> {
   return LocalDB.getMonthlyVolume(startDate, endDate);
+}
+
+export async function getBodyMeasurements(metricKey?: string, limit?: number) {
+  return LocalDB.getBodyMeasurements(metricKey, limit);
+}
+
+export async function createBodyMeasurement(data: BodyMeasurementInput) {
+  const now = new Date().toISOString();
+  const measurement: any = {
+    id: generateUUID(),
+    metric_key: data.metricKey,
+    value: data.value,
+    unit: data.unit,
+    note: data.note ?? null,
+    source: data.source ?? 'manual',
+    measured_at: data.measuredAt || now,
+    created_at: now,
+    updated_at: now,
+    dirty: 1,
+    deleted: 0,
+  };
+
+  await LocalDB.upsertBodyMeasurement(measurement);
+  return measurement;
+}
+
+export async function getMuscleGoals() {
+  return LocalDB.getMuscleGoals();
+}
+
+export async function createMuscleGoal(data: MuscleGoalInput) {
+  const now = new Date().toISOString();
+  const goal: any = {
+    id: generateUUID(),
+    muscle_group_id: data.muscleGroupId,
+    metric_key: data.metricKey || 'muscle_mass',
+    current_value: data.currentValue ?? null,
+    target_value: data.targetValue,
+    unit: data.unit,
+    target_date: data.targetDate ?? null,
+    note: data.note ?? null,
+    created_at: now,
+    updated_at: now,
+    dirty: 1,
+    deleted: 0,
+  };
+
+  await LocalDB.upsertMuscleGoal(goal);
+  return goal;
 }
 
 export async function getRecentLogs(limit = 20) {

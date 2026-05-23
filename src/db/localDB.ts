@@ -21,6 +21,16 @@ export type LocalWorkoutLog = Database['public']['Tables']['workout_logs']['Row'
   deleted?: 0 | 1;
 };
 
+export type LocalBodyMeasurement = Database['public']['Tables']['body_measurements']['Row'] & {
+  dirty?: 0 | 1;
+  deleted?: 0 | 1;
+};
+
+export type LocalMuscleGoal = Database['public']['Tables']['muscle_goals']['Row'] & {
+  dirty?: 0 | 1;
+  deleted?: 0 | 1;
+};
+
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -96,13 +106,46 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       FOREIGN KEY (exercise_id) REFERENCES exercises(id),
       FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
     );
+    CREATE TABLE IF NOT EXISTS body_measurements (
+      id TEXT PRIMARY KEY,
+      metric_key TEXT NOT NULL,
+      value REAL NOT NULL,
+      unit TEXT NOT NULL,
+      note TEXT,
+      source TEXT,
+      measured_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS muscle_goals (
+      id TEXT PRIMARY KEY,
+      muscle_group_id TEXT NOT NULL,
+      metric_key TEXT NOT NULL DEFAULT 'muscle_mass',
+      current_value REAL,
+      target_value REAL NOT NULL,
+      unit TEXT NOT NULL,
+      target_date TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0,
+      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
+    );
     CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_exercise_id ON workout_logs(exercise_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_muscle_group_id ON workout_logs(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_logged_at ON workout_logs(logged_at);
+    CREATE INDEX IF NOT EXISTS idx_body_measurements_metric_key ON body_measurements(metric_key);
+    CREATE INDEX IF NOT EXISTS idx_body_measurements_measured_at ON body_measurements(measured_at);
+    CREATE INDEX IF NOT EXISTS idx_muscle_goals_muscle_group_id ON muscle_goals(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_groups ON muscle_groups(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_exercises ON exercises(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
+    CREATE INDEX IF NOT EXISTS idx_dirty_body_measurements ON body_measurements(dirty) WHERE dirty = 1;
+    CREATE INDEX IF NOT EXISTS idx_dirty_muscle_goals ON muscle_goals(dirty) WHERE dirty = 1;
   `);
   await migrateLegacySchema(database);
 }
@@ -137,6 +180,14 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
 
   await ensureColumn(database, 'workout_logs', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
+
+  await ensureColumn(database, 'body_measurements', 'dirty', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'body_measurements', 'deleted', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'body_measurements', 'source', 'TEXT');
+
+  await ensureColumn(database, 'muscle_goals', 'dirty', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'muscle_goals', 'deleted', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'muscle_goals', 'metric_key', "TEXT DEFAULT 'muscle_mass'");
 }
 
 // Retained for backward-compat: schema is now applied inside getDatabase(),
@@ -473,10 +524,111 @@ export async function markWorkoutLogClean(id: string) {
   await database.runAsync('UPDATE workout_logs SET dirty = 0 WHERE id = ?', [id]);
 }
 
+export async function getBodyMeasurements(metricKey?: string, limit?: number) {
+  const database = await getDatabase();
+  let query = 'SELECT * FROM body_measurements WHERE deleted = 0';
+  const params: (string | number)[] = [];
+
+  if (metricKey) {
+    query += ' AND metric_key = ?';
+    params.push(metricKey);
+  }
+
+  query += ' ORDER BY measured_at DESC';
+
+  if (typeof limit === 'number') {
+    query += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  return database.getAllAsync<LocalBodyMeasurement>(query, params);
+}
+
+export async function upsertBodyMeasurement(measurement: LocalBodyMeasurement) {
+  const database = await getDatabase();
+  const dirty = measurement.dirty ?? 0;
+  const deleted = measurement.deleted ?? 0;
+
+  await database.runAsync(
+    `INSERT INTO body_measurements (id, metric_key, value, unit, note, source, measured_at, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       metric_key = COALESCE(excluded.metric_key, metric_key),
+       value = COALESCE(excluded.value, value),
+       unit = COALESCE(excluded.unit, unit),
+       note = COALESCE(excluded.note, note),
+       source = COALESCE(excluded.source, source),
+       measured_at = COALESCE(excluded.measured_at, measured_at),
+       updated_at = datetime('now'),
+       dirty = COALESCE(excluded.dirty, dirty),
+       deleted = COALESCE(excluded.deleted, deleted)`,
+    [
+      measurement.id,
+      measurement.metric_key,
+      measurement.value,
+      measurement.unit,
+      measurement.note || null,
+      measurement.source || null,
+      measurement.measured_at,
+      measurement.created_at,
+      measurement.updated_at || new Date().toISOString(),
+      dirty,
+      deleted,
+    ]
+  );
+}
+
+export async function getMuscleGoals() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalMuscleGoal>(
+    `SELECT * FROM muscle_goals
+     WHERE deleted = 0
+     ORDER BY COALESCE(target_date, updated_at, created_at) ASC, updated_at DESC`
+  );
+}
+
+export async function upsertMuscleGoal(goal: LocalMuscleGoal) {
+  const database = await getDatabase();
+  const dirty = goal.dirty ?? 0;
+  const deleted = goal.deleted ?? 0;
+
+  await database.runAsync(
+    `INSERT INTO muscle_goals (id, muscle_group_id, metric_key, current_value, target_value, unit, target_date, note, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       muscle_group_id = COALESCE(excluded.muscle_group_id, muscle_group_id),
+       metric_key = COALESCE(excluded.metric_key, metric_key),
+       current_value = COALESCE(excluded.current_value, current_value),
+       target_value = COALESCE(excluded.target_value, target_value),
+       unit = COALESCE(excluded.unit, unit),
+       target_date = COALESCE(excluded.target_date, target_date),
+       note = COALESCE(excluded.note, note),
+       updated_at = datetime('now'),
+       dirty = COALESCE(excluded.dirty, dirty),
+       deleted = COALESCE(excluded.deleted, deleted)`,
+    [
+      goal.id,
+      goal.muscle_group_id,
+      goal.metric_key,
+      goal.current_value ?? null,
+      goal.target_value,
+      goal.unit,
+      goal.target_date || null,
+      goal.note || null,
+      goal.created_at,
+      goal.updated_at || new Date().toISOString(),
+      dirty,
+      deleted,
+    ]
+  );
+}
+
 // Clear all local data (for logout or account switch)
 export async function clearAllLocalData() {
   const database = await getDatabase();
   try {
+    await database.runAsync('DELETE FROM body_measurements');
+    await database.runAsync('DELETE FROM muscle_goals');
     await database.runAsync('DELETE FROM workout_logs');
     await database.runAsync('DELETE FROM exercises');
     await database.runAsync('DELETE FROM muscle_groups');
@@ -488,16 +640,20 @@ export async function clearAllLocalData() {
 
 export async function hasAnyLocalData() {
   const database = await getDatabase();
-  const [groups, exercises, logs] = await Promise.all([
+  const [groups, exercises, logs, measurements, goals] = await Promise.all([
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_groups'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercises'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM workout_logs'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM body_measurements'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_goals'),
   ]);
 
   return (
     (groups?.count ?? 0) > 0 ||
     (exercises?.count ?? 0) > 0 ||
-    (logs?.count ?? 0) > 0
+    (logs?.count ?? 0) > 0 ||
+    (measurements?.count ?? 0) > 0 ||
+    (goals?.count ?? 0) > 0
   );
 }
 
