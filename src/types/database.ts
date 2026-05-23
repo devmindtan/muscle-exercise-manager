@@ -95,6 +95,59 @@ export type Database = {
           },
         ];
       };
+      body_measurements: {
+        Row: BodyMeasurement;
+        Insert: {
+          id?: string;
+          metric_key: string;
+          value: number;
+          unit: string;
+          note?: string | null;
+          source?: string | null;
+          measured_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          metric_key?: string;
+          value?: number;
+          unit?: string;
+          note?: string | null;
+          source?: string | null;
+          measured_at?: string;
+        };
+        Relationships: [];
+      };
+      muscle_goals: {
+        Row: MuscleGoal;
+        Insert: {
+          id?: string;
+          muscle_group_id: string;
+          metric_key?: string;
+          current_value?: number | null;
+          target_value: number;
+          unit: string;
+          target_date?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          metric_key?: string;
+          current_value?: number | null;
+          target_value?: number;
+          unit?: string;
+          target_date?: string | null;
+          note?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'muscle_goals_muscle_group_id_fkey';
+            columns: ['muscle_group_id'];
+            isOneToOne: false;
+            referencedRelation: 'muscle_groups';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -160,4 +213,35 @@ export type MuscleGroupWithStats = MuscleGroup & {
   exercises: Exercise[];
   weekly_sets: number;
   monthly_sets: number;
+};
+
+export type BodyMeasurement = {
+  id: string;
+  metric_key: string;
+  value: number;
+  unit: string;
+  note: string | null;
+  source: string | null;
+  measured_at: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type MuscleGoal = {
+  id: string;
+  muscle_group_id: string;
+  metric_key: string;
+  current_value: number | null;
+  target_value: number;
+  unit: string;
+  target_date: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
 };
