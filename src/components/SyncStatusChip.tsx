@@ -60,7 +60,7 @@ export function SyncStatusChip() {
       break;
     default:
       icon = <Cloud color={Colors.textMuted} size={12} strokeWidth={1.8} />;
-      label = user.email?.split('@')[0] ?? 'Đã đăng nhập';
+      label = user.name ?? 'Đã đăng nhập';
   }
 
   return (
