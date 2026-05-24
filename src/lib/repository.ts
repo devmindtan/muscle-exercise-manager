@@ -67,6 +67,41 @@ export interface BodyMeasurementUpdateInput {
   measuredAt?: string;
 }
 
+function flattenWebBodyMeasurementRows(rows: any[]): any[] {
+  const result: any[] = [];
+
+  for (const row of rows) {
+    const isJsonInBody = row.record_type === 'inbody_json' && row.metrics_json && typeof row.metrics_json === 'object';
+
+    if (!isJsonInBody) {
+      result.push(row);
+      continue;
+    }
+
+    const metrics = row.metrics_json as Record<string, { value?: number; unit?: string }>;
+    for (const [metricKey, metricValue] of Object.entries(metrics)) {
+      if (!metricValue || typeof metricValue !== 'object') continue;
+
+      result.push({
+        id: `${row.id}::${metricKey}`,
+        metric_key: metricKey,
+        value: Number(metricValue.value ?? 0),
+        unit: metricValue.unit || '',
+        note: row.note || null,
+        source: 'manual_inbody',
+        measured_at: row.measured_at,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        deleted_at: row.deleted_at,
+        sync_status: row.sync_status,
+        user_id: row.user_id,
+      });
+    }
+  }
+
+  return result;
+}
+
 export interface MuscleGoalInput {
   muscleGroupId: string;
   metricKey?: string;
@@ -634,16 +669,18 @@ export async function getBodyMeasurements(metricKey?: string, limit?: number) {
       .is('deleted_at', null)
       .order('measured_at', { ascending: false });
 
-    if (metricKey) {
-      query = query.eq('metric_key', metricKey);
-    }
-    if (typeof limit === 'number') {
-      query = query.limit(limit);
-    }
-
     const { data, error } = await query;
     if (error) throw error;
-    return (data || []) as any[];
+
+    let flattened = flattenWebBodyMeasurementRows(data || []);
+    if (metricKey) {
+      flattened = flattened.filter((row) => row.metric_key === metricKey);
+    }
+    if (typeof limit === 'number') {
+      flattened = flattened.slice(0, limit);
+    }
+
+    return flattened;
   }
 
   return LocalDB.getBodyMeasurements(metricKey, limit);
@@ -654,6 +691,90 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
 
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
+    const measuredAt = data.measuredAt || now;
+    const isInBodyMetric = data.source === 'manual_inbody';
+
+    if (isInBodyMetric) {
+      const { data: existingRow, error: findError } = await supabase
+        .from('body_measurements')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('record_type', 'inbody_json')
+        .eq('measured_at', measuredAt)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (findError) throw findError;
+
+      if (existingRow) {
+        const currentJson = ((existingRow as any).metrics_json || {}) as Record<string, { value: number; unit: string }>;
+        const nextJson = {
+          ...currentJson,
+          [data.metricKey]: {
+            value: data.value,
+            unit: data.unit,
+          },
+        };
+
+        const { error: updateError } = await supabase
+          .from('body_measurements')
+          .update({
+            metrics_json: nextJson,
+            note: data.note ?? existingRow.note ?? null,
+            source: 'manual_inbody_json',
+            updated_at: now,
+          } as any)
+          .eq('id', existingRow.id)
+          .eq('user_id', userId);
+
+        if (updateError) throw updateError;
+
+        return {
+          ...existingRow,
+          id: `${existingRow.id}::${data.metricKey}`,
+          metric_key: data.metricKey,
+          value: data.value,
+          unit: data.unit,
+          measured_at: measuredAt,
+          source: 'manual_inbody',
+          note: data.note ?? existingRow.note ?? null,
+        } as any;
+      }
+
+      const insertedRow = {
+        id: generateUUID(),
+        user_id: userId,
+        metric_key: 'inbody_json',
+        value: 0,
+        unit: 'jsonb',
+        note: data.note ?? null,
+        source: 'manual_inbody_json',
+        measured_at: measuredAt,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+        record_type: 'inbody_json',
+        metrics_json: {
+          [data.metricKey]: {
+            value: data.value,
+            unit: data.unit,
+          },
+        },
+      };
+
+      const { error: insertError } = await supabase.from('body_measurements').insert(insertedRow as any);
+      if (insertError) throw insertError;
+
+      return {
+        ...insertedRow,
+        id: `${insertedRow.id}::${data.metricKey}`,
+        metric_key: data.metricKey,
+        value: data.value,
+        unit: data.unit,
+        source: 'manual_inbody',
+      } as any;
+    }
+
     const row = {
       id: generateUUID(),
       user_id: userId,
@@ -662,10 +783,12 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
       unit: data.unit,
       note: data.note ?? null,
       source: data.source ?? 'manual',
-      measured_at: data.measuredAt || now,
+      measured_at: measuredAt,
       created_at: now,
       updated_at: now,
       deleted_at: null,
+      record_type: 'single_metric',
+      metrics_json: null,
     };
     const { error } = await supabase.from('body_measurements').insert(row as any);
     if (error) throw error;
@@ -695,6 +818,46 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
 
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
+
+    if (id.includes('::')) {
+      const [parentId, metricKey] = id.split('::');
+      const { data: parentRow, error: findError } = await supabase
+        .from('body_measurements')
+        .select('*')
+        .eq('id', parentId)
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (findError) throw findError;
+      if (!parentRow) throw new Error('InBody record not found');
+
+      const currentJson = ((parentRow as any).metrics_json || {}) as Record<string, { value: number; unit: string }>;
+      const previousMetric = currentJson[metricKey] || { value: 0, unit: '' };
+      const nextJson = {
+        ...currentJson,
+        [metricKey]: {
+          value: data.value ?? previousMetric.value,
+          unit: data.unit ?? previousMetric.unit,
+        },
+      };
+
+      const { error: updateError } = await supabase
+        .from('body_measurements')
+        .update({
+          metrics_json: nextJson,
+          note: data.note ?? parentRow.note,
+          source: data.source ?? parentRow.source,
+          measured_at: data.measuredAt ?? parentRow.measured_at,
+          updated_at: now,
+        } as any)
+        .eq('id', parentId)
+        .eq('user_id', userId);
+
+      if (updateError) throw updateError;
+      return;
+    }
+
     const payload = {
       value: data.value,
       unit: data.unit,
