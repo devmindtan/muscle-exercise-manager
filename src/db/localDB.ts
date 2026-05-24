@@ -568,6 +568,14 @@ export async function getBodyMeasurements(metricKey?: string, limit?: number) {
   return database.getAllAsync<LocalBodyMeasurement>(query, params);
 }
 
+export async function getBodyMeasurementById(id: string) {
+  const database = await getDatabase();
+  return database.getFirstAsync<LocalBodyMeasurement>(
+    'SELECT * FROM body_measurements WHERE id = ? LIMIT 1',
+    [id]
+  );
+}
+
 export async function upsertBodyMeasurement(measurement: LocalBodyMeasurement) {
   const database = await getDatabase();
   const dirty = measurement.dirty ?? 0;

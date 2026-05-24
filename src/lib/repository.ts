@@ -1,5 +1,7 @@
 import * as LocalDB from '@/src/db/localDB';
 import { uploadImage, deleteImage } from '@/src/services/imageUpload';
+import { Platform } from 'react-native';
+import { supabase } from '@/src/lib/supabase';
 
 // Simple UUID v4 generator
 function generateUUID(): string {
@@ -57,6 +59,14 @@ export interface BodyMeasurementInput {
   measuredAt?: string;
 }
 
+export interface BodyMeasurementUpdateInput {
+  value?: number;
+  unit?: string;
+  note?: string | null;
+  source?: string | null;
+  measuredAt?: string;
+}
+
 export interface MuscleGoalInput {
   muscleGroupId: string;
   metricKey?: string;
@@ -67,8 +77,73 @@ export interface MuscleGoalInput {
   note?: string | null;
 }
 
+async function getWebUserIdOrThrow() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const userId = data.user?.id;
+  if (!userId) {
+    throw new Error('Bạn cần đăng nhập để thao tác dữ liệu web');
+  }
+  return userId;
+}
+
 // Muscle Groups
 export async function getMuscleGroupsWithWeeklyStats(startDate: string, endDate: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const [groupsRes, logsRes, exercisesRes] = await Promise.all([
+      supabase
+        .from('muscle_groups')
+        .select('*')
+        .eq('user_id', userId)
+        .is('deleted_at', null),
+      supabase
+        .from('workout_logs')
+        .select('muscle_group_id, sets')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .gte('logged_at', startDate)
+        .lte('logged_at', endDate),
+      supabase
+        .from('exercises')
+        .select('muscle_group_id')
+        .eq('user_id', userId)
+        .is('deleted_at', null),
+    ]);
+
+    if (groupsRes.error) throw groupsRes.error;
+    if (logsRes.error) throw logsRes.error;
+    if (exercisesRes.error) throw exercisesRes.error;
+
+    const groups = groupsRes.data || [];
+    const logs = logsRes.data || [];
+    const exercises = exercisesRes.data || [];
+
+    const exerciseCountByGroup = exercises.reduce<Record<string, number>>((acc, row: any) => {
+      const key = row.muscle_group_id;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return groups.map((group: any) => {
+      const weeklySets = logs
+        .filter((log: any) => log.muscle_group_id === group.id)
+        .reduce((sum: number, log: any) => sum + (log.sets || 0), 0);
+
+      const targetSets = group.target_sets_per_week || 10;
+      return {
+        id: group.id,
+        name: group.name,
+        color: group.color,
+        category: group.category,
+        weekly_sets: weeklySets,
+        exerciseCount: exerciseCountByGroup[group.id] || 0,
+        progress: targetSets > 0 ? weeklySets / targetSets : 0,
+        targetSetsPerWeek: targetSets,
+      } as WeekStat;
+    });
+  }
+
   const localGroups = await LocalDB.getMuscleGroups();
   const workoutLogs = await LocalDB.getWorkoutLogs(startDate, endDate);
 
@@ -113,6 +188,19 @@ export async function getMuscleGroupsByWeek(weekStart: string, weekEnd: string) 
 }
 
 export async function getMuscleGroups() {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('muscle_groups')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+    return (data || []) as any[];
+  }
+
   return LocalDB.getMuscleGroups();
 }
 
@@ -129,6 +217,26 @@ export async function createMuscleGroup(data: {
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const payload = {
+      id,
+      user_id: userId,
+      name: data.name,
+      color: data.color,
+      target_sets_per_week: data.targetSetsPerWeek || 10,
+      target_sets_per_month: data.targetSetsPerMonth || 40,
+      category: data.category || null,
+      created_at: now,
+      updated_at: now,
+      image_uri: null,
+      deleted_at: null,
+    };
+    const { error } = await supabase.from('muscle_groups').insert(payload as any);
+    if (error) throw error;
+    return payload as any;
+  }
 
   const group: any = {
     id,
@@ -204,10 +312,42 @@ export async function deleteMuscleGroup(id: string) {
 
 // Exercises
 export async function getExercises(muscleGroupId?: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    let query = supabase
+      .from('exercises')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false });
+
+    if (muscleGroupId) {
+      query = query.eq('muscle_group_id', muscleGroupId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as any[];
+  }
+
   return LocalDB.getExercises(muscleGroupId);
 }
 
 export async function getExerciseById(id: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as any;
+  }
+
   return LocalDB.getExerciseById(id);
 }
 
@@ -219,6 +359,25 @@ export async function createExercise(data: {
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const row = {
+      id,
+      user_id: userId,
+      muscle_group_id: data.muscleGroupId,
+      name: data.name,
+      notes: data.notes,
+      image_uri: data.image_uri ?? null,
+      is_active: true,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    const { error } = await supabase.from('exercises').insert(row as any);
+    if (error) throw error;
+    return row as any;
+  }
 
   const exercise: any = {
     id,
@@ -254,6 +413,21 @@ export async function insertExercise(data: {
 }
 
 export async function getActiveExercises(muscleGroupId: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('muscle_group_id', muscleGroupId)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    return (data || []) as any[];
+  }
+
   return LocalDB.getActiveExercises(muscleGroupId);
 }
 
@@ -266,6 +440,23 @@ export async function setExerciseActive(id: string, isActive: boolean) {
 }
 
 export async function getLogCountsByMuscleGroup(): Promise<Record<string, number>> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select('muscle_group_id')
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+
+    return (data || []).reduce<Record<string, number>>((acc, row: any) => {
+      const key = row.muscle_group_id;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+  }
+
   return LocalDB.getLogCountsByMuscleGroup();
 }
 
@@ -306,6 +497,30 @@ export async function deleteExercise(id: string) {
 
 // Workout Logs
 export async function getWorkoutLogs(startDate?: string, endDate?: string, exerciseId?: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    let query = supabase
+      .from('workout_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('logged_at', { ascending: false });
+
+    if (startDate) {
+      query = query.gte('logged_at', startDate);
+    }
+    if (endDate) {
+      query = query.lte('logged_at', endDate);
+    }
+    if (exerciseId) {
+      query = query.eq('exercise_id', exerciseId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as any[];
+  }
+
   return LocalDB.getWorkoutLogs(startDate, endDate, exerciseId);
 }
 
@@ -324,6 +539,27 @@ export async function createWorkoutLog(data: any) {
   if (!exerciseId || !muscleGroupId) {
     console.warn('Workout log missing exerciseId or muscleGroupId', { data });
     throw new Error('Workout log must have exerciseId and muscleGroupId');
+  }
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const row = {
+      id,
+      user_id: userId,
+      exercise_id: exerciseId,
+      muscle_group_id: muscleGroupId,
+      sets: data.sets,
+      reps: data.reps,
+      weight: data.weight,
+      note: data.note,
+      logged_at: data.loggedAt || data.logged_at || now,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    const { error } = await supabase.from('workout_logs').insert(row as any);
+    if (error) throw error;
+    return row as any;
   }
 
   const log: any = {
@@ -365,15 +601,77 @@ export async function softDeleteWorkoutLog(id: string) {
 }
 
 export async function getMonthlyVolume(startDate: string, endDate: string): Promise<number> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select('sets, reps, weight')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .gte('logged_at', startDate)
+      .lte('logged_at', endDate);
+
+    if (error) throw error;
+
+    return (data || []).reduce((sum: number, row: any) => {
+      const sets = Number(row.sets || 0);
+      const reps = Number(row.reps || 0);
+      const weight = Number(row.weight || 0);
+      return sum + sets * reps * weight;
+    }, 0);
+  }
+
   return LocalDB.getMonthlyVolume(startDate, endDate);
 }
 
 export async function getBodyMeasurements(metricKey?: string, limit?: number) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    let query = supabase
+      .from('body_measurements')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('measured_at', { ascending: false });
+
+    if (metricKey) {
+      query = query.eq('metric_key', metricKey);
+    }
+    if (typeof limit === 'number') {
+      query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as any[];
+  }
+
   return LocalDB.getBodyMeasurements(metricKey, limit);
 }
 
 export async function createBodyMeasurement(data: BodyMeasurementInput) {
   const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const row = {
+      id: generateUUID(),
+      user_id: userId,
+      metric_key: data.metricKey,
+      value: data.value,
+      unit: data.unit,
+      note: data.note ?? null,
+      source: data.source ?? 'manual',
+      measured_at: data.measuredAt || now,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    const { error } = await supabase.from('body_measurements').insert(row as any);
+    if (error) throw error;
+    return row as any;
+  }
+
   const measurement: any = {
     id: generateUUID(),
     metric_key: data.metricKey,
@@ -392,12 +690,90 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
   return measurement;
 }
 
+export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpdateInput) {
+  const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const payload = {
+      value: data.value,
+      unit: data.unit,
+      note: data.note,
+      source: data.source,
+      measured_at: data.measuredAt,
+      updated_at: now,
+    } as any;
+
+    const { error } = await supabase
+      .from('body_measurements')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) throw error;
+    return;
+  }
+
+  const existing = await LocalDB.getBodyMeasurementById(id);
+  if (!existing) {
+    throw new Error(`Body measurement ${id} not found`);
+  }
+
+  const updated: any = {
+    ...existing,
+    id,
+    value: data.value ?? existing.value,
+    unit: data.unit ?? existing.unit,
+    note: data.note ?? existing.note,
+    source: data.source ?? existing.source,
+    measured_at: data.measuredAt ?? existing.measured_at,
+    updated_at: now,
+    dirty: 1,
+  };
+
+  await LocalDB.upsertBodyMeasurement(updated);
+}
+
 export async function getMuscleGoals() {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('muscle_goals')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('target_date', { ascending: true, nullsFirst: false });
+
+    if (error) throw error;
+    return (data || []) as any[];
+  }
+
   return LocalDB.getMuscleGoals();
 }
 
 export async function createMuscleGoal(data: MuscleGoalInput) {
   const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const row = {
+      id: generateUUID(),
+      user_id: userId,
+      muscle_group_id: data.muscleGroupId,
+      metric_key: data.metricKey || 'muscle_mass',
+      current_value: data.currentValue ?? null,
+      target_value: data.targetValue,
+      unit: data.unit,
+      target_date: data.targetDate ?? null,
+      note: data.note ?? null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    const { error } = await supabase.from('muscle_goals').insert(row as any);
+    if (error) throw error;
+    return row as any;
+  }
+
   const goal: any = {
     id: generateUUID(),
     muscle_group_id: data.muscleGroupId,
@@ -435,6 +811,35 @@ export async function getRecentLogs(limit = 20) {
 }
 
 export async function getRecentLogsWithNames(limit?: number): Promise<RecentLog[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    let query = supabase
+      .from('workout_logs')
+      .select('id, exercise_id, muscle_group_id, sets, reps, weight, note, logged_at, exercises(name)')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('logged_at', { ascending: false });
+
+    if (typeof limit === 'number') {
+      query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      exercise_id: row.exercise_id,
+      muscleGroupId: row.muscle_group_id,
+      sets: row.sets || undefined,
+      reps: row.reps || undefined,
+      weight: row.weight || undefined,
+      note: row.note || undefined,
+      logged_at: row.logged_at,
+      exerciseName: row.exercises?.name || undefined,
+    }));
+  }
+
   const rows = await LocalDB.getRecentLogsWithExerciseNames(limit);
   return rows.map((row) => ({
     id: row.id,
