@@ -548,6 +548,42 @@ export async function markMuscleGoalClean(id: string) {
   await database.runAsync('UPDATE muscle_goals SET dirty = 0 WHERE id = ?', [id]);
 }
 
+async function markMissingRowsDeleted(tableName: string, remoteIds: string[]) {
+  const database = await getDatabase();
+  if (remoteIds.length === 0) {
+    await database.runAsync(`UPDATE ${tableName} SET deleted = 1, dirty = 0 WHERE deleted = 0`);
+    return;
+  }
+
+  const placeholders = remoteIds.map(() => '?').join(',');
+  await database.runAsync(
+    `UPDATE ${tableName}
+     SET deleted = 1, dirty = 0
+     WHERE deleted = 0 AND id NOT IN (${placeholders})`,
+    remoteIds,
+  );
+}
+
+export async function markMissingMuscleGroupsDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('muscle_groups', remoteIds);
+}
+
+export async function markMissingExercisesDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('exercises', remoteIds);
+}
+
+export async function markMissingWorkoutLogsDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('workout_logs', remoteIds);
+}
+
+export async function markMissingBodyMeasurementsDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('body_measurements', remoteIds);
+}
+
+export async function markMissingMuscleGoalsDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('muscle_goals', remoteIds);
+}
+
 export async function getBodyMeasurements(metricKey?: string, limit?: number) {
   const database = await getDatabase();
   let query = 'SELECT * FROM body_measurements WHERE deleted = 0';
