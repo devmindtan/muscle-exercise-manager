@@ -277,7 +277,7 @@ export default function ExerciseDetailScreen() {
                     <View
                       style={[
                         styles.chartBarFill,
-                        { height: `${(sets / maxWeekSets) * 100}%` },
+                        { height: `${Math.max((sets / maxWeekSets) * 100, 8)}%` },
                       ]}
                     />
                   </View>
@@ -685,16 +685,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     height: '100%',
-    justifyContent: 'flex-end',
+    minHeight: 144,
     gap: 4,
   },
   chartVal: {
-    fontSize: 9,
-    color: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: '100%',
     fontWeight: '600',
+    minWidth: 40,
   },
   chartBarBg: {
-    flex: 1,
+    height: 76,
     width: '70%',
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 4,

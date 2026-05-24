@@ -705,7 +705,7 @@ export default function BodyMetricsScreen() {
                   <View
                     style={[
                       styles.chartBarFill,
-                      { height: `${Math.max((item.value / selectedMax) * 100, 6)}%` },
+                      { height: `${Math.max((item.value / selectedMax) * 100, 8)}%` },
                     ]}
                   />
                 </View>
@@ -1291,15 +1291,15 @@ const styles = StyleSheet.create({
   },
   chartInner: {
     flexDirection: 'row', alignItems: 'flex-end',
-    gap: 6, height: 100,
+    gap: 8, minHeight: 132,
   },
-  chartCol: { flex: 1, alignItems: 'center', gap: 5 },
+  chartCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, minWidth: 44 },
   chartVal: { fontSize: 10, color: Colors.textSecondary, fontWeight: '600' },
   chartBarBg: {
-    width: '100%', flex: 1, backgroundColor: Colors.border,
-    borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden',
+    width: '100%', height: 72, backgroundColor: Colors.border,
+    borderRadius: 8, justifyContent: 'flex-end', overflow: 'hidden',
   },
-  chartBarFill: { width: '100%', backgroundColor: Colors.accent, borderRadius: 6 },
+  chartBarFill: { width: '100%', backgroundColor: Colors.accent, borderRadius: 8 },
   chartLabel: { fontSize: 10, color: Colors.textMuted },
 
   // Segmental card
