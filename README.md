@@ -93,8 +93,10 @@ Xem chi tiết luồng dữ liệu các chức năng tại [src/docs/dataflow.md
 ## Deployment
 
 ```bash
-eas build --profile production --platform android
+npm run build:web
 ```
+
+For Vercel deployments, use `vercel.json` in the repo root so Expo Router routes like `/auth-callback` resolve correctly on refresh and direct navigation.
 
 ## Roadmap
 
