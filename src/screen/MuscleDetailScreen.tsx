@@ -98,6 +98,7 @@ export default function MuscleDetailScreen() {
     image_uri: '',
     muscle_group_id: '',
   });
+  const [loadError, setLoadError] = useState('');
 
   // Track xem ảnh đang upload không — dùng để block nút Save
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -110,34 +111,45 @@ export default function MuscleDetailScreen() {
 
   const load = useCallback(async () => {
     if (!id) return;
-    const { start: weekStart, end: weekEnd } = getWeekRange();
-    const now = new Date();
-    const monthStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1,
-    ).toISOString();
-    const monthEnd = new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-    ).toISOString();
+    setLoadError('');
+    try {
+      const { start: weekStart, end: weekEnd } = getWeekRange();
+      const now = new Date();
+      const monthStart = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        1,
+      ).toISOString();
+      const monthEnd = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+      ).toISOString();
 
-    const [g, ex, wSets, mSets, allGroups] = await Promise.all([
-      getMuscleGroup(id),
-      getExercisesWithStats(id, weekStart),
-      getSetCounts(id, weekStart, weekEnd),
-      getSetCounts(id, monthStart, monthEnd),
-      getMuscleGroups(),
-    ]);
-    if (g) setGroup(g);
-    setExercises(ex);
-    setWeeklySets(wSets);
-    setMonthlySets(mSets);
-    setAllMuscleGroups(allGroups);
+      const [g, ex, wSets, mSets, allGroups] = await Promise.all([
+        getMuscleGroup(id),
+        getExercisesWithStats(id, weekStart),
+        getSetCounts(id, weekStart, weekEnd),
+        getSetCounts(id, monthStart, monthEnd),
+        getMuscleGroups(),
+      ]);
+      if (g) {
+        setGroup(g);
+      } else {
+        setLoadError('Không tìm thấy nhóm cơ này.');
+      }
+      setExercises(ex);
+      setWeeklySets(wSets);
+      setMonthlySets(mSets);
+      setAllMuscleGroups(allGroups);
+    } catch (error: any) {
+      console.error('Failed to load muscle detail:', error);
+      setLoadError(error?.message || 'Không thể tải nhóm cơ.');
+      setGroup(null);
+    }
   }, [id]);
 
   useFocusEffect(
@@ -173,6 +185,20 @@ export default function MuscleDetailScreen() {
   const closeEditGroupModal = () => {
     blurFocusedElement();
     setEditingGroup(false);
+  };
+
+  const goBackToMuscles = () => {
+    const canGoBack =
+      typeof (router as any).canGoBack === 'function'
+        ? (router as any).canGoBack()
+        : false;
+
+    if (canGoBack) {
+      router.back();
+      return;
+    }
+
+    router.replace('/muscles');
   };
 
   const saveEdit = async () => {
@@ -244,7 +270,7 @@ export default function MuscleDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             await softDeleteMuscleGroup(id as string);
-            router.back();
+            goBackToMuscles();
           },
         },
       ],
@@ -358,7 +384,7 @@ export default function MuscleDetailScreen() {
   if (!group) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadText}>Đang tải...</Text>
+        <Text style={styles.loadText}>{loadError || 'Đang tải...'}</Text>
       </View>
     );
   }
@@ -366,7 +392,7 @@ export default function MuscleDetailScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={goBackToMuscles} style={styles.backBtn}>
           <ArrowLeft color={Colors.text} size={24} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{group.name}</Text>
@@ -720,6 +746,12 @@ export default function MuscleDetailScreen() {
             </TouchableOpacity>
           </View>
 
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.sheetScrollContent}
+          >
+
           <Text style={styles.label}>Tên nhóm cơ</Text>
           <TextInput
             style={styles.input}
@@ -816,6 +848,7 @@ export default function MuscleDetailScreen() {
               {uploadingImage ? 'Đang upload ảnh...' : 'Lưu thay đổi'}
             </Text>
           </TouchableOpacity>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -1052,6 +1085,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  sheetScrollContent: { paddingBottom: 16 },
   colorPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   colorOption: { width: 36, height: 36, borderRadius: 18 },
   colorSelected: { borderWidth: 3, borderColor: Colors.text },
