@@ -71,10 +71,9 @@ function flattenWebBodyMeasurementRows(rows: any[]): any[] {
   const result: any[] = [];
 
   for (const row of rows) {
-    const isJsonInBody = row.record_type === 'inbody_json' && row.metrics_json && typeof row.metrics_json === 'object';
+    const isJsonInBody = row.metrics_json && typeof row.metrics_json === 'object';
 
     if (!isJsonInBody) {
-      result.push(row);
       continue;
     }
 
@@ -664,7 +663,7 @@ export async function getBodyMeasurements(metricKey?: string, limit?: number) {
     const userId = await getWebUserIdOrThrow();
     let query = supabase
       .from('body_measurements')
-      .select('*')
+      .select('id,user_id,measured_at,note,metrics_json,created_at,updated_at,deleted_at,sync_status')
       .eq('user_id', userId)
       .is('deleted_at', null)
       .order('measured_at', { ascending: false });
@@ -692,107 +691,88 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
     const measuredAt = data.measuredAt || now;
-    const isInBodyMetric = data.source === 'manual_inbody';
+    const { data: existingRow, error: findError } = await supabase
+      .from('body_measurements')
+      .select('id,user_id,measured_at,note,metrics_json,created_at,updated_at,deleted_at,sync_status')
+      .eq('user_id', userId)
+      .eq('measured_at', measuredAt)
+      .is('deleted_at', null)
+      .maybeSingle();
 
-    if (isInBodyMetric) {
-      const { data: existingRow, error: findError } = await supabase
-        .from('body_measurements')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('record_type', 'inbody_json')
-        .eq('measured_at', measuredAt)
-        .is('deleted_at', null)
-        .maybeSingle();
+    if (findError) throw findError;
 
-      if (findError) throw findError;
-
-      if (existingRow) {
-        const currentJson = ((existingRow as any).metrics_json || {}) as Record<string, { value: number; unit: string }>;
-        const nextJson = {
-          ...currentJson,
-          [data.metricKey]: {
-            value: data.value,
-            unit: data.unit,
-          },
-        };
-
-        const { error: updateError } = await supabase
-          .from('body_measurements')
-          .update({
-            metrics_json: nextJson,
-            note: data.note ?? existingRow.note ?? null,
-            source: 'manual_inbody_json',
-            updated_at: now,
-          } as any)
-          .eq('id', existingRow.id)
-          .eq('user_id', userId);
-
-        if (updateError) throw updateError;
-
-        return {
-          ...existingRow,
-          id: `${existingRow.id}::${data.metricKey}`,
-          metric_key: data.metricKey,
+    if (existingRow) {
+      const currentJson = ((existingRow as any).metrics_json || {}) as Record<string, { value: number; unit: string }>;
+      const nextJson = {
+        ...currentJson,
+        [data.metricKey]: {
           value: data.value,
           unit: data.unit,
-          measured_at: measuredAt,
-          source: 'manual_inbody',
-          note: data.note ?? existingRow.note ?? null,
-        } as any;
-      }
-
-      const insertedRow = {
-        id: generateUUID(),
-        user_id: userId,
-        metric_key: 'inbody_json',
-        value: 0,
-        unit: 'jsonb',
-        note: data.note ?? null,
-        source: 'manual_inbody_json',
-        measured_at: measuredAt,
-        created_at: now,
-        updated_at: now,
-        deleted_at: null,
-        record_type: 'inbody_json',
-        metrics_json: {
-          [data.metricKey]: {
-            value: data.value,
-            unit: data.unit,
-          },
         },
       };
 
-      const { error: insertError } = await supabase.from('body_measurements').insert(insertedRow as any);
-      if (insertError) throw insertError;
+      const { error: updateError } = await supabase
+        .from('body_measurements')
+        .update({
+          metrics_json: nextJson,
+          note: data.note ?? existingRow.note ?? null,
+          updated_at: now,
+        } as any)
+        .eq('id', existingRow.id)
+        .eq('user_id', userId);
+
+      if (updateError) throw updateError;
 
       return {
-        ...insertedRow,
-        id: `${insertedRow.id}::${data.metricKey}`,
+        id: `${existingRow.id}::${data.metricKey}`,
         metric_key: data.metricKey,
         value: data.value,
         unit: data.unit,
+        note: data.note ?? existingRow.note ?? null,
         source: 'manual_inbody',
+        measured_at: measuredAt,
+        created_at: existingRow.created_at,
+        updated_at: now,
+        deleted_at: null,
+        sync_status: existingRow.sync_status,
+        user_id: userId,
       } as any;
     }
 
-    const row = {
+    const insertedRow = {
       id: generateUUID(),
       user_id: userId,
+      measured_at: measuredAt,
+      note: data.note ?? null,
+      metrics_json: {
+        [data.metricKey]: {
+          value: data.value,
+          unit: data.unit,
+        },
+      },
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      sync_status: 'pending',
+    };
+
+    const { error: insertError } = await supabase.from('body_measurements').insert(insertedRow as any);
+    if (insertError) throw insertError;
+
+    return {
+      id: `${insertedRow.id}::${data.metricKey}`,
       metric_key: data.metricKey,
       value: data.value,
       unit: data.unit,
-      note: data.note ?? null,
-      source: data.source ?? 'manual',
+      note: insertedRow.note,
+      source: 'manual_inbody',
       measured_at: measuredAt,
       created_at: now,
       updated_at: now,
       deleted_at: null,
-      record_type: 'single_metric',
-      metrics_json: null,
-    };
-    const { error } = await supabase.from('body_measurements').insert(row as any);
-    if (error) throw error;
-    return row as any;
+      sync_status: 'pending',
+      user_id: userId,
+    } as any;
   }
 
   const measurement: any = {
@@ -859,10 +839,7 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
     }
 
     const payload = {
-      value: data.value,
-      unit: data.unit,
       note: data.note,
-      source: data.source,
       measured_at: data.measuredAt,
       updated_at: now,
     } as any;
