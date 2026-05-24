@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -17,6 +17,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Target, X } from 'lucide-react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { SegmentalBody } from '@/src/components/BodyMetricsSegmental';
+import { SegmentalFormSection } from '@/src/components/SegmentalFormSection';
+
 import {
   createBodyMeasurement,
   deleteInBodyRecord,
@@ -31,7 +34,7 @@ import type { MuscleGoal, BodyMeasurement, MuscleGroup } from '@/src/types/datab
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type InBodyFormState = {
+export type InBodyFormState = {
   measuredAt: string;
   note: string;
   weight: string;
@@ -99,22 +102,6 @@ const GOAL_METRIC_OPTIONS = [
 
 // Top-4 summary cards
 const SUMMARY_METRICS = ['weight', 'skeletal_muscle_mass', 'body_fat_mass', 'pbf'] as const;
-
-const SEGMENTAL_LEAN_METRICS = [
-  { key: 'segmental_lean_upper_left', label: 'Trên trái' },
-  { key: 'segmental_lean_upper_right', label: 'Trên phải' },
-  { key: 'segmental_lean_center', label: 'Giữa (thân)' },
-  { key: 'segmental_lean_lower_left', label: 'Dưới trái' },
-  { key: 'segmental_lean_lower_right', label: 'Dưới phải' },
-] as const;
-
-const SEGMENTAL_FAT_METRICS = [
-  { key: 'segmental_fat_upper_left', label: 'Trên trái' },
-  { key: 'segmental_fat_upper_right', label: 'Trên phải' },
-  { key: 'segmental_fat_center', label: 'Giữa (thân)' },
-  { key: 'segmental_fat_lower_left', label: 'Dưới trái' },
-  { key: 'segmental_fat_lower_right', label: 'Dưới phải' },
-] as const;
 
 const INCREASE_METRICS = new Set([
   'skeletal_muscle_mass',
@@ -232,53 +219,6 @@ function getTrendTone(key: string, delta: number | null): 'good' | 'warn' | 'neu
   return delta < 0 ? 'good' : 'warn';
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function SparkBars({ history, max }: { history: BodyMeasurement[]; max: number }) {
-  if (history.length === 0) return <View style={styles.sparkEmpty} />;
-  return (
-    <View style={styles.sparkRow}>
-      {history.map((pt) => (
-        <View key={pt.id} style={styles.sparkTrack}>
-          <View
-            style={[
-              styles.sparkFill,
-              { height: `${Math.max((pt.value / max) * 100, 8)}%` },
-            ]}
-          />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function TrendBadge({ tone, delta }: { tone: 'good' | 'warn' | 'neutral'; delta: number | null }) {
-  const label =
-    delta == null
-      ? '—'
-      : `${delta > 0 ? '+' : ''}${delta.toFixed(2)}`;
-
-  const badgeStyle =
-    tone === 'good'
-      ? styles.badgeGood
-      : tone === 'warn'
-        ? styles.badgeWarn
-        : styles.badgeNeutral;
-
-  const textStyle =
-    tone === 'good'
-      ? styles.badgeGoodText
-      : tone === 'warn'
-        ? styles.badgeWarnText
-        : styles.badgeNeutralText;
-
-  return (
-    <View style={[styles.badge, badgeStyle]}>
-      <Text style={[styles.badgeText, textStyle]}>{label}</Text>
-    </View>
-  );
-}
-
 function FormField({
   label,
   value,
@@ -353,6 +293,14 @@ export default function BodyMetricsScreen() {
     setRefreshing(false);
   };
 
+  useEffect(() => {
+    if (!statusMessage) return;
+    const timer = setTimeout(() => {
+      setStatusMessage('');
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [statusMessage]);
+
   // ── Derived data ──
 
   const latestMetrics = useMemo(() => {
@@ -425,19 +373,6 @@ export default function BodyMetricsScreen() {
         }),
     [goals],
   );
-
-  // ── Metric row data helper ──
-
-  function metricRowData(key: string) {
-    const history = historyByMetric.get(key) ?? [];
-    const latest = history[0];
-    const previous = history[1];
-    const delta = latest != null && previous != null ? latest.value - previous.value : null;
-    const tone = getTrendTone(key, delta);
-    const spark = history.slice(0, 5).reverse();
-    const localMax = Math.max(...history.map((i) => i.value), 1);
-    return { latest, delta, tone, spark, localMax };
-  }
 
   const openCreateInBody = () => {
     setEditingRecordKey(null);
@@ -718,47 +653,8 @@ export default function BodyMetricsScreen() {
     </>
   );
 
-  const renderSegmentalSection = (
-    title: string,
-    metrics: readonly { key: string; label: string }[],
-  ) => (
-    <View style={styles.segCard}>
-      <Text style={styles.segCardTitle}>{title}</Text>
-      {metrics.map(({ key, label }, idx) => {
-        const { latest, delta, tone, spark, localMax } = metricRowData(key);
-        const isLast = idx === metrics.length - 1;
-        return (
-          <View key={key} style={[styles.segRow, !isLast && styles.segRowBorder]}>
-            <View style={styles.segLeft}>
-              <Text style={styles.segName}>{label}</Text>
-              <SparkBars history={spark} max={localMax} />
-            </View>
-            <View style={styles.segRight}>
-              <Text style={styles.segValue}>
-                {latest != null ? `${latest.value} kg` : '—'}
-              </Text>
-              <TrendBadge tone={tone} delta={delta} />
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-
   const renderSegmental = () => (
-    <>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Lean (cơ)</Text>
-        <Text style={styles.sectionHint}>Nên tăng</Text>
-      </View>
-      {renderSegmentalSection('Segmental Lean', SEGMENTAL_LEAN_METRICS)}
-
-      <View style={[styles.sectionHeader, { marginTop: 8 }]}>
-        <Text style={styles.sectionTitle}>Fat (mỡ)</Text>
-        <Text style={styles.sectionHint}>Nên giảm</Text>
-      </View>
-      {renderSegmentalSection('Segmental Fat', SEGMENTAL_FAT_METRICS)}
-    </>
+    <SegmentalBody historyByMetric={historyByMetric} />
   );
 
   const renderGoals = () => (
@@ -846,31 +742,6 @@ export default function BodyMetricsScreen() {
             </View>
           );
         })
-      )}
-
-      <View style={[styles.sectionHeader, { marginTop: 12 }]}>
-        <Text style={styles.sectionTitle}>Chi tiết từng chỉ số</Text>
-        <Text style={styles.sectionHint}>{measurements.length} dòng dữ liệu</Text>
-      </View>
-      {measurements.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>Chưa có dữ liệu</Text>
-        </View>
-      ) : (
-        measurements.slice(0, 30).map((m) => (
-          <View key={m.id} style={styles.historyCard}>
-            <View>
-              <Text style={styles.historyTitle}>{getMetricLabel(m.metric_key)}</Text>
-              <Text style={styles.historyDate}>{formatDateFull(m.measured_at)}</Text>
-            </View>
-            <View style={styles.historyRight}>
-              <Text style={styles.historyValue}>
-                {m.value} {m.unit}
-              </Text>
-              <Text style={styles.historySource}>{m.source ?? 'manual'}</Text>
-            </View>
-          </View>
-        ))
       )}
     </>
   );
@@ -1038,34 +909,10 @@ export default function BodyMetricsScreen() {
                   onChange={(v) => setInBodyForm((s) => ({ ...s, pbf: v }))} />
               </View>
 
-              <View style={styles.formSectionCard}>
-                <Text style={styles.formSectionTitle}>3. Segmental Lean (5 vùng)</Text>
-                <FormField label="Trên trái" value={inBodyForm.segmental_lean_upper_left} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_upper_left: v }))} />
-                <FormField label="Trên phải" value={inBodyForm.segmental_lean_upper_right} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_upper_right: v }))} />
-                <FormField label="Giữa" value={inBodyForm.segmental_lean_center} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_center: v }))} />
-                <FormField label="Dưới trái" value={inBodyForm.segmental_lean_lower_left} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_lower_left: v }))} />
-                <FormField label="Dưới phải" value={inBodyForm.segmental_lean_lower_right} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_lower_right: v }))} />
-              </View>
-
-              <View style={styles.formSectionCard}>
-                <Text style={styles.formSectionTitle}>4. Segmental Fat (5 vùng)</Text>
-                <FormField label="Trên trái" value={inBodyForm.segmental_fat_upper_left} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_upper_left: v }))} />
-                <FormField label="Trên phải" value={inBodyForm.segmental_fat_upper_right} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_upper_right: v }))} />
-                <FormField label="Giữa" value={inBodyForm.segmental_fat_center} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_center: v }))} />
-                <FormField label="Dưới trái" value={inBodyForm.segmental_fat_lower_left} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_lower_left: v }))} />
-                <FormField label="Dưới phải" value={inBodyForm.segmental_fat_lower_right} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_lower_right: v }))} />
-              </View>
-
+              <SegmentalFormSection
+                form={inBodyForm}
+                onChange={(key, value) => setInBodyForm((s) => ({ ...s, [key]: value }))}
+              />
               <View style={styles.formSectionCard}>
                 <Text style={styles.formSectionTitle}>5. WHR & Visceral</Text>
                 <FormField label="Waist-Hip Ratio" value={inBodyForm.waist_hip_ratio} unit="ratio"
