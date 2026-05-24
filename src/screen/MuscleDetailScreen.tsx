@@ -102,6 +102,12 @@ export default function MuscleDetailScreen() {
   // Track xem ảnh đang upload không — dùng để block nút Save
   const [uploadingImage, setUploadingImage] = useState(false);
 
+  const blurFocusedElement = () => {
+    if (Platform.OS !== 'web') return;
+    const activeElement = globalThis.document?.activeElement as HTMLElement | null | undefined;
+    activeElement?.blur?.();
+  };
+
   const load = useCallback(async () => {
     if (!id) return;
     const { start: weekStart, end: weekEnd } = getWeekRange();
@@ -151,6 +157,22 @@ export default function MuscleDetailScreen() {
       category: group.category || '',
     });
     setEditingGroup(true);
+  };
+
+  const closeAddExerciseModal = () => {
+    blurFocusedElement();
+    setShowAddExercise(false);
+  };
+
+  const closeEditExerciseModal = () => {
+    blurFocusedElement();
+    setShowEditExercise(false);
+    setEditingExercise(null);
+  };
+
+  const closeEditGroupModal = () => {
+    blurFocusedElement();
+    setEditingGroup(false);
   };
 
   const saveEdit = async () => {
@@ -502,9 +524,9 @@ export default function MuscleDetailScreen() {
         visible={showAddExercise}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowAddExercise(false)}
+        onRequestClose={closeAddExerciseModal}
       >
-        <Pressable style={styles.overlay} onPress={() => setShowAddExercise(false)} />
+        <Pressable style={styles.overlay} onPress={closeAddExerciseModal} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.sheet}
@@ -512,7 +534,7 @@ export default function MuscleDetailScreen() {
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Thêm bài tập</Text>
-            <TouchableOpacity onPress={() => setShowAddExercise(false)}>
+            <TouchableOpacity onPress={closeAddExerciseModal}>
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
@@ -525,7 +547,7 @@ export default function MuscleDetailScreen() {
               onChangeText={setExName}
               placeholder="VD: Bench Press, Pull-up..."
               placeholderTextColor={Colors.textMuted}
-              autoFocus
+              autoFocus={Platform.OS !== 'web'}
             />
 
             <Text style={styles.label}>Ghi chú (tuỳ chọn)</Text>
@@ -569,11 +591,11 @@ export default function MuscleDetailScreen() {
         visible={showEditExercise}
         transparent
         animationType="slide"
-        onRequestClose={() => { setShowEditExercise(false); setEditingExercise(null); }}
+        onRequestClose={closeEditExerciseModal}
       >
         <Pressable
           style={styles.overlay}
-          onPress={() => { setShowEditExercise(false); setEditingExercise(null); }}
+          onPress={closeEditExerciseModal}
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -582,7 +604,7 @@ export default function MuscleDetailScreen() {
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Sửa bài tập</Text>
-            <TouchableOpacity onPress={() => { setShowEditExercise(false); setEditingExercise(null); }}>
+            <TouchableOpacity onPress={closeEditExerciseModal}>
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
@@ -683,9 +705,9 @@ export default function MuscleDetailScreen() {
         visible={editingGroup}
         transparent
         animationType="slide"
-        onRequestClose={() => setEditingGroup(false)}
+        onRequestClose={closeEditGroupModal}
       >
-        <Pressable style={styles.overlay} onPress={() => setEditingGroup(false)} />
+        <Pressable style={styles.overlay} onPress={closeEditGroupModal} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.sheet}
@@ -693,7 +715,7 @@ export default function MuscleDetailScreen() {
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Chỉnh sửa nhóm cơ</Text>
-            <TouchableOpacity onPress={() => setEditingGroup(false)}>
+            <TouchableOpacity onPress={closeEditGroupModal}>
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
