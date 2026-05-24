@@ -240,6 +240,20 @@ export async function getMuscleGroups() {
 }
 
 export async function getMuscleGroupById(id: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('muscle_groups')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as any;
+  }
+
   return LocalDB.getMuscleGroupById(id);
 }
 
@@ -307,6 +321,24 @@ export async function insertMuscleGroup(data: {
 }
 
 export async function updateMuscleGroup(id: string, data: Partial<any>) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const payload = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    } as any;
+
+    const { error } = await supabase
+      .from('muscle_groups')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
   const existing = await LocalDB.getMuscleGroupById(id);
   if (!existing) {
     throw new Error(`Muscle group ${id} not found`);
@@ -325,7 +357,7 @@ export async function updateMuscleGroup(id: string, data: Partial<any>) {
 }
 
 export async function getMuscleGroup(id: string) {
-  return LocalDB.getMuscleGroupById(id);
+  return getMuscleGroupById(id);
 }
 
 export async function softDeleteMuscleGroup(id: string) {
@@ -333,6 +365,37 @@ export async function softDeleteMuscleGroup(id: string) {
 }
 
 export async function deleteMuscleGroup(id: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+
+    const groupRes = await supabase
+      .from('muscle_groups')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+    if (groupRes.error) throw groupRes.error;
+
+    const exRes = await supabase
+      .from('exercises')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('user_id', userId)
+      .eq('muscle_group_id', id)
+      .is('deleted_at', null);
+    if (exRes.error) throw exRes.error;
+
+    const logRes = await supabase
+      .from('workout_logs')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('user_id', userId)
+      .eq('muscle_group_id', id)
+      .is('deleted_at', null);
+    if (logRes.error) throw logRes.error;
+
+    return;
+  }
+
   // Soft delete
   const existing = await LocalDB.getMuscleGroupById(id);
   if (existing) {
@@ -467,10 +530,58 @@ export async function getActiveExercises(muscleGroupId: string) {
 }
 
 export async function getExercisesWithStats(muscleGroupId: string, weekStart: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const [exerciseRes, logRes] = await Promise.all([
+      supabase
+        .from('exercises')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('muscle_group_id', muscleGroupId)
+        .is('deleted_at', null)
+        .order('is_active', { ascending: false })
+        .order('updated_at', { ascending: false }),
+      supabase
+        .from('workout_logs')
+        .select('exercise_id, sets, logged_at')
+        .eq('user_id', userId)
+        .eq('muscle_group_id', muscleGroupId)
+        .is('deleted_at', null)
+        .gte('logged_at', weekStart)
+        .order('logged_at', { ascending: false }),
+    ]);
+
+    if (exerciseRes.error) throw exerciseRes.error;
+    if (logRes.error) throw logRes.error;
+
+    const logs = logRes.data || [];
+    return (exerciseRes.data || []).map((exercise: any) => {
+      const exerciseLogs = logs.filter((log: any) => log.exercise_id === exercise.id);
+      return {
+        ...exercise,
+        last_logged_at: exerciseLogs[0]?.logged_at ?? null,
+        weekly_sets: exerciseLogs.reduce((sum: number, log: any) => sum + (log.sets || 0), 0),
+      };
+    });
+  }
+
   return LocalDB.getExercisesWithStats(muscleGroupId, weekStart);
 }
 
 export async function setExerciseActive(id: string, isActive: boolean) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { error } = await supabase
+      .from('exercises')
+      .update({ is_active: isActive, updated_at: new Date().toISOString() } as any)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
   await LocalDB.setExerciseActive(id, isActive);
 }
 
@@ -500,6 +611,24 @@ export async function softDeleteExercise(id: string) {
 }
 
 export async function updateExercise(id: string, data: Partial<any>) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const payload = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    } as any;
+
+    const { error } = await supabase
+      .from('exercises')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
   const existing = await LocalDB.getExerciseById(id);
   if (!existing) {
     throw new Error(`Exercise ${id} not found`);
@@ -518,6 +647,21 @@ export async function updateExercise(id: string, data: Partial<any>) {
 }
 
 export async function deleteExercise(id: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('exercises')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
   // Soft delete
   const existing = await LocalDB.getExerciseById(id);
   if (existing) {
@@ -625,6 +769,22 @@ export async function getSetCounts(
   startDate: string,
   endDate: string
 ) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select('sets')
+      .eq('user_id', userId)
+      .eq('muscle_group_id', muscleGroupId)
+      .is('deleted_at', null)
+      .gte('logged_at', startDate)
+      .lte('logged_at', endDate);
+
+    if (error) throw error;
+
+    return (data || []).reduce((acc: number, row: any) => acc + (row.sets || 0), 0);
+  }
+
   const logs = await LocalDB.getWorkoutLogs(startDate, endDate);
   return logs
     .filter((log) => log.muscle_group_id === muscleGroupId && !log.deleted)

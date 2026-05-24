@@ -179,10 +179,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         setIsGuestMode(false);
       } else {
-        // Ensure local data is always cleared when auth session is gone
-        await LocalDB.clearAllLocalData();
-        await AsyncStorage.removeItem(CURRENT_USER_ID_KEY);
-        await AsyncStorage.removeItem('last_sync_time');
+        if (event === 'SIGNED_OUT') {
+          await LocalDB.clearAllLocalData();
+          await AsyncStorage.removeItem(CURRENT_USER_ID_KEY);
+          await AsyncStorage.removeItem('last_sync_time');
+        }
         setUser(null);
         setIsGuestMode(true);
       }
