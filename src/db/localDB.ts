@@ -612,6 +612,18 @@ export async function getBodyMeasurementById(id: string) {
   );
 }
 
+export async function softDeleteBodyMeasurementsByMeasuredAt(measuredAt: string) {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE body_measurements
+     SET deleted = 1,
+         dirty = 1,
+         updated_at = datetime('now')
+     WHERE measured_at = ? AND deleted = 0`,
+    [measuredAt],
+  );
+}
+
 export async function upsertBodyMeasurement(measurement: LocalBodyMeasurement) {
   const database = await getDatabase();
   const dirty = measurement.dirty ?? 0;

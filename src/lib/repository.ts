@@ -112,9 +112,10 @@ export interface MuscleGoalInput {
 }
 
 async function getWebUserIdOrThrow() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  const userId = data.user?.id;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
   if (!userId) {
     throw new Error('Bạn cần đăng nhập để thao tác dữ liệu web');
   }
@@ -871,6 +872,23 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
   };
 
   await LocalDB.upsertBodyMeasurement(updated);
+}
+
+export async function deleteInBodyRecord(measuredAt: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { error } = await supabase
+      .from('body_measurements')
+      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any)
+      .eq('user_id', userId)
+      .eq('measured_at', measuredAt)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
+  await LocalDB.softDeleteBodyMeasurementsByMeasuredAt(measuredAt);
 }
 
 export async function getMuscleGoals() {

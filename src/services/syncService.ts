@@ -45,8 +45,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
 
     const userId = user.id;
 
-    // Trigger storage read to preserve compatibility with existing reset logic.
-    await AsyncStorage.getItem(LAST_SYNC_KEY);
+    const lastSyncStored = await AsyncStorage.getItem(LAST_SYNC_KEY);
+    const shouldHydrateFromRemote = !lastSyncStored;
 
     // 1. PUSH: Send all dirty local data to Supabase
     const dirtyMuscleGroups = await LocalDB.getDirtyMuscleGroups();
@@ -142,6 +142,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         measuredAt: string;
         note: string | null;
         metrics: Record<string, { value: number; unit: string }>;
+        hasActive: boolean;
+        hasDeleted: boolean;
       }
     >();
 
@@ -152,42 +154,71 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         groupedMeasurements.set(key, {
           measuredAt: measurement.measured_at,
           note: measurement.note || null,
-          metrics: {
-            [measurement.metric_key]: {
-              value: Number(measurement.value || 0),
-              unit: measurement.unit || '',
-            },
-          },
+          metrics: {},
+          hasActive: false,
+          hasDeleted: false,
         });
+      }
+
+      const current = groupedMeasurements.get(key)!;
+
+      if (measurement.deleted) {
+        current.hasDeleted = true;
         continue;
       }
 
-      existing.metrics[measurement.metric_key] = {
+      current.hasActive = true;
+      current.metrics[measurement.metric_key] = {
         value: Number(measurement.value || 0),
         unit: measurement.unit || '',
       };
-      if (!existing.note && measurement.note) {
-        existing.note = measurement.note;
+
+      if (!current.note && measurement.note) {
+        current.note = measurement.note;
       }
     }
 
+    const syncedMeasurementKeys = new Set<string>();
+
     for (const [, measurementRecord] of groupedMeasurements) {
       try {
-        const { error } = await (supabase.from('body_measurements').upsert({
+        const isDeleteReport = !measurementRecord.hasActive && measurementRecord.hasDeleted;
+        const now = new Date().toISOString();
+        const { data: existingMeasurement, error: findError } = await supabase
+          .from('body_measurements')
+          .select('id, created_at')
+          .eq('user_id', userId)
+          .eq('measured_at', measurementRecord.measuredAt)
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (findError) {
+          errors.push(`Failed to find body measurements (${measurementRecord.measuredAt}): ${findError.message}`);
+          continue;
+        }
+
+        const payload = {
           user_id: userId,
           measured_at: measurementRecord.measuredAt,
           note: measurementRecord.note,
-          metrics_json: measurementRecord.metrics,
-          updated_at: new Date().toISOString(),
-          deleted_at: null,
-        }, {
-          onConflict: 'user_id,measured_at',
-        }) as any);
+          metrics_json: isDeleteReport ? {} : measurementRecord.metrics,
+          updated_at: now,
+          deleted_at: isDeleteReport ? now : null,
+        };
+
+        const { error } = existingMeasurement
+          ? await (supabase
+              .from('body_measurements')
+              .update(payload as any)
+              .eq('id', existingMeasurement.id)
+              .eq('user_id', userId) as any)
+          : await (supabase.from('body_measurements').insert(payload as any) as any);
 
         if (error) {
           errors.push(`Failed to sync body measurements (${measurementRecord.measuredAt}): ${error.message}`);
         } else {
-          bodyMeasurementsSynced += Object.keys(measurementRecord.metrics).length;
+          syncedMeasurementKeys.add(measurementRecord.measuredAt);
+          bodyMeasurementsSynced += Math.max(Object.keys(measurementRecord.metrics).length, 1);
         }
       } catch (e: any) {
         errors.push(`Error syncing body measurements (${measurementRecord.measuredAt}): ${e.message}`);
@@ -195,6 +226,10 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
     }
 
     for (const measurement of dirtyMeasurements) {
+      if (!syncedMeasurementKeys.has(measurement.measured_at)) {
+        continue;
+      }
+
       try {
         await LocalDB.markBodyMeasurementClean(measurement.id);
       } catch (e: any) {
@@ -230,7 +265,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     }
 
-    // 2. PULL: Fetch full remote snapshots and prune local rows missing on server.
+    // 2. PULL: Hydrate local DB from remote only once after login.
+    if (shouldHydrateFromRemote) {
 
     try {
       let groupQuery = supabase.from('muscle_groups').select('*').eq('user_id', userId);
@@ -361,6 +397,10 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
     } catch (e: any) {
       errors.push(`Error pulling muscle goals: ${e.message}`);
     }
+    }
+
+    // Persist sync time so remote hydration only happens once per login/session reset.
+    await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
 
     return {
       success: errors.length === 0,
