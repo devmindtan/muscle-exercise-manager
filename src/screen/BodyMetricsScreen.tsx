@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,6 +19,7 @@ import { Plus, Target, X } from 'lucide-react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   createBodyMeasurement,
+  deleteInBodyRecord,
   createMuscleGoal,
   getBodyMeasurements,
   getMuscleGoals,
@@ -467,6 +469,37 @@ export default function BodyMetricsScreen() {
     setShowInBodyModal(true);
   };
 
+  const confirmDeleteInBody = (record: InBodyRecord) => {
+    Alert.alert(
+      'Xóa bản InBody',
+      `Bạn có chắc muốn xóa bản InBody ngày ${formatDateFull(record.measuredAt)}?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            setSaving(true);
+            setError('');
+            try {
+              await deleteInBodyRecord(record.measuredAt);
+              if (editingRecordKey === record.key) {
+                setEditingRecordKey(null);
+                setShowInBodyModal(false);
+              }
+              setStatusMessage('Đã xóa bản InBody.');
+              await load();
+            } catch (err: any) {
+              setError(err?.message ?? 'Không thể xóa bản InBody.');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const onDatePicked = (_event: DateTimePickerEvent, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (!selectedDate) return;
@@ -801,6 +834,13 @@ export default function BodyMetricsScreen() {
                   activeOpacity={0.75}
                 >
                   <Text style={styles.editBtnText}>Sửa</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteBtn}
+                  onPress={() => confirmDeleteInBody(record)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.deleteBtnText}>Xóa</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1332,7 +1372,7 @@ const styles = StyleSheet.create({
   },
   historyTitle: { fontSize: 14, fontWeight: '600', color: Colors.text },
   historyDate: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
-  historyRight: { alignItems: 'flex-end' },
+  historyRight: { alignItems: 'flex-end', gap: 8 },
   historyValue: { fontSize: 15, fontWeight: '700', color: Colors.accent },
   historySource: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
   editBtn: {
@@ -1343,6 +1383,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   editBtnText: { color: Colors.accent, fontSize: 12, fontWeight: '700' },
+  deleteBtn: {
+    borderWidth: 1,
+    borderColor: Colors.warning,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  deleteBtnText: { color: Colors.warning, fontSize: 12, fontWeight: '700' },
 
   // Empty
   emptyBox: {

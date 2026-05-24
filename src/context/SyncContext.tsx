@@ -42,6 +42,16 @@ const LAST_SYNC_KEY = 'last_sync_time';
 const OFFLINE_TEST_MODE_KEY = 'offline_test_mode';
 const SYNC_INTERVAL = 60000; // 60 seconds
 
+export function isNetworkSyncError(message?: string | null) {
+  if (!message) {
+    return false;
+  }
+
+  return /(^offline$|network request failed|failed to fetch|fetch failed|internet appears to be offline|network timeout|socket hang up|connection refused)/i.test(
+    message,
+  );
+}
+
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [status, setStatus] = useState<SyncStatus>('idle');
@@ -113,7 +123,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       if (!result.success && result.errors.length > 0) {
         setStatus('error');
         const firstError = result.errors[0];
-        const isNetworkError = /network|fetch|internet|failed to/i.test(firstError);
+        const isNetworkError = isNetworkSyncError(firstError);
         setSyncError(isNetworkError ? 'Không có internet' : firstError);
       } else {
         setStatus('synced');
@@ -124,7 +134,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setLastSyncAt(syncTime);
       await AsyncStorage.setItem(LAST_SYNC_KEY, syncTime.toISOString());
     } catch (err: any) {
-      const isNetworkError = /network|fetch|internet|failed to/i.test(err?.message || '');
+      const isNetworkError = isNetworkSyncError(err?.message);
       const errorMessage = isNetworkError ? 'Không có internet' : err.message || 'Sync failed';
       setStatus('error');
       setSyncError(errorMessage);

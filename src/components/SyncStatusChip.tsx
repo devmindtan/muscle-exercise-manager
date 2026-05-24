@@ -9,7 +9,7 @@ import {
 import { AlertCircle, Check, Cloud, CloudOff } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
-import { useSync } from '@/src/context/SyncContext';
+import { isNetworkSyncError, useSync } from '@/src/context/SyncContext';
 import { UserAccountModal } from './UserAccountModal';
 
 export function SyncStatusChip() {
@@ -53,9 +53,7 @@ export function SyncStatusChip() {
     case 'error':
       icon = <AlertCircle color={Colors.error} size={12} strokeWidth={1.8} />;
       {
-        const isOffline = syncError
-          ? /network|fetch|internet|failed to/i.test(syncError)
-          : false;
+        const isOffline = isNetworkSyncError(syncError);
         label = isOffline ? 'Không có internet' : syncError || 'Lỗi đồng bộ';
       }
       errorBorder = true;

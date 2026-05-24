@@ -4,7 +4,7 @@ function getRedirectTo() {
   if (typeof window === 'undefined') {
     return undefined;
   }
-  return `${window.location.origin}/auth-callback`;
+  return window.location.origin;
 }
 
 export async function signInWithGoogleWeb() {
