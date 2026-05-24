@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { supabase } from '@/src/lib/supabase';
 import * as LocalDB from '@/src/db/localDB';
+import { signInWithGoogleWeb, signOutWeb } from '@/src/services/webAuthService';
 
 type GoogleSigninLike = {
   configure: (options: Record<string, any>) => Promise<void> | void;
@@ -196,6 +198,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setLoading(true);
 
+      if (Platform.OS === 'web') {
+        await signInWithGoogleWeb();
+        return;
+      }
+
       const loaded = await ensureGoogleSigninLoaded();
       if (!loaded || !GoogleSignin) {
         throw new Error('Google Sign-In requires a development build. Expo Go is not supported.');
@@ -254,6 +261,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     try {
       setLoading(true);
+
+      if (Platform.OS === 'web') {
+        await signOutWeb();
+        setUser(null);
+        setIsGuestMode(true);
+        setError(null);
+        return;
+      }
       
       // Clear local data before signing out
       await LocalDB.clearAllLocalData();

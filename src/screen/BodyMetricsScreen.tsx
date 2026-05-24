@@ -15,12 +15,14 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Target, X } from 'lucide-react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import {
   createBodyMeasurement,
   createMuscleGoal,
   getBodyMeasurements,
   getMuscleGoals,
   getMuscleGroups,
+  updateBodyMeasurement,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import type { MuscleGoal, BodyMeasurement, MuscleGroup } from '@/src/types/database';
@@ -50,6 +52,13 @@ type InBodyFormState = {
 };
 
 type ScreenTab = 'overview' | 'segmental' | 'goals' | 'history';
+
+type InBodyRecord = {
+  key: string;
+  measuredAt: string;
+  note: string;
+  rowsByMetric: Record<string, BodyMeasurement>;
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -185,6 +194,13 @@ function formatDateShort(value?: string | null) {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 }
 
+function toDateInputValue(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
 function formatDateFull(value?: string | null) {
   if (!value) return 'Chưa đặt ngày';
   const date = new Date(value);
@@ -302,7 +318,9 @@ export default function BodyMetricsScreen() {
   const [selectedMetric, setSelectedMetric] = useState<string>('skeletal_muscle_mass');
   const [showInBodyModal, setShowInBodyModal] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [inBodyForm, setInBodyForm] = useState<InBodyFormState>(DEFAULT_INBODY_FORM);
+  const [editingRecordKey, setEditingRecordKey] = useState<string | null>(null);
   const [goalForm, setGoalForm] = useState(DEFAULT_GOAL_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -357,6 +375,33 @@ export default function BodyMetricsScreen() {
     [historyByMetric, selectedMetric],
   );
 
+  const inBodyRecords = useMemo<InBodyRecord[]>(() => {
+    const map = new Map<string, InBodyRecord>();
+
+    for (const row of measurements) {
+      if (row.source !== 'manual_inbody') continue;
+      const key = row.measured_at;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          key,
+          measuredAt: row.measured_at,
+          note: row.note || '',
+          rowsByMetric: { [row.metric_key]: row },
+        });
+        continue;
+      }
+      existing.rowsByMetric[row.metric_key] = row;
+      if (!existing.note && row.note) {
+        existing.note = row.note;
+      }
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime(),
+    );
+  }, [measurements]);
+
   const selectedMax = useMemo(
     () => Math.max(...selectedHistory.map((i) => i.value), 1),
     [selectedHistory],
@@ -392,11 +437,50 @@ export default function BodyMetricsScreen() {
     return { latest, delta, tone, spark, localMax };
   }
 
+  const openCreateInBody = () => {
+    setEditingRecordKey(null);
+    setInBodyForm({
+      ...DEFAULT_INBODY_FORM,
+      measuredAt: new Date().toISOString().slice(0, 10),
+    });
+    setError('');
+    setShowInBodyModal(true);
+  };
+
+  const openEditInBody = (record: InBodyRecord) => {
+    const next: InBodyFormState = {
+      ...DEFAULT_INBODY_FORM,
+      measuredAt: toDateInputValue(record.measuredAt),
+      note: record.note,
+    };
+
+    for (const entry of INBODY_SAVE_ENTRIES) {
+      const row = record.rowsByMetric[entry.metricKey];
+      if (row) {
+        next[entry.metricKey] = String(row.value);
+      }
+    }
+
+    setEditingRecordKey(record.key);
+    setInBodyForm(next);
+    setError('');
+    setShowInBodyModal(true);
+  };
+
+  const onDatePicked = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (!selectedDate) return;
+    setInBodyForm((state) => ({
+      ...state,
+      measuredAt: selectedDate.toISOString().slice(0, 10),
+    }));
+  };
+
   // ── Save handlers ──
 
   const saveInBodyMetrics = async () => {
     const measuredAt = inBodyForm.measuredAt.trim()
-      ? new Date(inBodyForm.measuredAt.trim()).toISOString()
+      ? new Date(`${inBodyForm.measuredAt.trim()}T12:00:00.000Z`).toISOString()
       : new Date().toISOString();
 
     if (
@@ -427,19 +511,38 @@ export default function BodyMetricsScreen() {
     setSaving(true);
     setError('');
     try {
+      const editingRecord = editingRecordKey
+        ? inBodyRecords.find((record) => record.key === editingRecordKey)
+        : null;
+
       for (const e of filled) {
-        await createBodyMeasurement({
-          metricKey: e.metricKey,
+        const existingRow = editingRecord?.rowsByMetric[e.metricKey];
+        const payload = {
           value: Number(inBodyForm[e.metricKey]),
           unit: e.unit,
           note: inBodyForm.note.trim() || `InBody: ${e.label}`,
           source: 'manual_inbody',
           measuredAt,
-        });
+        };
+
+        if (existingRow) {
+          await updateBodyMeasurement(existingRow.id, payload);
+        } else {
+          await createBodyMeasurement({
+            metricKey: e.metricKey,
+            ...payload,
+          });
+        }
       }
+
       setInBodyForm(DEFAULT_INBODY_FORM);
+      setEditingRecordKey(null);
       setShowInBodyModal(false);
-      setStatusMessage(`Đã lưu ${filled.length} chỉ số InBody.`);
+      setStatusMessage(
+        editingRecordKey
+          ? `Đã cập nhật bản InBody (${filled.length} chỉ số).`
+          : `Đã lưu ${filled.length} chỉ số InBody.`,
+      );
       await load();
     } catch (err: any) {
       setError(err?.message ?? 'Không thể lưu chỉ số InBody.');
@@ -672,11 +775,46 @@ export default function BodyMetricsScreen() {
     <>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Lịch sử</Text>
-        <Text style={styles.sectionHint}>{measurements.length} bản ghi</Text>
+        <Text style={styles.sectionHint}>{inBodyRecords.length} bản InBody</Text>
+      </View>
+      {inBodyRecords.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyText}>Chưa có bản InBody nào</Text>
+        </View>
+      ) : (
+        inBodyRecords.map((record) => {
+          const totalMetrics = Object.keys(record.rowsByMetric).length;
+          const focusMetric = record.rowsByMetric.skeletal_muscle_mass;
+          return (
+            <View key={record.key} style={styles.historyCard}>
+              <View>
+                <Text style={styles.historyTitle}>InBody - {formatDateFull(record.measuredAt)}</Text>
+                <Text style={styles.historyDate}>{totalMetrics} chỉ số đã lưu</Text>
+                {focusMetric ? (
+                  <Text style={styles.historyDate}>SMM: {focusMetric.value} {focusMetric.unit}</Text>
+                ) : null}
+              </View>
+              <View style={styles.historyRight}>
+                <TouchableOpacity
+                  style={styles.editBtn}
+                  onPress={() => openEditInBody(record)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.editBtnText}>Sửa</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })
+      )}
+
+      <View style={[styles.sectionHeader, { marginTop: 12 }]}>
+        <Text style={styles.sectionTitle}>Chi tiết từng chỉ số</Text>
+        <Text style={styles.sectionHint}>{measurements.length} dòng dữ liệu</Text>
       </View>
       {measurements.length === 0 ? (
         <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>Chưa có bản ghi nào</Text>
+          <Text style={styles.emptyText}>Chưa có dữ liệu</Text>
         </View>
       ) : (
         measurements.slice(0, 30).map((m) => (
@@ -724,7 +862,7 @@ export default function BodyMetricsScreen() {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerBtn}
-              onPress={() => { setError(''); setShowInBodyModal(true); }}
+              onPress={openCreateInBody}
             >
               <Plus color={Colors.bg} size={15} strokeWidth={2.5} />
               <Text style={styles.headerBtnText}>Nhập InBody</Text>
@@ -781,9 +919,18 @@ export default function BodyMetricsScreen() {
         visible={showInBodyModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowInBodyModal(false)}
+        onRequestClose={() => {
+          setShowInBodyModal(false);
+          setEditingRecordKey(null);
+        }}
       >
-        <Pressable style={styles.overlay} onPress={() => setShowInBodyModal(false)} />
+        <Pressable
+          style={styles.overlay}
+          onPress={() => {
+            setShowInBodyModal(false);
+            setEditingRecordKey(null);
+          }}
+        />
         <KeyboardAvoidingView
           style={styles.sheetWrap}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -792,8 +939,13 @@ export default function BodyMetricsScreen() {
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Nhập chỉ số InBody</Text>
-              <TouchableOpacity onPress={() => setShowInBodyModal(false)}>
+              <Text style={styles.sheetTitle}>{editingRecordKey ? 'Sửa bản InBody' : 'Nhập chỉ số InBody'}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowInBodyModal(false);
+                  setEditingRecordKey(null);
+                }}
+              >
                 <X color={Colors.textSecondary} size={20} />
               </TouchableOpacity>
             </View>
@@ -805,69 +957,82 @@ export default function BodyMetricsScreen() {
               contentContainerStyle={styles.sheetContent}
             >
               <Text style={styles.formSectionTitle}>Thông tin chung</Text>
-              <TextInput
-                style={styles.input}
-                value={inBodyForm.measuredAt}
-                onChangeText={(v) => setInBodyForm((s) => ({ ...s, measuredAt: v }))}
-                placeholder="Ngày đo YYYY-MM-DD (để trống = hiện tại)"
-                placeholderTextColor={Colors.textMuted}
-              />
+              <TouchableOpacity
+                style={styles.datePickerBtn}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.datePickerLabel}>Ngày đo</Text>
+                <Text style={styles.datePickerValue}>
+                  {inBodyForm.measuredAt || 'Chọn ngày'}
+                </Text>
+              </TouchableOpacity>
+              {showDatePicker ? (
+                <DateTimePicker
+                  value={
+                    inBodyForm.measuredAt
+                      ? new Date(`${inBodyForm.measuredAt}T12:00:00.000Z`)
+                      : new Date()
+                  }
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onDatePicked}
+                />
+              ) : null}
 
-              <Text style={styles.formSectionTitle}>1. Muscle-Fat</Text>
-              <FormField label="Cân nặng" value={inBodyForm.weight} unit="kg"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, weight: v }))} />
-              <FormField label="SMM" value={inBodyForm.skeletal_muscle_mass} unit="kg"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, skeletal_muscle_mass: v }))} />
-              <FormField label="Body Fat Mass" value={inBodyForm.body_fat_mass} unit="kg"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, body_fat_mass: v }))} />
-
-              <Text style={styles.formSectionTitle}>2. Obesity</Text>
-              <FormField label="BMI" value={inBodyForm.bmi} unit="BMI"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, bmi: v }))} />
-              <FormField label="PBF" value={inBodyForm.pbf} unit="%"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, pbf: v }))} />
-
-              <Text style={styles.formSectionTitle}>3. Segmental Lean (5 vùng)</Text>
-              <View style={styles.twoCol}>
-                <View style={styles.colHalf}>
-                  <FormField label="Trên trái" value={inBodyForm.segmental_lean_upper_left} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_upper_left: v }))} />
-                  <FormField label="Giữa" value={inBodyForm.segmental_lean_center} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_center: v }))} />
-                  <FormField label="Dưới phải" value={inBodyForm.segmental_lean_lower_right} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_lower_right: v }))} />
-                </View>
-                <View style={styles.colHalf}>
-                  <FormField label="Trên phải" value={inBodyForm.segmental_lean_upper_right} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_upper_right: v }))} />
-                  <FormField label="Dưới trái" value={inBodyForm.segmental_lean_lower_left} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_lower_left: v }))} />
-                </View>
+              <View style={styles.formSectionCard}>
+                <Text style={styles.formSectionTitle}>1. Muscle-Fat</Text>
+                <FormField label="Cân nặng" value={inBodyForm.weight} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, weight: v }))} />
+                <FormField label="SMM" value={inBodyForm.skeletal_muscle_mass} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, skeletal_muscle_mass: v }))} />
+                <FormField label="Body Fat Mass" value={inBodyForm.body_fat_mass} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, body_fat_mass: v }))} />
               </View>
 
-              <Text style={styles.formSectionTitle}>4. Segmental Fat (5 vùng)</Text>
-              <View style={styles.twoCol}>
-                <View style={styles.colHalf}>
-                  <FormField label="Trên trái" value={inBodyForm.segmental_fat_upper_left} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_upper_left: v }))} />
-                  <FormField label="Giữa" value={inBodyForm.segmental_fat_center} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_center: v }))} />
-                  <FormField label="Dưới phải" value={inBodyForm.segmental_fat_lower_right} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_lower_right: v }))} />
-                </View>
-                <View style={styles.colHalf}>
-                  <FormField label="Trên phải" value={inBodyForm.segmental_fat_upper_right} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_upper_right: v }))} />
-                  <FormField label="Dưới trái" value={inBodyForm.segmental_fat_lower_left} unit="kg"
-                    onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_lower_left: v }))} />
-                </View>
+              <View style={styles.formSectionCard}>
+                <Text style={styles.formSectionTitle}>2. Obesity</Text>
+                <FormField label="BMI" value={inBodyForm.bmi} unit="BMI"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, bmi: v }))} />
+                <FormField label="PBF" value={inBodyForm.pbf} unit="%"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, pbf: v }))} />
               </View>
 
-              <Text style={styles.formSectionTitle}>5. WHR & Visceral</Text>
-              <FormField label="Waist-Hip Ratio" value={inBodyForm.waist_hip_ratio} unit="ratio"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, waist_hip_ratio: v }))} />
-              <FormField label="Visceral Fat Level" value={inBodyForm.visceral_fat_level} unit="level"
-                onChange={(v) => setInBodyForm((s) => ({ ...s, visceral_fat_level: v }))} />
+              <View style={styles.formSectionCard}>
+                <Text style={styles.formSectionTitle}>3. Segmental Lean (5 vùng)</Text>
+                <FormField label="Trên trái" value={inBodyForm.segmental_lean_upper_left} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_upper_left: v }))} />
+                <FormField label="Trên phải" value={inBodyForm.segmental_lean_upper_right} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_upper_right: v }))} />
+                <FormField label="Giữa" value={inBodyForm.segmental_lean_center} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_center: v }))} />
+                <FormField label="Dưới trái" value={inBodyForm.segmental_lean_lower_left} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_lower_left: v }))} />
+                <FormField label="Dưới phải" value={inBodyForm.segmental_lean_lower_right} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_lean_lower_right: v }))} />
+              </View>
+
+              <View style={styles.formSectionCard}>
+                <Text style={styles.formSectionTitle}>4. Segmental Fat (5 vùng)</Text>
+                <FormField label="Trên trái" value={inBodyForm.segmental_fat_upper_left} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_upper_left: v }))} />
+                <FormField label="Trên phải" value={inBodyForm.segmental_fat_upper_right} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_upper_right: v }))} />
+                <FormField label="Giữa" value={inBodyForm.segmental_fat_center} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_center: v }))} />
+                <FormField label="Dưới trái" value={inBodyForm.segmental_fat_lower_left} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_lower_left: v }))} />
+                <FormField label="Dưới phải" value={inBodyForm.segmental_fat_lower_right} unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, segmental_fat_lower_right: v }))} />
+              </View>
+
+              <View style={styles.formSectionCard}>
+                <Text style={styles.formSectionTitle}>5. WHR & Visceral</Text>
+                <FormField label="Waist-Hip Ratio" value={inBodyForm.waist_hip_ratio} unit="ratio"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, waist_hip_ratio: v }))} />
+                <FormField label="Visceral Fat Level" value={inBodyForm.visceral_fat_level} unit="level"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, visceral_fat_level: v }))} />
+              </View>
 
               <Text style={styles.formSectionTitle}>Ghi chú</Text>
               <TextInput
@@ -882,7 +1047,13 @@ export default function BodyMetricsScreen() {
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
               <TouchableOpacity style={styles.primaryBtn} onPress={saveInBodyMetrics} disabled={saving}>
-                <Text style={styles.primaryBtnText}>{saving ? 'Đang lưu...' : 'Lưu chỉ số InBody'}</Text>
+                <Text style={styles.primaryBtnText}>
+                  {saving
+                    ? 'Đang lưu...'
+                    : editingRecordKey
+                      ? 'Cập nhật bản InBody'
+                      : 'Lưu chỉ số InBody'}
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -1164,6 +1335,14 @@ const styles = StyleSheet.create({
   historyRight: { alignItems: 'flex-end' },
   historyValue: { fontSize: 15, fontWeight: '700', color: Colors.accent },
   historySource: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
+  editBtn: {
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  editBtnText: { color: Colors.accent, fontSize: 12, fontWeight: '700' },
 
   // Empty
   emptyBox: {
@@ -1196,13 +1375,38 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.7,
     marginBottom: 8, marginTop: 12,
   },
+  formSectionCard: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  datePickerBtn: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  datePickerLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  datePickerValue: { color: Colors.text, fontSize: 14, fontWeight: '600' },
   formField: { marginBottom: 10 },
   fieldLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600', marginBottom: 5 },
   fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   fieldInput: { flex: 1, marginBottom: 0 },
   fieldUnit: { fontSize: 12, color: Colors.textMuted, minWidth: 40 },
-  twoCol: { flexDirection: 'row', gap: 10 },
-  colHalf: { flex: 1 },
   input: {
     backgroundColor: Colors.surfaceElevated, borderWidth: 1,
     borderColor: Colors.border, borderRadius: 12,

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { initializeDatabase } from '@/src/db/localDB';
 import { syncData } from '@/src/services/syncService';
 import { useAuth } from '@/src/context/AuthContext';
@@ -86,6 +86,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const performSync = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      setStatus('idle');
+      setSyncError(null);
+      return;
+    }
+
     if (!isAuthenticated || !deviceId || isSyncingRef.current) {
       return;
     }
@@ -163,6 +169,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   // Start auto-sync interval
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      setStatus('idle');
+      return;
+    }
+
     if (!isAuthenticated || !deviceId) {
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current);
