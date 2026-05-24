@@ -46,8 +46,11 @@ EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL=
 EXPO_PUBLIC_MINIO_BUCKET=muscle-manager
 EXPO_PUBLIC_WEB_CLIENT_ID=
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+EXPO_PUBLIC_WEB_REDIRECT_URL=
 
 `EXPO_PUBLIC_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` are treated as aliases, and `EXPO_PUBLIC_MINIO_ENDPOINT` and `EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL` are treated as aliases.
+
+For web OAuth deployments (Vercel/Netlify), set `EXPO_PUBLIC_WEB_REDIRECT_URL` to your public callback URL (for example `https://your-app.vercel.app/auth-callback`) and add the same URL in Supabase Auth Redirect URLs.
 ```
 ## Running The Application
 

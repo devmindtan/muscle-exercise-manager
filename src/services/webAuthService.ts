@@ -1,10 +1,16 @@
 import { supabase } from '@/src/lib/supabase';
 
 function getRedirectTo() {
+  const explicitRedirect = process.env.EXPO_PUBLIC_WEB_REDIRECT_URL?.trim();
+  if (explicitRedirect) {
+    return explicitRedirect.replace(/\/+$/, '');
+  }
+
   if (typeof window === 'undefined') {
     return undefined;
   }
-  return window.location.origin;
+
+  return `${window.location.origin.replace(/\/+$/, '')}/auth-callback`;
 }
 
 export async function signInWithGoogleWeb() {
