@@ -102,6 +102,8 @@ export type Database = {
           metric_key: string;
           value: number;
           unit: string;
+          record_type?: string;
+          metrics_json?: Json | null;
           note?: string | null;
           source?: string | null;
           measured_at?: string;
@@ -111,6 +113,8 @@ export type Database = {
           metric_key?: string;
           value?: number;
           unit?: string;
+          record_type?: string;
+          metrics_json?: Json | null;
           note?: string | null;
           source?: string | null;
           measured_at?: string;
@@ -220,6 +224,8 @@ export type BodyMeasurement = {
   metric_key: string;
   value: number;
   unit: string;
+  record_type: string;
+  metrics_json: Json | null;
   note: string | null;
   source: string | null;
   measured_at: string;
