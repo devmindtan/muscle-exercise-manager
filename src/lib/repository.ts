@@ -374,24 +374,41 @@ export async function deleteMuscleGroup(id: string) {
       .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
       .eq('id', id)
       .eq('user_id', userId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('id');
     if (groupRes.error) throw groupRes.error;
+    if (!groupRes.data || groupRes.data.length === 0) {
+      throw new Error('Không tìm thấy nhóm cơ để xoá hoặc bạn không có quyền');
+    }
 
-    const exRes = await supabase
-      .from('exercises')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
-      .eq('user_id', userId)
-      .eq('muscle_group_id', id)
-      .is('deleted_at', null);
-    if (exRes.error) throw exRes.error;
+    // Keep deletion resilient on web: group deletion should not be blocked
+    // by partial failures when cascading soft-delete to related rows.
+    const [exRes, logRes] = await Promise.allSettled([
+      supabase
+        .from('exercises')
+        .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+        .eq('user_id', userId)
+        .eq('muscle_group_id', id)
+        .is('deleted_at', null),
+      supabase
+        .from('workout_logs')
+        .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+        .eq('user_id', userId)
+        .eq('muscle_group_id', id)
+        .is('deleted_at', null),
+    ]);
 
-    const logRes = await supabase
-      .from('workout_logs')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
-      .eq('user_id', userId)
-      .eq('muscle_group_id', id)
-      .is('deleted_at', null);
-    if (logRes.error) throw logRes.error;
+    if (exRes.status === 'rejected') {
+      console.warn('Failed to soft-delete related exercises:', exRes.reason);
+    } else if (exRes.value.error) {
+      console.warn('Failed to soft-delete related exercises:', exRes.value.error);
+    }
+
+    if (logRes.status === 'rejected') {
+      console.warn('Failed to soft-delete related workout logs:', logRes.reason);
+    } else if (logRes.value.error) {
+      console.warn('Failed to soft-delete related workout logs:', logRes.value.error);
+    }
 
     return;
   }
@@ -651,14 +668,18 @@ export async function deleteExercise(id: string) {
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from('exercises')
       .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
       .eq('id', id)
       .eq('user_id', userId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('id');
 
     if (error) throw error;
+    if (!deletedRows || deletedRows.length === 0) {
+      throw new Error('Không tìm thấy bài tập để xoá hoặc bạn không có quyền');
+    }
     return;
   }
 
@@ -1037,14 +1058,19 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
 export async function deleteInBodyRecord(measuredAt: string) {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    const { error } = await supabase
+    const deletedAt = new Date().toISOString();
+    const { data: deletedRows, error } = await supabase
       .from('body_measurements')
-      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
       .eq('user_id', userId)
       .eq('measured_at', measuredAt)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('id');
 
     if (error) throw error;
+    if (!deletedRows || deletedRows.length === 0) {
+      throw new Error('Không tìm thấy bản InBody để xoá hoặc bạn không có quyền');
+    }
     return;
   }
 
@@ -1228,6 +1254,28 @@ export interface RecentLog {
 }
 
 export async function updateWorkoutLog(id: string, data: Partial<any>) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const payload = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    } as any;
+
+    const { data: updatedRows, error } = await supabase
+      .from('workout_logs')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .select('id');
+
+    if (error) throw error;
+    if (!updatedRows || updatedRows.length === 0) {
+      throw new Error('Không tìm thấy log để cập nhật hoặc bạn không có quyền');
+    }
+    return;
+  }
+
   const existing = await LocalDB.getWorkoutLogById(id);
   if (!existing) {
     throw new Error(`Workout log ${id} not found`);
@@ -1246,6 +1294,25 @@ export async function updateWorkoutLog(id: string, data: Partial<any>) {
 }
 
 export async function deleteWorkoutLog(id: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+
+    const { data: deletedRows, error } = await supabase
+      .from('workout_logs')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .select('id');
+
+    if (error) throw error;
+    if (!deletedRows || deletedRows.length === 0) {
+      throw new Error('Không tìm thấy log để xoá hoặc bạn không có quyền');
+    }
+    return;
+  }
+
   // Soft delete
   const existing = await LocalDB.getWorkoutLogById(id);
   if (existing) {

@@ -169,9 +169,9 @@ const LABEL_H = 38;
 
 // Where labels are anchored (center of label box)
 const LABEL_CENTERS: Record<BodyZone, { x: number; y: number }> = {
-  arm_l:  { x: 6,  y: 95  },  // left column, arm height
+  arm_l:  { x: 6,  y: 82  },  // left column, arm height
   torso:  { x: 100, y: 106 },  // bottom-center, below legs
-  arm_r:  { x: 194, y: 95  },  // right column
+  arm_r:  { x: 194, y: 82  },  // right column
   leg_l:  { x: 26,  y: 230 },  // left column, leg height
   leg_r:  { x: 174, y: 230 },  // right column
 };
@@ -309,13 +309,13 @@ function BodyFigureSvg({
       return (
         <G key="arm_l" opacity={vis.bodyOpacity}>
           <Path
-            d="M50,68 Q38,78 34,126 Q33,136 38,138 Q46,140 52,138 Q58,136 60,126 L62,68Z"
+            d="M48,62 Q36,72 32,120 Q31,130 36,132 Q44,134 50,132 Q56,130 58,120 L60,62Z"
             fill={vis.fill} stroke={vis.stroke} strokeWidth={vis.isSelected ? 1.5 : 0.8}
             {...hitProps}
           />
           {/* Invisible wider hit area */}
           <Path
-            d="M50,68 Q38,78 34,126 Q33,136 38,138 Q46,140 52,138 Q58,136 60,126 L62,68Z"
+            d="M48,62 Q36,72 32,120 Q31,130 36,132 Q44,134 50,132 Q56,130 58,120 L60,62Z"
             fill="transparent" stroke="transparent" strokeWidth={14}
             {...hitProps}
           />
@@ -326,11 +326,12 @@ function BodyFigureSvg({
       return (
         <G key="arm_r" opacity={vis.bodyOpacity}>
           <Path
-            d="M150,68 Q162,78 166,126 Q167,136 162,138 Q154,140 148,138 Q142,136 140,126 L138,68Z"            fill={vis.fill} stroke={vis.stroke} strokeWidth={vis.isSelected ? 1.5 : 0.8}
+            d="M152,62 Q164,72 168,120 Q169,130 164,132 Q156,134 150,132 Q144,130 142,120 L140,62Z"            
+            fill={vis.fill} stroke={vis.stroke} strokeWidth={vis.isSelected ? 1.5 : 0.8}
             {...hitProps}
           />
           <Path
-            d="M150,68 Q162,78 166,126 Q167,136 162,138 Q154,140 148,138 Q142,136 140,126 L138,68Z"
+            d="M152,62 Q164,72 168,120 Q169,130 164,132 Q156,134 150,132 Q144,130 142,120 L140,62Z"
             fill="transparent" stroke="transparent" strokeWidth={14}
             {...hitProps}
           />
@@ -354,12 +355,12 @@ function BodyFigureSvg({
       return (
         <G key="leg_l" opacity={vis.bodyOpacity}>
           <Path
-            d="M66,162 Q62,180 60,242 Q58,258 62,272 Q66,282 74,282 Q82,282 84,272 Q88,258 88,242 L92,162Z"
+            d="M66,155 Q62,173 60,235 Q58,251 62,265 Q66,275 74,275 Q82,275 84,265 Q88,251 88,235 L92,155Z"
             fill={vis.fill} stroke={vis.stroke} strokeWidth={vis.isSelected ? 1.5 : 0.8}
             {...hitProps}
           />
           <Path
-            d="M66,162 Q62,180 60,242 Q58,258 62,272 Q66,282 74,282 Q82,282 84,272 Q88,258 88,242 L92,162Z"
+            d="M66,155 Q62,173 60,235 Q58,251 62,265 Q66,275 74,275 Q82,275 84,265 Q88,251 88,235 L92,155Z"
             fill="transparent" stroke="transparent" strokeWidth={14}
             {...hitProps}
           />
@@ -370,12 +371,12 @@ function BodyFigureSvg({
       return (
         <G key="leg_r" opacity={vis.bodyOpacity}>
           <Path
-            d="M134,162 Q138,180 140,242 Q142,258 138,272 Q134,282 126,282 Q118,282 116,272 Q112,258 112,242 L108,162Z"
+            d="M134,155 Q138,173 140,235 Q142,251 138,265 Q134,275 126,275 Q118,275 116,265 Q112,251 112,235 L108,155Z"
             fill={vis.fill} stroke={vis.stroke} strokeWidth={vis.isSelected ? 1.5 : 0.8}
             {...hitProps}
           />
           <Path
-            d="M134,162 Q138,180 140,242 Q142,258 138,272 Q134,282 126,282 Q118,282 116,272 Q112,258 112,242 L108,162Z"
+            d="M134,155 Q138,173 140,235 Q142,251 138,265 Q134,275 126,275 Q118,275 116,265 Q112,251 112,235 L108,155Z"
             fill="transparent" stroke="transparent" strokeWidth={14}
             {...hitProps}
           />

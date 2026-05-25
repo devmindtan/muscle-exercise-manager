@@ -49,6 +49,32 @@ function formatDate(iso: string) {
   });
 }
 
+function confirmAction(
+  title: string,
+  message: string,
+  onConfirm: () => Promise<void> | void,
+  confirmText = 'Xác nhận',
+) {
+  if (Platform.OS === 'web') {
+    const canConfirm = typeof globalThis.confirm === 'function';
+    const confirmed = canConfirm ? globalThis.confirm(`${title}\n\n${message}`) : true;
+    if (confirmed) {
+      void onConfirm();
+    }
+    return;
+  }
+
+  Alert.alert(title, message, [
+    { text: 'Huỷ', style: 'cancel' },
+    {
+      text: confirmText,
+      onPress: () => {
+        void onConfirm();
+      },
+    },
+  ]);
+}
+
 export default function ExerciseDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -500,22 +526,17 @@ export default function ExerciseDetailScreen() {
               onPress={() => {
                 if (!exercise) return;
                 const nextActive = !exercise.is_active;
-                Alert.alert(
+                confirmAction(
                   nextActive ? 'Bật lại bài tập?' : 'Vô hiệu hoá bài tập?',
                   nextActive
                     ? 'Bài tập sẽ xuất hiện trở lại trong danh sách.'
                     : 'Bài tập sẽ bị ẩn khỏi danh sách nhưng lịch sử vẫn được giữ lại.',
-                  [
-                    { text: 'Huỷ', style: 'cancel' },
-                    {
-                      text: nextActive ? 'Bật lại' : 'Vô hiệu hoá',
-                      onPress: async () => {
-                        await setExerciseActive(exercise.id, nextActive);
-                        setEditing(false);
-                        load();
-                      },
-                    },
-                  ],
+                  async () => {
+                    await setExerciseActive(exercise.id, nextActive);
+                    setEditing(false);
+                    load();
+                  },
+                  nextActive ? 'Bật lại' : 'Vô hiệu hoá',
                 );
               }}
             >
@@ -528,21 +549,15 @@ export default function ExerciseDetailScreen() {
               style={styles.deleteBtn}
               onPress={() => {
                 if (!exercise) return;
-                Alert.alert(
+                confirmAction(
                   'Xoá bài tập?',
                   'Toàn bộ lịch sử tập của bài tập này cũng sẽ bị xoá. Không thể khôi phục.',
-                  [
-                    { text: 'Huỷ', style: 'cancel' },
-                    {
-                      text: 'Xoá',
-                      style: 'destructive',
-                      onPress: async () => {
-                        await softDeleteExercise(exercise.id);
-                        setEditing(false);
-                        router.back();
-                      },
-                    },
-                  ],
+                  async () => {
+                    await softDeleteExercise(exercise.id);
+                    setEditing(false);
+                    router.back();
+                  },
+                  'Xoá',
                 );
               }}
             >

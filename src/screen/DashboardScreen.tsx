@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,15 @@ function getWeekRange() {
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
   return { start: monday.toISOString(), end: sunday.toISOString() };
+}
+
+function getWeekKey() {
+  const now = new Date();
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((day + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  return `${monday.getFullYear()}-${monday.getMonth() + 1}-${monday.getDate()}`;
 }
 
 function getMonthRange() {
@@ -152,6 +161,7 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [progressTab, setProgressTab] = useState<ProgressTab>('pending');
+  const [weekKey, setWeekKey] = useState(getWeekKey());
 
   const load = useCallback(async () => {
     try {
@@ -173,6 +183,20 @@ export default function DashboardScreen() {
       load();
     }, [load]),
   );
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const nextWeekKey = getWeekKey();
+      if (nextWeekKey !== weekKey) {
+        setWeekKey(nextWeekKey);
+        setSelectedCategories(new Set());
+        setProgressTab('pending');
+        load();
+      }
+    }, 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [load, weekKey]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -211,6 +235,8 @@ export default function DashboardScreen() {
   );
 
   const filteredStats = categoryFilteredStats.filter((s) => getProgressState(s) === progressTab);
+  const hasStatsForCurrentTab = filteredStats.length > 0;
+  const displayedStats = hasStatsForCurrentTab ? filteredStats : categoryFilteredStats;
 
   const monthlyVolumeLabel =
     monthlyVolume >= 1000
@@ -331,6 +357,63 @@ export default function DashboardScreen() {
           </View>
         )}
 
+        {/* ── Progress tabs ── */}
+        {stats.length > 0 && (
+          <View style={styles.progressTabs}>
+            {(
+              [
+                { key: 'completed', label: 'Hoàn thành', count: progressCounts.completed },
+                { key: 'pending', label: 'Chưa', count: progressCounts.pending },
+                { key: 'over', label: 'Vượt', count: progressCounts.over },
+              ] as const
+            ).map((tab) => {
+              const isActive = progressTab === tab.key;
+              const isDisabled = tab.count === 0;
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[
+                    styles.progressTab,
+                    isActive && styles.progressTabActive,
+                    isDisabled && styles.progressTabDisabled,
+                  ]}
+                  onPress={() => {
+                    if (isDisabled) return;
+                    setProgressTab(tab.key);
+                  }}
+                  disabled={isDisabled}
+                >
+                  <Text
+                    style={[
+                      styles.progressTabText,
+                      isActive && styles.progressTabTextActive,
+                      isDisabled && styles.progressTabTextDisabled,
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                  <View
+                    style={[
+                      styles.progressTabBadge,
+                      isActive && styles.progressTabBadgeActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.progressTabBadgeText,
+                        isActive && styles.progressTabBadgeTextActive,
+                        isDisabled && styles.progressTabBadgeTextDisabled,
+                      ]}
+                    >
+                      {tab.count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
         {/* ── Muscle group list ── */}
         {stats.length === 0 ? (
           <View style={styles.emptyBox}>
@@ -339,64 +422,20 @@ export default function DashboardScreen() {
               Vào tab &quot;Nhóm cơ&quot; để thêm nhóm cơ và bài tập
             </Text>
           </View>
-        ) : filteredStats.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyTitle}>Không có nhóm cơ nào</Text>
-            <Text style={styles.emptyText}>
-              {progressTab === 'completed'
-                ? 'Chưa có nhóm cơ nào hoàn thành đúng mục tiêu trong bộ lọc hiện tại'
-                : progressTab === 'over'
-                  ? 'Chưa có nhóm cơ nào vượt mục tiêu trong bộ lọc hiện tại'
-                  : 'Tất cả nhóm cơ trong bộ lọc hiện tại đã đạt hoặc vượt mục tiêu'}
-            </Text>
-          </View>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>Tiến độ nhóm cơ ({filteredStats.length})</Text>
+            <Text style={styles.sectionTitle}>Tiến độ nhóm cơ ({displayedStats.length})</Text>
 
-            {/* Progress tabs */}
-            <View style={styles.progressTabs}>
-              {(
-                [
-                  { key: 'completed', label: 'Hoàn thành', count: progressCounts.completed },
-                  { key: 'pending', label: 'Chưa', count: progressCounts.pending },
-                  { key: 'over', label: 'Vượt', count: progressCounts.over },
-                ] as const
-              ).map((tab) => {
-                const isActive = progressTab === tab.key;
-                return (
-                  <TouchableOpacity
-                    key={tab.key}
-                    style={[styles.progressTab, isActive && styles.progressTabActive]}
-                    onPress={() => setProgressTab(tab.key)}
-                  >
-                    <Text
-                      style={[styles.progressTabText, isActive && styles.progressTabTextActive]}
-                    >
-                      {tab.label}
-                    </Text>
-                    <View
-                      style={[
-                        styles.progressTabBadge,
-                        isActive && styles.progressTabBadgeActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.progressTabBadgeText,
-                          isActive && styles.progressTabBadgeTextActive,
-                        ]}
-                      >
-                        {tab.count}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {!hasStatsForCurrentTab && (
+              <View style={styles.filterHintBox}>
+                <Text style={styles.filterHintText}>
+                  Không có nhóm cơ cho trạng thái đã chọn. Đang hiển thị tất cả nhóm trong bộ lọc hiện tại.
+                </Text>
+              </View>
+            )}
 
             {/* Muscle cards */}
-            {filteredStats.map((s) => {
+            {displayedStats.map((s) => {
               const progressCopy = getProgressCopy(s);
               return (
                 <TouchableOpacity
@@ -592,11 +631,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  progressTabDisabled: {
+    opacity: 0.45,
+  },
   progressTabActive: {
     borderColor: Colors.accent,
     backgroundColor: Colors.surfaceElevated,
   },
   progressTabText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  progressTabTextDisabled: { color: Colors.textMuted },
   progressTabTextActive: { color: Colors.accent },
   progressTabBadge: {
     minWidth: 20,
@@ -608,7 +651,22 @@ const styles = StyleSheet.create({
   },
   progressTabBadgeActive: { backgroundColor: Colors.accent + '20' },
   progressTabBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  progressTabBadgeTextDisabled: { color: Colors.textMuted },
   progressTabBadgeTextActive: { color: Colors.accent },
+  filterHintBox: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  filterHintText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
 
   // ── Muscle cards ──
   muscleCard: {

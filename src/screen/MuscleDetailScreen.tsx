@@ -63,6 +63,33 @@ function getWeekRange() {
   return { start: monday.toISOString(), end: sunday.toISOString() };
 }
 
+function confirmDestructive(
+  title: string,
+  message: string,
+  confirmText: string,
+  onConfirm: () => Promise<void> | void,
+) {
+  if (Platform.OS === 'web') {
+    const canConfirm = typeof globalThis.confirm === 'function';
+    const confirmed = canConfirm ? globalThis.confirm(`${title}\n\n${message}`) : true;
+    if (confirmed) {
+      void onConfirm();
+    }
+    return;
+  }
+
+  Alert.alert(title, message, [
+    { text: 'Huỷ', style: 'cancel' },
+    {
+      text: confirmText,
+      style: 'destructive',
+      onPress: () => {
+        void onConfirm();
+      },
+    },
+  ]);
+}
+
 export default function MuscleDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -139,6 +166,7 @@ export default function MuscleDetailScreen() {
       if (g) {
         setGroup(g);
       } else {
+        setGroup(null);
         setLoadError('Không tìm thấy nhóm cơ này.');
       }
       setExercises(ex);
@@ -260,20 +288,18 @@ export default function MuscleDetailScreen() {
   };
 
   const deleteGroup = () => {
-    Alert.alert(
+    confirmDestructive(
       'Xoá nhóm cơ',
-      `Xoà "${group?.name}"? Tất cả bài tập và lịch sử sẽ bị ẩn.`,
-      [
-        { text: 'Huỷ', style: 'cancel' },
-        {
-          text: 'Xoà',
-          style: 'destructive',
-          onPress: async () => {
-            await softDeleteMuscleGroup(id as string);
-            goBackToMuscles();
-          },
-        },
-      ],
+      `Xoá "${group?.name}"? Tất cả bài tập và lịch sử sẽ bị ẩn.`,
+      'Xoá',
+      async () => {
+        try {
+          await softDeleteMuscleGroup(id as string);
+          router.replace('/muscles');
+        } catch (e: unknown) {
+          setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
+        }
+      },
     );
   };
 
@@ -315,29 +341,23 @@ export default function MuscleDetailScreen() {
 
   const deleteExercise = () => {
     if (!editingExercise) return;
-    Alert.alert(
+    confirmDestructive(
       'Xoá bài tập',
       `Xoá "${editingExercise.name}"? Tất cả lịch sử sẽ bị ẩn.`,
-      [
-        { text: 'Huỷ', style: 'cancel' },
-        {
-          text: 'Xoà',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              await softDeleteExercise(editingExercise.id);
-              setShowEditExercise(false);
-              setEditingExercise(null);
-              load();
-            } catch (e: unknown) {
-              setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ],
+      'Xoá',
+      async () => {
+        setSaving(true);
+        try {
+          await softDeleteExercise(editingExercise.id);
+          setShowEditExercise(false);
+          setEditingExercise(null);
+          load();
+        } catch (e: unknown) {
+          setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
+        } finally {
+          setSaving(false);
+        }
+      },
     );
   };
 
