@@ -17,8 +17,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Target, X } from 'lucide-react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { SegmentalBody } from '@/src/components/BodyMetricsSegmental';
-import { SegmentalFormSection } from '@/src/components/SegmentalFormSection';
+import { SegmentalFormSection, SegmentalMetricPicker } from '@/src/components/SegmentalFormSection';
+import { OverviewTab } from '@/src/components/body-metrics-tabs/OverviewTab';
+import { SegmentalTab } from '@/src/components/body-metrics-tabs/SegmentalTab';
+import { GoalsTab } from '@/src/components/body-metrics-tabs/GoalsTab';
+import { HistoryTab } from '@/src/components/body-metrics-tabs/HistoryTab';
 
 import {
   createBodyMeasurement,
@@ -195,9 +198,8 @@ const DEFAULT_INBODY_FORM: InBodyFormState = {
 
 const DEFAULT_GOAL_FORM = {
   metricKey: 'segmental_lean_upper_left' as string,
-  currentValue: '',
   targetValue: '',
-  targetDate: '',
+  targetDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   note: '',
 };
 
@@ -288,6 +290,8 @@ export default function BodyMetricsScreen() {
   const [showInBodyModal, setShowInBodyModal] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showGoalDatePicker, setShowGoalDatePicker] = useState(false);
+  const [goalFilterMode, setGoalFilterMode] = useState<'all' | 'lean' | 'fat'>('all');
   const [inBodyForm, setInBodyForm] = useState<InBodyFormState>(DEFAULT_INBODY_FORM);
   const [editingRecordKey, setEditingRecordKey] = useState<string | null>(null);
   const [goalForm, setGoalForm] = useState(DEFAULT_GOAL_FORM);
@@ -384,6 +388,19 @@ export default function BodyMetricsScreen() {
     [selectedHistory],
   );
 
+  const latestGoalMetricValues = useMemo(() => {
+    const values: Partial<Record<keyof InBodyFormState, string>> = {};
+    for (const opt of GOAL_METRIC_OPTIONS) {
+      const latest = latestMetrics.get(opt.key);
+      values[opt.key as keyof InBodyFormState] = latest ? String(latest.value) : '';
+    }
+    return values;
+  }, [latestMetrics]);
+
+  const latestCurrentForGoal = useMemo(() => {
+    return latestMetrics.get(goalForm.metricKey)?.value ?? null;
+  }, [goalForm.metricKey, latestMetrics]);
+
   const lastUpdated = useMemo(() => {
     if (measurements.length === 0) return null;
     return measurements[0].measured_at;
@@ -464,6 +481,15 @@ export default function BodyMetricsScreen() {
     }));
   };
 
+  const onGoalDatePicked = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    setShowGoalDatePicker(false);
+    if (!selectedDate) return;
+    setGoalForm((s) => ({
+      ...s,
+      targetDate: selectedDate.toISOString().slice(0, 10),
+    }));
+  };
+
   // ── Save handlers ──
 
   const saveInBodyMetrics = async () => {
@@ -508,7 +534,7 @@ export default function BodyMetricsScreen() {
         const payload = {
           value: Number(inBodyForm[e.metricKey]),
           unit: e.unit,
-          note: inBodyForm.note.trim() || `InBody: ${e.label}`,
+          note: inBodyForm.note.trim() || null,
           source: 'manual_inbody',
           measuredAt,
         };
@@ -541,7 +567,7 @@ export default function BodyMetricsScreen() {
 
   const saveGoal = async () => {
     const targetValue = Number(goalForm.targetValue);
-    const currentValue = goalForm.currentValue.trim() ? Number(goalForm.currentValue) : null;
+    const currentValue = latestMetrics.get(goalForm.metricKey)?.value ?? null;
     const groups = (await getMuscleGroups()) as MuscleGroup[];
     const fallbackGroupId = groups[0]?.id;
 
@@ -551,10 +577,6 @@ export default function BodyMetricsScreen() {
     }
     if (!Number.isFinite(targetValue)) {
       setError('Vui lòng nhập mục tiêu hợp lệ.');
-      return;
-    }
-    if (goalForm.currentValue.trim() && !Number.isFinite(currentValue)) {
-      setError('Giá trị hiện tại không hợp lệ.');
       return;
     }
 
@@ -598,174 +620,6 @@ export default function BodyMetricsScreen() {
 
   // ── Tab content ──
 
-  const renderOverview = () => (
-    <>
-      {/* 2×2 summary cards */}
-      <View style={styles.statGrid}>
-        {SUMMARY_METRICS.map((key) => {
-          const latest = latestMetrics.get(key);
-          const history = historyByMetric.get(key) ?? [];
-          const delta =
-            history.length >= 2 ? history[0].value - history[1].value : null;
-          const tone = getTrendTone(key, delta);
-          const isSelected = selectedMetric === key;
-
-          return (
-            <TouchableOpacity
-              key={key}
-              style={[styles.statCard, isSelected && styles.statCardActive]}
-              onPress={() => setSelectedMetric(key)}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.statLabel}>{getMetricLabel(key)}</Text>
-              <Text style={[styles.statValue, isSelected && styles.statValueAccent]}>
-                {latest != null ? `${latest.value}` : '—'}
-                {latest ? <Text style={styles.statUnit}> {getMetricUnit(key)}</Text> : null}
-              </Text>
-              {delta != null ? (
-                <Text
-                  style={[
-                    styles.statDelta,
-                    tone === 'good' && styles.deltaGood,
-                    tone === 'warn' && styles.deltaWarn,
-                  ]}
-                >
-                  {delta > 0 ? '+' : ''}
-                  {delta.toFixed(2)} so với lần trước
-                </Text>
-              ) : (
-                <Text style={styles.statDeltaNeutral}>Chưa đủ dữ liệu</Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Trend chart for selected metric */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Xu hướng</Text>
-        <Text style={styles.sectionHint}>{getMetricLabel(selectedMetric)}</Text>
-      </View>
-      {selectedHistory.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>Chưa có dữ liệu cho chỉ số này</Text>
-        </View>
-      ) : (
-        <View style={styles.chartCard}>
-          <View style={styles.chartInner}>
-            {selectedHistory.map((item) => (
-              <View key={item.id} style={styles.chartCol}>
-                <Text style={styles.chartVal}>{item.value}</Text>
-                <View style={styles.chartBarBg}>
-                  <View
-                    style={[
-                      styles.chartBarFill,
-                      { height: `${Math.max((item.value / selectedMax) * 100, 8)}%` },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.chartLabel}>{formatDateShort(item.measured_at)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-    </>
-  );
-
-  const renderSegmental = () => (
-    <SegmentalBody historyByMetric={historyByMetric} />
-  );
-
-  const renderGoals = () => (
-    <>
-      {prioritizedGoals.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>
-            Tạo goal để app gợi ý chỉ số nào cần ưu tiên tăng hoặc giảm
-          </Text>
-        </View>
-      ) : (
-        prioritizedGoals.map((goal) => {
-          const current = goal.current_value ?? 0;
-          const pct =
-            goal.target_value > 0
-              ? Math.min(Math.round((current / goal.target_value) * 100), 100)
-              : 0;
-          const gap = Math.max(goal.target_value - current, 0);
-          return (
-            <View key={goal.id} style={styles.goalCard}>
-              <View style={styles.goalTop}>
-                <Text style={styles.goalName}>{getMetricLabel(goal.metric_key)}</Text>
-                {goal.target_date ? (
-                  <Text style={styles.goalDate}>Đích: {formatDateShort(goal.target_date)}</Text>
-                ) : null}
-              </View>
-              <View style={styles.goalProgressRow}>
-                <View style={styles.goalTrack}>
-                  <View style={[styles.goalFill, { width: `${pct}%` }]} />
-                </View>
-                <Text style={styles.goalPct}>{pct}%</Text>
-              </View>
-              <View style={styles.goalMeta}>
-                <Text style={styles.goalMetaText}>Hiện tại {current} {goal.unit}</Text>
-                <Text style={styles.goalMetaText}>
-                  Còn {gap.toFixed(1)} {goal.unit} → {goal.target_value} {goal.unit}
-                </Text>
-              </View>
-            </View>
-          );
-        })
-      )}
-    </>
-  );
-
-  const renderHistory = () => (
-    <>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Lịch sử</Text>
-        <Text style={styles.sectionHint}>{inBodyRecords.length} bản InBody</Text>
-      </View>
-      {inBodyRecords.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>Chưa có bản InBody nào</Text>
-        </View>
-      ) : (
-        inBodyRecords.map((record) => {
-          const totalMetrics = Object.keys(record.rowsByMetric).length;
-          const focusMetric = record.rowsByMetric.skeletal_muscle_mass;
-          return (
-            <View key={record.key} style={styles.historyCard}>
-              <View>
-                <Text style={styles.historyTitle}>InBody - {formatDateFull(record.measuredAt)}</Text>
-                <Text style={styles.historyDate}>{totalMetrics} chỉ số đã lưu</Text>
-                {focusMetric ? (
-                  <Text style={styles.historyDate}>SMM: {focusMetric.value} {focusMetric.unit}</Text>
-                ) : null}
-              </View>
-              <View style={styles.historyRight}>
-                <TouchableOpacity
-                  style={styles.editBtn}
-                  onPress={() => openEditInBody(record)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.editBtnText}>Sửa</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => confirmDeleteInBody(record)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.deleteBtnText}>Xóa</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        })
-      )}
-    </>
-  );
-
   // ── Render ──
 
   return (
@@ -791,16 +645,16 @@ export default function BodyMetricsScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={openCreateInBody}
-            >
+            <TouchableOpacity style={styles.headerBtn} onPress={openCreateInBody}>
               <Plus color={Colors.bg} size={15} strokeWidth={2.5} />
               <Text style={styles.headerBtnText}>Nhập InBody</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerBtn, styles.headerBtnGhost]}
-              onPress={() => { setError(''); setShowGoalModal(true); }}
+              onPress={() => {
+                setError('');
+                setShowGoalModal(true);
+              }}
             >
               <Target color={Colors.accent} size={15} strokeWidth={2.2} />
               <Text style={[styles.headerBtnText, styles.headerBtnGhostText]}>Thêm goal</Text>
@@ -838,10 +692,39 @@ export default function BodyMetricsScreen() {
 
         {/* Tab content */}
         <View style={styles.tabContent}>
-          {tab === 'overview' && renderOverview()}
-          {tab === 'segmental' && renderSegmental()}
-          {tab === 'goals' && renderGoals()}
-          {tab === 'history' && renderHistory()}
+          {tab === 'overview' && (
+            <OverviewTab
+              summaryMetrics={SUMMARY_METRICS}
+              latestMetrics={latestMetrics}
+              historyByMetric={historyByMetric}
+              selectedMetric={selectedMetric}
+              onSelectMetric={setSelectedMetric}
+              selectedHistory={selectedHistory}
+              selectedMax={selectedMax}
+              getMetricLabel={getMetricLabel}
+              getMetricUnit={getMetricUnit}
+              getTrendTone={getTrendTone}
+              formatDateShort={formatDateShort}
+            />
+          )}
+          {tab === 'segmental' && <SegmentalTab historyByMetric={historyByMetric} />}
+          {tab === 'goals' && (
+            <GoalsTab
+              prioritizedGoals={prioritizedGoals}
+              goalFilterMode={goalFilterMode}
+              onChangeGoalFilterMode={setGoalFilterMode}
+              getMetricLabel={getMetricLabel}
+              formatDateFull={formatDateFull}
+            />
+          )}
+          {tab === 'history' && (
+            <HistoryTab
+              inBodyRecords={inBodyRecords}
+              formatDateFull={formatDateFull}
+              onEditRecord={openEditInBody}
+              onDeleteRecord={confirmDeleteInBody}
+            />
+          )}
         </View>
       </ScrollView>
 
@@ -870,7 +753,9 @@ export default function BodyMetricsScreen() {
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{editingRecordKey ? 'Sửa bản InBody' : 'Nhập chỉ số InBody'}</Text>
+              <Text style={styles.sheetTitle}>
+                {editingRecordKey ? 'Sửa bản InBody' : 'Nhập chỉ số InBody'}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   setShowInBodyModal(false);
@@ -895,7 +780,9 @@ export default function BodyMetricsScreen() {
               >
                 <Text style={styles.datePickerLabel}>Ngày đo</Text>
                 <Text style={styles.datePickerValue}>
-                  {inBodyForm.measuredAt || 'Chọn ngày'}
+                  {inBodyForm.measuredAt
+                    ? formatDateFull(inBodyForm.measuredAt)
+                    : 'Chọn ngày'}
                 </Text>
               </TouchableOpacity>
               {showDatePicker ? (
@@ -913,32 +800,61 @@ export default function BodyMetricsScreen() {
 
               <View style={styles.formSectionCard}>
                 <Text style={styles.formSectionTitle}>1. Muscle-Fat</Text>
-                <FormField label="Cân nặng" value={inBodyForm.weight} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, weight: v }))} />
-                <FormField label="SMM" value={inBodyForm.skeletal_muscle_mass} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, skeletal_muscle_mass: v }))} />
-                <FormField label="Body Fat Mass" value={inBodyForm.body_fat_mass} unit="kg"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, body_fat_mass: v }))} />
+                <FormField
+                  label="Cân nặng"
+                  value={inBodyForm.weight}
+                  unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, weight: v }))}
+                />
+                <FormField
+                  label="SMM"
+                  value={inBodyForm.skeletal_muscle_mass}
+                  unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, skeletal_muscle_mass: v }))}
+                />
+                <FormField
+                  label="Body Fat Mass"
+                  value={inBodyForm.body_fat_mass}
+                  unit="kg"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, body_fat_mass: v }))}
+                />
               </View>
 
               <View style={styles.formSectionCard}>
                 <Text style={styles.formSectionTitle}>2. Obesity</Text>
-                <FormField label="BMI" value={inBodyForm.bmi} unit="BMI"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, bmi: v }))} />
-                <FormField label="PBF" value={inBodyForm.pbf} unit="%"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, pbf: v }))} />
+                <FormField
+                  label="BMI"
+                  value={inBodyForm.bmi}
+                  unit="BMI"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, bmi: v }))}
+                />
+                <FormField
+                  label="PBF"
+                  value={inBodyForm.pbf}
+                  unit="%"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, pbf: v }))}
+                />
               </View>
 
               <SegmentalFormSection
                 form={inBodyForm}
                 onChange={(key, value) => setInBodyForm((s) => ({ ...s, [key]: value }))}
               />
+
               <View style={styles.formSectionCard}>
                 <Text style={styles.formSectionTitle}>5. WHR & Visceral</Text>
-                <FormField label="Waist-Hip Ratio" value={inBodyForm.waist_hip_ratio} unit="ratio"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, waist_hip_ratio: v }))} />
-                <FormField label="Visceral Fat Level" value={inBodyForm.visceral_fat_level} unit="level"
-                  onChange={(v) => setInBodyForm((s) => ({ ...s, visceral_fat_level: v }))} />
+                <FormField
+                  label="Waist-Hip Ratio"
+                  value={inBodyForm.waist_hip_ratio}
+                  unit="ratio"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, waist_hip_ratio: v }))}
+                />
+                <FormField
+                  label="Visceral Fat Level"
+                  value={inBodyForm.visceral_fat_level}
+                  unit="level"
+                  onChange={(v) => setInBodyForm((s) => ({ ...s, visceral_fat_level: v }))}
+                />
               </View>
 
               <Text style={styles.formSectionTitle}>Ghi chú</Text>
@@ -953,7 +869,11 @@ export default function BodyMetricsScreen() {
 
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-              <TouchableOpacity style={styles.primaryBtn} onPress={saveInBodyMetrics} disabled={saving}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={saveInBodyMetrics}
+                disabled={saving}
+              >
                 <Text style={styles.primaryBtnText}>
                   {saving
                     ? 'Đang lưu...'
@@ -996,36 +916,23 @@ export default function BodyMetricsScreen() {
               contentContainerStyle={styles.sheetContent}
             >
               <Text style={styles.goalHint}>
-                Chọn chỉ số, nhập giá trị hiện tại và mục tiêu.
+                Chọn chỉ số trên hình nộm. Giá trị hiện tại sẽ tự lấy từ bản đo mới nhất.
               </Text>
 
-              <Text style={styles.label}>Chỉ số</Text>
-              <View style={styles.chipWrap}>
-                {GOAL_METRIC_OPTIONS.map((opt) => {
-                  const active = goalForm.metricKey === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => setGoalForm((s) => ({ ...s, metricKey: opt.key }))}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={styles.label}>Giá trị hiện tại</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="decimal-pad"
-                value={goalForm.currentValue}
-                onChangeText={(v) => setGoalForm((s) => ({ ...s, currentValue: v }))}
-                placeholder="VD: 8"
-                placeholderTextColor={Colors.textMuted}
+              <SegmentalMetricPicker
+                title="Chọn chỉ số"
+                value={goalForm.metricKey}
+                onChange={(metricKey) => setGoalForm((s) => ({ ...s, metricKey }))}
+                values={latestGoalMetricValues}
               />
+
+              <Text style={styles.label}>Giá trị hiện tại (tự động)</Text>
+              <View style={styles.readonlyValueCard}>
+                <Text style={styles.readonlyValueText}>
+                  {latestCurrentForGoal != null ? latestCurrentForGoal : 'Chưa có dữ liệu'}
+                </Text>
+                <Text style={styles.readonlyValueUnit}>kg</Text>
+              </View>
 
               <Text style={styles.label}>Mục tiêu</Text>
               <TextInput
@@ -1037,14 +944,30 @@ export default function BodyMetricsScreen() {
                 placeholderTextColor={Colors.textMuted}
               />
 
-              <Text style={styles.label}>Ngày đích (YYYY-MM-DD)</Text>
-              <TextInput
-                style={styles.input}
-                value={goalForm.targetDate}
-                onChangeText={(v) => setGoalForm((s) => ({ ...s, targetDate: v }))}
-                placeholder="2026-06-30"
-                placeholderTextColor={Colors.textMuted}
-              />
+              <Text style={styles.label}>Ngày đích</Text>
+              <TouchableOpacity
+                style={styles.datePickerBtn}
+                onPress={() => setShowGoalDatePicker(true)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.datePickerLabel}>Ngày đích</Text>
+                <Text style={styles.datePickerValue}>
+                  {goalForm.targetDate ? formatDateFull(goalForm.targetDate) : 'Chọn ngày'}
+                </Text>
+              </TouchableOpacity>
+              {showGoalDatePicker ? (
+                <DateTimePicker
+                  value={
+                    goalForm.targetDate
+                      ? new Date(`${goalForm.targetDate}T12:00:00.000Z`)
+                      : new Date()
+                  }
+                  mode="date"
+                  minimumDate={new Date()}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onGoalDatePicked}
+                />
+              ) : null}
 
               <Text style={styles.label}>Ghi chú</Text>
               <TextInput
@@ -1089,8 +1012,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10, borderRadius: 12,
   },
   headerBtnGhost: {
-    backgroundColor: Colors.surface, borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
   },
   headerBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 13 },
   headerBtnGhostText: { color: Colors.accent },
@@ -1107,10 +1029,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, borderRadius: 12,
     borderWidth: 1, borderColor: Colors.border, padding: 3, gap: 2,
   },
-  tabItem: {
-    flex: 1, alignItems: 'center', paddingVertical: 8,
-    borderRadius: 10,
-  },
+  tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
   tabItemActive: {
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1, borderColor: Colors.accent,
@@ -1120,16 +1039,12 @@ const styles = StyleSheet.create({
   tabContent: { paddingHorizontal: 20 },
 
   // Stat grid (2×2)
-  statGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20,
-  },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   statCard: {
     width: '48%', backgroundColor: Colors.surface,
     borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border,
   },
-  statCardActive: {
-    borderColor: Colors.accent, backgroundColor: Colors.surfaceElevated,
-  },
+  statCardActive: { borderColor: Colors.accent, backgroundColor: Colors.surfaceElevated },
   statLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500', marginBottom: 5 },
   statValue: { fontSize: 24, fontWeight: '700', color: Colors.text, lineHeight: 28 },
   statValueAccent: { color: Colors.accent },
@@ -1156,10 +1071,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
     paddingHorizontal: 12, paddingVertical: 16, marginBottom: 8,
   },
-  chartInner: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    gap: 8, minHeight: 132,
-  },
+  chartInner: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, minHeight: 132 },
   chartCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, minWidth: 44 },
   chartVal: { fontSize: 10, color: Colors.textSecondary, fontWeight: '600' },
   chartBarBg: {
@@ -1169,11 +1081,10 @@ const styles = StyleSheet.create({
   chartBarFill: { width: '100%', backgroundColor: Colors.accent, borderRadius: 8 },
   chartLabel: { fontSize: 10, color: Colors.textMuted },
 
-  // Segmental card
+  // Segmental card (kept for SegmentalBody component)
   segCard: {
     backgroundColor: Colors.surface, borderRadius: 14,
-    borderWidth: 1, borderColor: Colors.border,
-    overflow: 'hidden', marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.border, overflow: 'hidden', marginBottom: 12,
   },
   segCardTitle: {
     fontSize: 11, fontWeight: '700', color: Colors.textMuted,
@@ -1182,20 +1093,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   segRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10,
   },
   segRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
   segLeft: { flex: 1 },
   segName: { fontSize: 13, fontWeight: '600', color: Colors.text },
   segRight: { alignItems: 'flex-end', gap: 4 },
   segValue: { fontSize: 14, fontWeight: '700', color: Colors.text },
-
-  // Sparkline
-  sparkRow: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    height: 20, gap: 2, marginTop: 5,
-  },
+  sparkRow: { flexDirection: 'row', alignItems: 'flex-end', height: 20, gap: 2, marginTop: 5 },
   sparkTrack: {
     flex: 1, height: '100%', justifyContent: 'flex-end',
     backgroundColor: Colors.border, borderRadius: 3, overflow: 'hidden',
@@ -1213,20 +1118,59 @@ const styles = StyleSheet.create({
   badgeNeutral: { backgroundColor: Colors.border },
   badgeNeutralText: { color: Colors.textMuted },
 
-  // Goals
+  // Goals — summary
+  goalSummaryRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  goalSummaryCard: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: 12,
+    padding: 10, borderWidth: 1, borderColor: Colors.border,
+  },
+  goalSummaryLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
+  goalSummaryVal: { fontSize: 20, fontWeight: '700' },
+
+  // Goals — filter chips
+  chipRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+  },
+  chipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '20' },
+  chipText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  chipTextActive: { color: Colors.accent },
+
+  // Goals — cards
   goalCard: {
     backgroundColor: Colors.surface, borderRadius: 14,
     padding: 14, borderWidth: 1, borderColor: Colors.border, marginBottom: 10,
   },
-  goalTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  goalName: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  goalDate: { fontSize: 11, color: Colors.textMuted },
-  goalProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  goalTrack: {
-    flex: 1, height: 4, backgroundColor: Colors.border,
-    borderRadius: 2, overflow: 'hidden',
+  goalTop: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    justifyContent: 'space-between', marginBottom: 10,
   },
-  goalFill: { height: '100%', backgroundColor: Colors.accent, borderRadius: 2 },
+  goalName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  goalDate: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
+  goalTrack: {
+    height: 5, backgroundColor: Colors.border,
+    borderRadius: 999, overflow: 'hidden', marginBottom: 10,
+  },
+  goalFill: { height: '100%', backgroundColor: Colors.accent, borderRadius: 999 },
+  goalFillWarn: { backgroundColor: Colors.warning },
+  goalNumsRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  goalNumLabel: {
+    fontSize: 10, color: Colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2,
+  },
+  goalNumVal: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  goalGapBox: {
+    backgroundColor: Colors.surfaceElevated, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center',
+  },
+  goalGapLabel: { fontSize: 10, color: Colors.textMuted, marginBottom: 2 },
+  goalGapVal: { fontSize: 13, fontWeight: '700' },
+
+  // (kept for possible reuse)
+  goalProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   goalPct: { fontSize: 11, fontWeight: '700', color: Colors.accent, minWidth: 32, textAlign: 'right' },
   goalMeta: { flexDirection: 'row', justifyContent: 'space-between' },
   goalMetaText: { fontSize: 11, color: Colors.textMuted },
@@ -1243,19 +1187,13 @@ const styles = StyleSheet.create({
   historyValue: { fontSize: 15, fontWeight: '700', color: Colors.accent },
   historySource: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
   editBtn: {
-    borderWidth: 1,
-    borderColor: Colors.accent,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderWidth: 1, borderColor: Colors.accent,
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
   },
   editBtnText: { color: Colors.accent, fontSize: 12, fontWeight: '700' },
   deleteBtn: {
-    borderWidth: 1,
-    borderColor: Colors.warning,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderWidth: 1, borderColor: Colors.warning,
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
   },
   deleteBtnText: { color: Colors.warning, fontSize: 12, fontWeight: '700' },
 
@@ -1287,34 +1225,21 @@ const styles = StyleSheet.create({
   // Form
   formSectionTitle: {
     fontSize: 11, color: Colors.textSecondary, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.7,
-    marginBottom: 8, marginTop: 12,
+    textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 8, marginTop: 12,
   },
   formSectionCard: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    marginBottom: 8,
+    backgroundColor: Colors.surfaceElevated, borderWidth: 1,
+    borderColor: Colors.border, borderRadius: 12,
+    paddingHorizontal: 12, paddingBottom: 8, marginBottom: 8,
   },
   datePickerBtn: {
-    backgroundColor: Colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
+    backgroundColor: Colors.surfaceElevated, borderWidth: 1,
+    borderColor: Colors.border, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 12, marginBottom: 10,
   },
   datePickerLabel: {
-    fontSize: 11,
-    color: Colors.textMuted,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 4,
+    fontSize: 11, color: Colors.textMuted, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4,
   },
   datePickerValue: { color: Colors.text, fontSize: 14, fontWeight: '600' },
   formField: { marginBottom: 10 },
@@ -1343,11 +1268,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 8,
   },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surfaceElevated,
+  readonlyValueCard: {
+    marginBottom: 14, backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  chipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '20' },
-  chipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
-  chipTextActive: { color: Colors.accent },
+  readonlyValueText: { color: Colors.text, fontSize: 14, fontWeight: '700' },
+  readonlyValueUnit: { color: Colors.textMuted, fontSize: 12 },
 });
