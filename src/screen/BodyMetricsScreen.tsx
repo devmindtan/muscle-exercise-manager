@@ -58,6 +58,33 @@ export type InBodyFormState = {
 
 type ScreenTab = 'overview' | 'segmental' | 'goals' | 'history';
 
+function confirmDestructive(
+  title: string,
+  message: string,
+  onConfirm: () => Promise<void> | void,
+  confirmText = 'Xóa',
+) {
+  if (Platform.OS === 'web') {
+    const canConfirm = typeof globalThis.confirm === 'function';
+    const confirmed = canConfirm ? globalThis.confirm(`${title}\n\n${message}`) : true;
+    if (confirmed) {
+      void onConfirm();
+    }
+    return;
+  }
+
+  Alert.alert(title, message, [
+    { text: 'Hủy', style: 'cancel' },
+    {
+      text: confirmText,
+      style: 'destructive',
+      onPress: () => {
+        void onConfirm();
+      },
+    },
+  ]);
+}
+
 type InBodyRecord = {
   key: string;
   measuredAt: string;
@@ -405,33 +432,26 @@ export default function BodyMetricsScreen() {
   };
 
   const confirmDeleteInBody = (record: InBodyRecord) => {
-    Alert.alert(
+    confirmDestructive(
       'Xóa bản InBody',
       `Bạn có chắc muốn xóa bản InBody ngày ${formatDateFull(record.measuredAt)}?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            setError('');
-            try {
-              await deleteInBodyRecord(record.measuredAt);
-              if (editingRecordKey === record.key) {
-                setEditingRecordKey(null);
-                setShowInBodyModal(false);
-              }
-              setStatusMessage('Đã xóa bản InBody.');
-              await load();
-            } catch (err: any) {
-              setError(err?.message ?? 'Không thể xóa bản InBody.');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ],
+      async () => {
+        setSaving(true);
+        setError('');
+        try {
+          await deleteInBodyRecord(record.measuredAt);
+          if (editingRecordKey === record.key) {
+            setEditingRecordKey(null);
+            setShowInBodyModal(false);
+          }
+          setStatusMessage('Đã xóa bản InBody.');
+          await load();
+        } catch (err: any) {
+          setError(err?.message ?? 'Không thể xóa bản InBody.');
+        } finally {
+          setSaving(false);
+        }
+      },
     );
   };
 
