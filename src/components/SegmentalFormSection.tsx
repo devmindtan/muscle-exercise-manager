@@ -5,7 +5,7 @@
  * Props: giống FormField cũ — form state + onChange
  */
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Path, Rect, Ellipse, G, Text as SvgText } from 'react-native-svg';
 import { Colors } from '@/src/constants/colors';
@@ -39,6 +39,30 @@ const ZONE_LABELS: Record<SegZone, string> = {
 
 type FormMode = 'lean' | 'fat';
 
+const SEG_ZONES: SegZone[] = ['upper_left', 'upper_right', 'center', 'lower_left', 'lower_right'];
+
+const GOAL_KEYS = {
+  lean: LEAN_KEYS,
+  fat: FAT_KEYS,
+} as const;
+
+function inferModeFromMetric(metricKey: string): FormMode {
+  return metricKey.startsWith('segmental_fat_') ? 'fat' : 'lean';
+}
+
+function inferZoneFromMetric(metricKey: string): SegZone {
+  for (const zone of SEG_ZONES) {
+    if (LEAN_KEYS[zone] === metricKey || FAT_KEYS[zone] === metricKey) {
+      return zone;
+    }
+  }
+  return 'upper_left';
+}
+
+function toMetricKey(mode: FormMode, zone: SegZone): keyof InBodyFormState {
+  return GOAL_KEYS[mode][zone];
+}
+
 interface Props {
   form: InBodyFormState;
   onChange: (key: keyof InBodyFormState, value: string) => void;
@@ -46,20 +70,18 @@ interface Props {
 
 // Mini body SVG for the input section (smaller 160×240)
 function MiniBodySvg({
-  form,
+  valuesByZone,
   mode,
   selected,
   onZonePress,
 }: {
-  form: InBodyFormState;
+  valuesByZone: Record<SegZone, string>;
   mode: FormMode;
   selected: SegZone | null;
   onZonePress: (z: SegZone) => void;
 }) {
-  const keys = mode === 'lean' ? LEAN_KEYS : FAT_KEYS;
-
   function zoneHasValue(zone: SegZone) {
-    const v = form[keys[zone]];
+    const v = valuesByZone[zone];
     return typeof v === 'string' && v.trim().length > 0;
   }
 
@@ -76,8 +98,6 @@ function MiniBodySvg({
     if (zoneHasValue(zone)) return '#0F6E56';
     return Colors.textMuted;
   }
-
-  const zones: SegZone[] = ['upper_left', 'upper_right', 'center', 'lower_left', 'lower_right'];
 
   return (
     <Svg viewBox="0 0 160 240" width={160} height={240}>
@@ -123,8 +143,8 @@ function MiniBodySvg({
       <Ellipse cx={80} cy={22} rx={16} ry={18} fill={Colors.surface} stroke={Colors.border} strokeWidth={0.8} />
 
       {/* Value labels */}
-      {zones.map((zone) => {
-        const v = form[keys[zone]];
+      {SEG_ZONES.map((zone) => {
+        const v = valuesByZone[zone];
         const hasV = typeof v === 'string' && v.trim().length > 0;
         if (!hasV) return null;
         const positions: Record<SegZone, { x: number; y: number }> = {
@@ -153,7 +173,15 @@ export function SegmentalFormSection({ form, onChange }: Props) {
   const [selected, setSelected] = useState<SegZone | null>(null);
 
   const keys = mode === 'lean' ? LEAN_KEYS : FAT_KEYS;
-  const zones: SegZone[] = ['upper_left', 'upper_right', 'center', 'lower_left', 'lower_right'];
+  const valuesByZone = useMemo(() => {
+    return {
+      upper_left: String(form[keys.upper_left] ?? ''),
+      upper_right: String(form[keys.upper_right] ?? ''),
+      center: String(form[keys.center] ?? ''),
+      lower_left: String(form[keys.lower_left] ?? ''),
+      lower_right: String(form[keys.lower_right] ?? ''),
+    };
+  }, [form, keys]);
 
   const handleZonePress = (zone: SegZone) => {
     setSelected((prev) => (prev === zone ? null : zone));
@@ -182,13 +210,18 @@ export function SegmentalFormSection({ form, onChange }: Props) {
       <View style={fs.bodyRow}>
         {/* Mini body figure */}
         <View style={fs.figureWrap}>
-          <MiniBodySvg form={form} mode={mode} selected={selected} onZonePress={handleZonePress} />
+          <MiniBodySvg
+            valuesByZone={valuesByZone}
+            mode={mode}
+            selected={selected}
+            onZonePress={handleZonePress}
+          />
           <Text style={fs.tapHint}>Nhấn vùng để nhập</Text>
         </View>
 
         {/* Input fields column */}
         <View style={fs.fieldsCol}>
-          {zones.map((zone) => {
+          {SEG_ZONES.map((zone) => {
             const metricKey = keys[zone];
             const isActive = selected === zone;
             return (
@@ -211,6 +244,110 @@ export function SegmentalFormSection({ form, onChange }: Props) {
                     placeholderTextColor={Colors.textMuted}
                     onFocus={() => setSelected(zone)}
                   />
+                  <Text style={fs.unit}>kg</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+interface SegmentalMetricPickerProps {
+  value: string;
+  onChange: (metricKey: string) => void;
+  values?: Partial<Record<keyof InBodyFormState, string>>;
+  title?: string;
+}
+
+export function SegmentalMetricPicker({
+  value,
+  onChange,
+  values,
+  title = 'Chỉ số segmental',
+}: SegmentalMetricPickerProps) {
+  const [mode, setMode] = useState<FormMode>(inferModeFromMetric(value));
+  const [selected, setSelected] = useState<SegZone>(inferZoneFromMetric(value));
+
+  useEffect(() => {
+    setMode(inferModeFromMetric(value));
+    setSelected(inferZoneFromMetric(value));
+  }, [value]);
+
+  const keys = mode === 'lean' ? LEAN_KEYS : FAT_KEYS;
+
+  const valuesByZone = useMemo(() => {
+    return {
+      upper_left: String(values?.[keys.upper_left] ?? ''),
+      upper_right: String(values?.[keys.upper_right] ?? ''),
+      center: String(values?.[keys.center] ?? ''),
+      lower_left: String(values?.[keys.lower_left] ?? ''),
+      lower_right: String(values?.[keys.lower_right] ?? ''),
+    };
+  }, [keys, values]);
+
+  const handleModeChange = (nextMode: FormMode) => {
+    setMode(nextMode);
+    const metricKey = toMetricKey(nextMode, selected);
+    onChange(metricKey);
+  };
+
+  const handleZonePress = (zone: SegZone) => {
+    setSelected(zone);
+    const metricKey = toMetricKey(mode, zone);
+    onChange(metricKey);
+  };
+
+  return (
+    <View style={fs.wrap}>
+      <Text style={fs.sectionTitle}>{title}</Text>
+
+      <View style={fs.toggle}>
+        {(['lean', 'fat'] as FormMode[]).map((m) => (
+          <TouchableOpacity
+            key={m}
+            style={[fs.toggleBtn, mode === m && fs.toggleBtnActive]}
+            onPress={() => handleModeChange(m)}
+            activeOpacity={0.75}
+          >
+            <Text style={[fs.toggleText, mode === m && fs.toggleTextActive]}>
+              {m === 'lean' ? 'Lean (Cơ)' : 'Fat (Mỡ)'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={fs.bodyRow}>
+        <View style={fs.figureWrap}>
+          <MiniBodySvg
+            valuesByZone={valuesByZone}
+            mode={mode}
+            selected={selected}
+            onZonePress={handleZonePress}
+          />
+          <Text style={fs.tapHint}>Nhấn vùng để chọn chỉ số</Text>
+        </View>
+
+        <View style={fs.fieldsCol}>
+          {SEG_ZONES.map((zone) => {
+            const metricKey = keys[zone];
+            const isActive = selected === zone;
+            return (
+              <TouchableOpacity
+                key={zone}
+                style={[fs.fieldRow, isActive && fs.fieldRowActive]}
+                onPress={() => handleZonePress(zone)}
+                activeOpacity={0.8}
+              >
+                <Text style={[fs.fieldLabel, isActive && fs.fieldLabelActive]} numberOfLines={1}>
+                  {ZONE_LABELS[zone]}
+                </Text>
+                <View style={fs.inputRow}>
+                  <Text style={[fs.currentValue, isActive && fs.inputActive]}>
+                    {valuesByZone[zone] || '—'}
+                  </Text>
                   <Text style={fs.unit}>kg</Text>
                 </View>
               </TouchableOpacity>
@@ -254,6 +391,12 @@ const fs = StyleSheet.create({
   input: {
     flex: 1, color: Colors.text, fontSize: 13, fontWeight: '600',
     paddingVertical: 0, paddingHorizontal: 0,
+  },
+  currentValue: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '600',
   },
   inputActive: { color: Colors.accent },
   unit: { fontSize: 10, color: Colors.textMuted },
