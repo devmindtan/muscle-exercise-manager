@@ -692,11 +692,6 @@ export default function WeeklyPlanScreen() {
                             >
                               <Text style={styles.outOfPlanAddBtnText}>Đưa vào kế hoạch</Text>
                             </TouchableOpacity>
-                            <View style={[styles.outOfPlanMiniBadge, { borderColor: tone.bar + '44', backgroundColor: tone.badgeBg }]}>
-                              <Text style={[styles.outOfPlanMiniBadgeText, { color: tone.badgeText }]}>
-                                {item.actualSets} sets
-                              </Text>
-                            </View>
                           </View>
                         </View>
                       );
