@@ -308,7 +308,24 @@ export default function WeeklyPlanScreen() {
     return groups.filter((group) => selectedCategories.has(group.category || 'Khác'));
   }, [groups, selectedCategories]);
 
-  const selectedEntries = byDay[selectedDay] ?? [];
+  const selectedEntries = useMemo(() => byDay[selectedDay] ?? [], [byDay, selectedDay]);
+  const selectedEntryIds = useMemo(
+    () => new Set(selectedEntries.map((entry) => entry.muscleGroupId)),
+    [selectedEntries],
+  );
+  const outOfPlanEntries = useMemo(() => {
+    return Object.entries(actualSetsByMuscle)
+      .filter(([muscleGroupId, actualSets]) => actualSets > 0 && !selectedEntryIds.has(muscleGroupId))
+      .map(([muscleGroupId, actualSets]) => ({
+        muscleGroupId,
+        actualSets,
+      }))
+      .sort((a, b) => {
+        const nameA = muscleNameById[a.muscleGroupId] ?? '';
+        const nameB = muscleNameById[b.muscleGroupId] ?? '';
+        return nameA.localeCompare(nameB, 'vi');
+      });
+  }, [actualSetsByMuscle, muscleNameById, selectedEntryIds]);
   const configuredCreateDaysCount = useMemo(
     () => Object.values(createDaySelections).filter((value) => value && Object.keys(value).length > 0).length,
     [createDaySelections],
@@ -375,6 +392,19 @@ export default function WeeklyPlanScreen() {
     setCreateDaySelections({});
     setSelectedMuscles({ [entry.muscleGroupId]: String(entry.sets) });
     setEditNote(entry.note || '');
+    setSelectedCategories(new Set());
+    setShowEditor(true);
+  };
+
+  const openAddToPlanFromOutside = (muscleGroupId: string, sets: number) => {
+    setEditingId(null);
+    setError('');
+    setFormDayCreate(selectedDay);
+    setCreateDaySelections({
+      [selectedDay]: { [muscleGroupId]: String(Math.max(1, Math.round(sets))) },
+    });
+    setSelectedMuscles({ [muscleGroupId]: String(Math.max(1, Math.round(sets))) });
+    setEditNote('');
     setSelectedCategories(new Set());
     setShowEditor(true);
   };
@@ -572,7 +602,7 @@ export default function WeeklyPlanScreen() {
             </Text>
           </View>
 
-          {selectedEntries.length === 0 ? (
+          {selectedEntries.length === 0 && outOfPlanEntries.length === 0 ? (
             <View style={styles.dayRestRow}>
               <Text style={styles.dayRestText}>Nghỉ ngơi — chưa có lịch tập</Text>
               <TouchableOpacity style={styles.dayAddInline} onPress={openCreate}>
@@ -581,51 +611,99 @@ export default function WeeklyPlanScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.muscleList}>
-              {selectedEntries.map((entry, idx) => {
-                const col = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
-                const isLast = idx === selectedEntries.length - 1;
-                const actualSets = actualSetsByMuscle[entry.muscleGroupId] ?? 0;
-                const targetSets = targetSetsByMuscle[entry.muscleGroupId] ?? 0;
-                const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
-                const done = actualSets >= entry.sets && entry.sets > 0;
-                const doneAccent = done ? Colors.success : col.bar;
+            <View style={styles.daySections}>
+              {selectedEntries.length > 0 && (
+                <View style={styles.muscleList}>
+                  {selectedEntries.map((entry, idx) => {
+                    const col = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
+                    const isLast = idx === selectedEntries.length - 1;
+                    const actualSets = actualSetsByMuscle[entry.muscleGroupId] ?? 0;
+                    const targetSets = targetSetsByMuscle[entry.muscleGroupId] ?? 0;
+                    const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
+                    const done = actualSets >= entry.sets && entry.sets > 0;
+                    const doneAccent = done ? Colors.success : col.bar;
 
-                return (
-                  <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
-                    <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
+                    return (
+                      <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
+                        <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
 
-                    <View style={styles.muscleInfo}>
-                      <Text style={styles.muscleName} numberOfLines={1}>
-                        {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
-                        <Text style={[styles.setsNow, done && { color: Colors.success }]}>
-                          {dayProgressLoading ? '…' : actualSets}
-                          <Text style={styles.setsDivider}> / {entry.sets}</Text>
-                        </Text>
-                      </Text>
-                      {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
-                      <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
+                        <View style={styles.muscleInfo}>
+                          <Text style={styles.muscleName} numberOfLines={1}>
+                            {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
+                            <Text style={[styles.setsNow, done && { color: Colors.success }]}>
+                              {dayProgressLoading ? '…' : actualSets}
+                              <Text style={styles.setsDivider}> / {entry.sets}</Text>
+                            </Text>
+                          </Text>
+                          {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
+                          <View style={styles.progressTrack}>
+                            <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
+                          </View>
+                        </View>
+
+                        <View style={styles.entryRight}>
+                          {done
+                            ? <Text style={[styles.doneChip, { color: Colors.success }]}>✓ xong</Text>
+                            : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
+                          }
+                          <View style={styles.actionRow}>
+                            <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
+                              <Text style={styles.actionEditText}>Sửa</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionDelete} onPress={() => remove(entry.id)}>
+                              <Text style={styles.actionDeleteText}>Xoá</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
                       </View>
-                    </View>
+                    );
+                  })}
+                </View>
+              )}
 
-                    <View style={styles.entryRight}>
-                      {done
-                        ? <Text style={[styles.doneChip, { color: Colors.success }]}>✓ xong</Text>
-                        : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
-                      }
-                      <View style={styles.actionRow}>
-                        <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
-                          <Text style={styles.actionEditText}>Sửa</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionDelete} onPress={() => remove(entry.id)}>
-                          <Text style={styles.actionDeleteText}>Xoá</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+              {outOfPlanEntries.length > 0 && (
+                <View style={styles.outOfPlanBox}>
+                  <View style={styles.outOfPlanHeader}>
+                    <Text style={styles.outOfPlanTitle}>Ngoài kế hoạch</Text>
+                    <Text style={styles.outOfPlanSub}>Các nhóm cơ đã tập nhưng chưa có trong lịch hôm nay</Text>
                   </View>
-                );
-              })}
+
+                  <View style={styles.outOfPlanList}>
+                    {outOfPlanEntries.map((item, idx) => {
+                      const group = groups.find((g) => g.id === item.muscleGroupId);
+                      const tone = colorByMuscle[item.muscleGroupId] ?? getGroupTone(group?.color);
+                      const isLast = idx === outOfPlanEntries.length - 1;
+                      return (
+                        <View key={item.muscleGroupId} style={[styles.outOfPlanRow, !isLast && styles.outOfPlanRowBorder]}>
+                          <View style={[styles.entryDot, { backgroundColor: Colors.warning }]} />
+                          <View style={styles.muscleInfo}>
+                            <Text style={styles.muscleName} numberOfLines={1}>
+                              {muscleNameById[item.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
+                              <Text style={styles.outOfPlanStatus}>ngoài kế hoạch</Text>
+                            </Text>
+                            <Text style={styles.muscleNote} numberOfLines={1}>
+                              {dayProgressLoading ? '…' : item.actualSets} sets đã tập
+                            </Text>
+                          </View>
+                          <View style={styles.outOfPlanActions}>
+                            <TouchableOpacity
+                              style={styles.outOfPlanAddBtn}
+                              onPress={() => openAddToPlanFromOutside(item.muscleGroupId, item.actualSets)}
+                            >
+                              <Text style={styles.outOfPlanAddBtnText}>Đưa vào kế hoạch</Text>
+                            </TouchableOpacity>
+                            <View style={[styles.outOfPlanMiniBadge, { borderColor: tone.bar + '44', backgroundColor: tone.badgeBg }]}>
+                              <Text style={[styles.outOfPlanMiniBadgeText, { color: tone.badgeText }]}>
+                                {item.actualSets} sets
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -878,6 +956,7 @@ const styles = StyleSheet.create({
 
   // Muscle entries
   muscleList: {},
+  daySections: { gap: 10 },
   muscleRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
@@ -909,6 +988,34 @@ const styles = StyleSheet.create({
     borderColor: Colors.error + '44', backgroundColor: Colors.error + '10',
   },
   actionDeleteText: { fontSize: 11, fontWeight: '600', color: Colors.error },
+
+  outOfPlanBox: {
+    marginHorizontal: 16,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.warning + '44',
+    backgroundColor: Colors.warning + '10',
+  },
+  outOfPlanHeader: { marginBottom: 8 },
+  outOfPlanTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  outOfPlanSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  outOfPlanList: { gap: 8 },
+  outOfPlanRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
+  outOfPlanRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.warning + '20', paddingBottom: 10 },
+  outOfPlanStatus: { fontSize: 10, fontWeight: '700', color: Colors.warning },
+  outOfPlanActions: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
+  outOfPlanAddBtn: {
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.warning,
+  },
+  outOfPlanAddBtnText: { fontSize: 11, fontWeight: '700', color: Colors.bg },
+  outOfPlanMiniBadge: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 999, borderWidth: 1,
+  },
+  outOfPlanMiniBadgeText: { fontSize: 10, fontWeight: '700' },
 
   // Empty
   emptyBox: {
