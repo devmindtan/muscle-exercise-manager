@@ -39,6 +39,8 @@ export type LocalWeeklyPlanEntry = {
   note: string | null;
   created_at: string;
   updated_at: string;
+  dirty?: 0 | 1;
+  deleted?: 0 | 1;
 };
 
 const DB_NAME = 'muscle-manager.db';
@@ -152,6 +154,8 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0,
       FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
     );
     CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
@@ -168,6 +172,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_body_measurements ON body_measurements(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_goals ON muscle_goals(dirty) WHERE dirty = 1;
+    CREATE INDEX IF NOT EXISTS idx_dirty_weekly_plan_entries ON weekly_plan_entries(dirty) WHERE dirty = 1;
   `);
   await migrateLegacySchema(database);
 }
@@ -211,6 +216,8 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'muscle_goals', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'muscle_goals', 'metric_key', "TEXT DEFAULT 'muscle_mass'");
 
+  await ensureColumn(database, 'weekly_plan_entries', 'dirty', 'INTEGER DEFAULT 0');
+  await ensureColumn(database, 'weekly_plan_entries', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
 }
 
@@ -731,6 +738,7 @@ export async function getWeeklyPlanEntries() {
   const database = await getDatabase();
   return database.getAllAsync<LocalWeeklyPlanEntry>(
     `SELECT * FROM weekly_plan_entries
+     WHERE deleted = 0
      ORDER BY
        CASE day_key
          WHEN 'mon' THEN 1
@@ -748,16 +756,20 @@ export async function getWeeklyPlanEntries() {
 
 export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
   const database = await getDatabase();
+  const dirty = entry.dirty ?? 0;
+  const deleted = entry.deleted ?? 0;
 
   await database.runAsync(
-    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, sets, note, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, sets, note, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        day_key = excluded.day_key,
        muscle_group_id = excluded.muscle_group_id,
        sets = excluded.sets,
        note = excluded.note,
-       updated_at = datetime('now')`,
+       updated_at = datetime('now'),
+       dirty = COALESCE(excluded.dirty, dirty),
+       deleted = COALESCE(excluded.deleted, deleted)`,
     [
       entry.id,
       entry.day_key,
@@ -766,13 +778,38 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
       entry.note || null,
       entry.created_at,
       entry.updated_at || new Date().toISOString(),
+      dirty,
+      deleted,
     ]
   );
 }
 
+export async function getDirtyWeeklyPlanEntries() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalWeeklyPlanEntry>(
+    'SELECT * FROM weekly_plan_entries WHERE dirty = 1 ORDER BY updated_at ASC'
+  );
+}
+
+export async function markWeeklyPlanEntryClean(id: string) {
+  const database = await getDatabase();
+  await database.runAsync('UPDATE weekly_plan_entries SET dirty = 0 WHERE id = ?', [id]);
+}
+
 export async function deleteWeeklyPlanEntry(id: string) {
   const database = await getDatabase();
-  await database.runAsync('DELETE FROM weekly_plan_entries WHERE id = ?', [id]);
+  await database.runAsync(
+    `UPDATE weekly_plan_entries
+     SET deleted = 1,
+         dirty = 1,
+         updated_at = datetime('now')
+     WHERE id = ?`,
+    [id]
+  );
+}
+
+export async function markMissingWeeklyPlanEntriesDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('weekly_plan_entries', remoteIds);
 }
 
 // Clear all local data (for logout or account switch)

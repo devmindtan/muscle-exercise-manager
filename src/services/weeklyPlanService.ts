@@ -148,6 +148,8 @@ export async function upsertWeeklyPlanEntry(
     note: nextEntry.note,
     created_at: existing?.createdAt || now,
     updated_at: now,
+    dirty: 1,
+    deleted: 0,
   });
 
   return getWeeklyPlanEntries(userId);

@@ -13,6 +13,7 @@ export interface SyncResult {
   workoutLogsSynced: number;
   bodyMeasurementsSynced: number;
   muscleGoalsSynced: number;
+  weeklyPlansSynced: number;
 }
 
 export async function syncData(deviceId: string): Promise<SyncResult> {
@@ -22,6 +23,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
   let workoutLogsSynced = 0;
   let bodyMeasurementsSynced = 0;
   let muscleGoalsSynced = 0;
+  let weeklyPlansSynced = 0;
 
   try {
     const {
@@ -40,6 +42,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         workoutLogsSynced,
         bodyMeasurementsSynced,
         muscleGoalsSynced,
+        weeklyPlansSynced,
       };
     }
 
@@ -265,6 +268,33 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     }
 
+    const dirtyWeeklyPlans = await LocalDB.getDirtyWeeklyPlanEntries();
+    for (const plan of dirtyWeeklyPlans) {
+      try {
+        const isDeleted = !!plan.deleted;
+        const { error } = await (supabase.from('weekly_plan_entries').upsert({
+          id: plan.id,
+          user_id: userId,
+          day_key: plan.day_key,
+          muscle_group_id: plan.muscle_group_id,
+          sets: plan.sets,
+          note: plan.note,
+          created_at: plan.created_at,
+          updated_at: new Date().toISOString(),
+          deleted_at: isDeleted ? new Date().toISOString() : null,
+        }) as any);
+
+        if (error) {
+          errors.push(`Failed to sync weekly plan ${plan.id}: ${error.message}`);
+        } else {
+          await LocalDB.markWeeklyPlanEntryClean(plan.id);
+          weeklyPlansSynced++;
+        }
+      } catch (e: any) {
+        errors.push(`Error syncing weekly plan ${plan.id}: ${e.message}`);
+      }
+    }
+
     // 2. PULL: Hydrate local DB from remote only once after login.
     if (shouldHydrateFromRemote) {
 
@@ -397,6 +427,27 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
     } catch (e: any) {
       errors.push(`Error pulling muscle goals: ${e.message}`);
     }
+
+    try {
+      let weeklyPlanQuery = supabase.from('weekly_plan_entries').select('*').eq('user_id', userId);
+      const { data: remoteWeeklyPlans, error: weeklyPlanError } = await weeklyPlanQuery.order('updated_at', { ascending: false });
+
+      if (weeklyPlanError) {
+        errors.push(`Failed to fetch weekly plans: ${weeklyPlanError.message}`);
+      } else if (remoteWeeklyPlans && Array.isArray(remoteWeeklyPlans)) {
+        for (const plan of remoteWeeklyPlans) {
+          const planData = plan as any;
+          await LocalDB.upsertWeeklyPlanEntry({
+            ...planData,
+            dirty: 0,
+            deleted: planData.deleted_at ? 1 : 0,
+          });
+        }
+        await LocalDB.markMissingWeeklyPlanEntriesDeleted(remoteWeeklyPlans.map((row: any) => row.id));
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling weekly plans: ${e.message}`);
+    }
     }
 
     // Persist sync time so remote hydration only happens once per login/session reset.
@@ -411,6 +462,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       workoutLogsSynced,
       bodyMeasurementsSynced,
       muscleGoalsSynced,
+      weeklyPlansSynced,
     };
   } catch (e: any) {
     errors.push(`Sync failed: ${e.message}`);
@@ -423,6 +475,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       workoutLogsSynced,
       bodyMeasurementsSynced,
       muscleGoalsSynced,
+      weeklyPlansSynced,
     };
   }
 }
