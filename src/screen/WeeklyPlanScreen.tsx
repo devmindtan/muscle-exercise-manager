@@ -530,7 +530,7 @@ export default function WeeklyPlanScreen() {
                         {group.name}
                       </Text>
                       <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
-                        Mục tiêu tuần {targetSets} sets · Đã plan {plannedWeeklySets} sets
+                        Tuần: {targetSets} sets · Đã plan: {plannedWeeklySets} sets
                       </Text>
                     </View>
                   </TouchableOpacity>
