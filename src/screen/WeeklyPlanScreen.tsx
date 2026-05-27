@@ -189,6 +189,13 @@ export default function WeeklyPlanScreen() {
     groups.reduce<Record<string, string>>((acc, g) => { acc[g.id] = g.name; return acc; }, {}),
     [groups]);
 
+  const targetSetsByMuscle = useMemo(() =>
+    groups.reduce<Record<string, number>>((acc, group) => {
+      acc[group.id] = Number(group.target_sets_per_week || 0);
+      return acc;
+    }, {}),
+    [groups]);
+
   const colorByMuscle = useMemo(() => {
     const map: Record<string, ReturnType<typeof getGroupTone>> = {};
     groups.forEach((g) => {
@@ -212,6 +219,13 @@ export default function WeeklyPlanScreen() {
     WEEK_DAYS.forEach((d) => { map[d.key] = byDay[d.key].reduce((s, e) => s + e.sets, 0); });
     return map;
   }, [byDay]);
+
+  const plannedSetsByMuscle = useMemo(() => {
+    return plans.reduce<Record<string, number>>((acc, entry) => {
+      acc[entry.muscleGroupId] = (acc[entry.muscleGroupId] || 0) + entry.sets;
+      return acc;
+    }, {});
+  }, [plans]);
 
   const selectedEntries = byDay[selectedDay] ?? [];
 
@@ -409,6 +423,8 @@ export default function WeeklyPlanScreen() {
                 const col = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
                 const isLast = idx === selectedEntries.length - 1;
                 const actualSets = actualSetsByMuscle[entry.muscleGroupId] ?? 0;
+                const targetSets = targetSetsByMuscle[entry.muscleGroupId] ?? 0;
+                const plannedWeeklySets = plannedSetsByMuscle[entry.muscleGroupId] ?? 0;
                 const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
                 const done = actualSets >= entry.sets && entry.sets > 0;
 
@@ -430,6 +446,7 @@ export default function WeeklyPlanScreen() {
                         )}
                       </View>
                       {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
+                      
 
                       {/* Progress bar + label */}
                       <View style={styles.progressWrap}>
@@ -447,7 +464,7 @@ export default function WeeklyPlanScreen() {
                     {/* Sets target badge */}
                     <View style={styles.entryRight}>
                       <View style={[styles.setsBadge, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
-                        <Text style={[styles.setsBadgeText, { color: col.badgeText }]}>{entry.sets} sets</Text>
+                        <Text style={[styles.setsBadgeText, { color: col.badgeText }]}>Plan: {entry.sets}s / Tuần: {targetSets}s</Text>
                       </View>
                       <View style={styles.actionRow}>
                         <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
@@ -510,6 +527,8 @@ export default function WeeklyPlanScreen() {
             {groups.map((group) => {
               const col = colorByMuscle[group.id];
               const isChosen = selectedMuscles[group.id] !== undefined;
+              const targetSets = Number(group.target_sets_per_week || 0);
+              const plannedWeeklySets = plannedSetsByMuscle[group.id] ?? 0;
               return (
                 <View
                   key={group.id}
@@ -526,9 +545,14 @@ export default function WeeklyPlanScreen() {
                     <View style={[styles.musclePickerCheck, isChosen && { backgroundColor: col?.bar ?? Colors.accent, borderColor: col?.bar ?? Colors.accent }]}>
                       {isChosen && <Text style={styles.musclePickerCheckMark}>✓</Text>}
                     </View>
-                    <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
-                      {group.name}
-                    </Text>
+                    <View style={styles.musclePickerTextWrap}>
+                      <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
+                        {group.name}
+                      </Text>
+                      <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
+                        Mục tiêu tuần {targetSets} sets · Đã plan {plannedWeeklySets} sets
+                      </Text>
+                    </View>
                   </TouchableOpacity>
 
                   {isChosen && (
@@ -698,6 +722,7 @@ const styles = StyleSheet.create({
   },
   doneBadgeText: { fontSize: 10, fontWeight: '700' },
   muscleNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  muscleTargetText: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
 
   // Progress
   progressWrap: { marginTop: 6, gap: 3 },
@@ -752,6 +777,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   musclePickerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  musclePickerTextWrap: { flex: 1 },
   musclePickerCheck: {
     width: 20, height: 20, borderRadius: 6,
     borderWidth: 1.5, borderColor: Colors.border,
@@ -760,6 +786,7 @@ const styles = StyleSheet.create({
   },
   musclePickerCheckMark: { fontSize: 11, color: Colors.bg, fontWeight: '700', lineHeight: 14 },
   musclePickerName: { fontSize: 14, color: Colors.text, fontWeight: '500' },
+  musclePickerMeta: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   musclePickerSetsWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   musclePickerSetsInput: {
     width: 48, textAlign: 'center',
