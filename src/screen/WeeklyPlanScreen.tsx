@@ -80,9 +80,8 @@ function sortPlans(plans: WeeklyPlanEntry[]) {
   });
 }
 
-// Get the real calendar date for a WeekDayKey relative to current week (Mon–Sun)
 function getDateForDayKey(key: WeekDayKey): Date {
-  const jsDay = new Date().getDay(); // 0=Sun
+  const jsDay = new Date().getDay();
   const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
   const monday = new Date();
   monday.setDate(monday.getDate() + mondayOffset);
@@ -104,10 +103,8 @@ function formatShortDate(d: Date) {
 
 function getDayBounds(dayKey: WeekDayKey) {
   const date = getDateForDayKey(dayKey);
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
+  const start = new Date(date); start.setHours(0, 0, 0, 0);
+  const end = new Date(date); end.setHours(23, 59, 59, 999);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
@@ -127,19 +124,20 @@ export default function WeeklyPlanScreen() {
   const [actualSetsByMuscle, setActualSetsByMuscle] = useState<Record<string, number>>({});
   const [dayProgressLoading, setDayProgressLoading] = useState(false);
 
-  // Day strip selection — default to today
   const [selectedDay, setSelectedDay] = useState<WeekDayKey>(todayKey ?? 'mon');
 
+  // ── Editor state ──
   const [showEditor, setShowEditor] = useState(false);
+  // null = multi-create mode, non-null = single edit mode
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    dayKey: 'mon' as WeekDayKey,
-    muscleGroupId: '',
-    sets: '10',
-    note: '',
-  });
+  const [formDay, setFormDay] = useState<WeekDayKey>('mon');
+  // Multi-select: muscleGroupId → sets string
+  const [selectedMuscles, setSelectedMuscles] = useState<Record<string, string>>({});
+  const [editNote, setEditNote] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // ── Data loading ──
 
   const load = useCallback(async () => {
     const [nextGroups, nextPlans] = await Promise.all([
@@ -148,10 +146,7 @@ export default function WeeklyPlanScreen() {
     ]);
     setGroups(nextGroups);
     setPlans(sortPlans(nextPlans));
-    if (!form.muscleGroupId && nextGroups.length > 0) {
-      setForm((prev) => ({ ...prev, muscleGroupId: nextGroups[0].id }));
-    }
-  }, [form.muscleGroupId, userKey]);
+  }, [userKey]);
 
   useFocusEffect(
     useCallback(() => {
@@ -182,7 +177,14 @@ export default function WeeklyPlanScreen() {
     }
   }, []);
 
-  // Derived data
+  useFocusEffect(
+    useCallback(() => {
+      void loadDayProgress(selectedDay);
+    }, [loadDayProgress, selectedDay]),
+  );
+
+  // ── Derived data ──
+
   const muscleNameById = useMemo(() =>
     groups.reduce<Record<string, string>>((acc, g) => { acc[g.id] = g.name; return acc; }, {}),
     [groups]);
@@ -211,40 +213,71 @@ export default function WeeklyPlanScreen() {
     return map;
   }, [byDay]);
 
-  // Entries for currently selected day
   const selectedEntries = byDay[selectedDay] ?? [];
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadDayProgress(selectedDay);
-    }, [loadDayProgress, selectedDay]),
-  );
+  // ── Editor helpers ──
+
+  const toggleMuscle = (id: string) => {
+    setSelectedMuscles((prev) => {
+      if (prev[id] !== undefined) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: '10' };
+    });
+  };
+
+  const updateMuscleSets = (id: string, val: string) => {
+    setSelectedMuscles((prev) => ({ ...prev, [id]: val }));
+  };
 
   const openCreate = () => {
     setEditingId(null);
     setError('');
-    setForm({ dayKey: selectedDay, muscleGroupId: groups[0]?.id || '', sets: '10', note: '' });
+    setFormDay(selectedDay);
+    setSelectedMuscles({});
+    setEditNote('');
     setShowEditor(true);
   };
 
   const openEdit = (entry: WeeklyPlanEntry) => {
     setEditingId(entry.id);
     setError('');
-    setForm({ dayKey: entry.dayKey, muscleGroupId: entry.muscleGroupId, sets: String(entry.sets), note: entry.note || '' });
+    setFormDay(entry.dayKey);
+    setSelectedMuscles({ [entry.muscleGroupId]: String(entry.sets) });
+    setEditNote(entry.note || '');
     setShowEditor(true);
   };
 
   const submit = async () => {
-    if (!form.muscleGroupId) { setError('Vui lòng chọn nhóm cơ.'); return; }
-    const setsNumber = Number(form.sets);
-    if (!Number.isFinite(setsNumber) || setsNumber <= 0) { setError('Sets cần là số lớn hơn 0.'); return; }
+    const muscleIds = Object.keys(selectedMuscles);
+    if (muscleIds.length === 0) { setError('Vui lòng chọn ít nhất một nhóm cơ.'); return; }
+
+    const entries = muscleIds.map((id) => ({ muscleGroupId: id, sets: Number(selectedMuscles[id]) }));
+    if (entries.some((e) => !Number.isFinite(e.sets) || e.sets <= 0)) {
+      setError('Sets cần là số lớn hơn 0.');
+      return;
+    }
+
     setSaving(true);
     try {
-      const nextPlans = await upsertWeeklyPlanEntry(
-        { id: editingId || undefined, dayKey: form.dayKey, muscleGroupId: form.muscleGroupId, sets: setsNumber, note: form.note },
-        userKey,
-      );
-      setPlans(sortPlans(nextPlans));
+      if (editingId) {
+        // Single edit — preserve id & note
+        const nextPlans = await upsertWeeklyPlanEntry(
+          { id: editingId, dayKey: formDay, muscleGroupId: muscleIds[0], sets: entries[0].sets, note: editNote },
+          userKey,
+        );
+        setPlans(sortPlans(nextPlans));
+      } else {
+        // Batch create — fire all in parallel, use last result
+        const results = await Promise.all(
+          entries.map((e) =>
+            upsertWeeklyPlanEntry({ dayKey: formDay, muscleGroupId: e.muscleGroupId, sets: e.sets, note: '' }, userKey),
+          ),
+        );
+        setPlans(sortPlans(results[results.length - 1]));
+      }
       setShowEditor(false);
       setEditingId(null);
     } catch {
@@ -317,16 +350,14 @@ export default function WeeklyPlanScreen() {
             const isToday = todayKey === day.key;
             const hasEntries = (byDay[day.key]?.length ?? 0) > 0;
             const date = getDateForDayKey(day.key);
-
             return (
               <TouchableOpacity
                 key={day.key}
-                style={[
-                  styles.dayBtn,
-                  isSelected && styles.dayBtnActive,
-                  !isSelected && isToday && styles.dayBtnToday,
-                ]}
-                onPress={() => setSelectedDay(day.key)}
+                style={[styles.dayBtn, isSelected && styles.dayBtnActive, !isSelected && isToday && styles.dayBtnToday]}
+                onPress={() => {
+                  setSelectedDay(day.key);
+                  void loadDayProgress(day.key);
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.dayAbbr, isSelected && styles.dayAbbrActive, !isSelected && isToday && styles.dayAbbrToday]}>
@@ -335,11 +366,7 @@ export default function WeeklyPlanScreen() {
                 <Text style={[styles.dayNum, isSelected && styles.dayNumActive, !isSelected && isToday && styles.dayNumToday]}>
                   {date.getDate()}
                 </Text>
-                {/* dot indicator */}
-                <View style={[
-                  styles.dayDot,
-                  hasEntries ? (isSelected ? styles.dayDotActiveHas : styles.dayDotHas) : styles.dayDotEmpty,
-                ]} />
+                <View style={[styles.dayDot, hasEntries ? (isSelected ? styles.dayDotActiveHas : styles.dayDotHas) : styles.dayDotEmpty]} />
               </TouchableOpacity>
             );
           })}
@@ -367,7 +394,7 @@ export default function WeeklyPlanScreen() {
             )}
           </View>
 
-          {/* Muscle entries for selected day */}
+          {/* Muscle entries */}
           {selectedEntries.length === 0 ? (
             <View style={styles.dayRestRow}>
               <Text style={styles.dayRestText}>Nghỉ ngơi — chưa có lịch tập</Text>
@@ -381,41 +408,56 @@ export default function WeeklyPlanScreen() {
               {selectedEntries.map((entry, idx) => {
                 const col = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
                 const isLast = idx === selectedEntries.length - 1;
-                const actualSets = actualSetsByMuscle[entry.muscleGroupId] || 0;
-                const achievedPct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
+                const actualSets = actualSetsByMuscle[entry.muscleGroupId] ?? 0;
+                const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
+                const done = actualSets >= entry.sets && entry.sets > 0;
+
                 return (
                   <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
-                    {/* Colour bar */}
-                    <View style={[styles.colorBar, { backgroundColor: col.bar }]} />
-                    {/* Name + note */}
+                    {/* Colour bar — full height when done */}
+                    <View style={[styles.colorBar, { backgroundColor: done ? col.bar : col.bar + '55' }]}>
+                      <View style={[styles.colorBarFill, { height: `${Math.round(pct * 100)}%`, backgroundColor: col.bar }]} />
+                    </View>
+
+                    {/* Name + note + progress */}
                     <View style={styles.muscleInfo}>
-                      <Text style={styles.muscleName}>{muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}</Text>
+                      <View style={styles.muscleNameRow}>
+                        <Text style={styles.muscleName}>{muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}</Text>
+                        {done && (
+                          <View style={[styles.doneBadge, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
+                            <Text style={[styles.doneBadgeText, { color: col.badgeText }]}>✓ Hoàn thành</Text>
+                          </View>
+                        )}
+                      </View>
                       {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
+
+                      {/* Progress bar + label */}
                       <View style={styles.progressWrap}>
                         <View style={styles.progressTrack}>
-                          <View
-                            style={[
-                              styles.progressFill,
-                              { width: `${Math.round(achievedPct * 100)}%`, backgroundColor: col.bar },
-                            ]}
-                          />
+                          <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: col.bar }]} />
                         </View>
-                        <Text style={styles.progressText}>
-                          {dayProgressLoading ? 'Đang cập nhật...' : `Đã đạt ${actualSets}/${entry.sets} sets`}
+                        <Text style={[styles.progressText, done && { color: col.bar }]}>
+                          {dayProgressLoading
+                            ? 'Đang cập nhật...'
+                            : `${actualSets} / ${entry.sets} sets`}
                         </Text>
                       </View>
                     </View>
-                    {/* Sets badge */}
-                    <View style={[styles.setsBadge, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
-                      <Text style={[styles.setsBadgeText, { color: col.badgeText }]}>{entry.sets} sets</Text>
+
+                    {/* Sets target badge */}
+                    <View style={styles.entryRight}>
+                      <View style={[styles.setsBadge, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
+                        <Text style={[styles.setsBadgeText, { color: col.badgeText }]}>{entry.sets} sets</Text>
+                      </View>
+                      <View style={styles.actionRow}>
+                        <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
+                          <Text style={styles.actionEditText}>Sửa</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionDelete} onPress={() => remove(entry.id)}>
+                          <Text style={styles.actionDeleteText}>Xoá</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    {/* Actions */}
-                    <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
-                      <Text style={styles.actionEditText}>Sửa</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionDelete} onPress={() => remove(entry.id)}>
-                      <Text style={styles.actionDeleteText}>Xoá</Text>
-                    </TouchableOpacity>
                   </View>
                 );
               })}
@@ -435,7 +477,7 @@ export default function WeeklyPlanScreen() {
       {/* ── Editor Sheet ── */}
       <Modal visible={showEditor} transparent animationType="slide" onRequestClose={() => setShowEditor(false)}>
         <Pressable style={styles.overlay} onPress={() => setShowEditor(false)} />
-        <View style={styles.sheet}>
+        <ScrollView style={styles.sheet} keyboardShouldPersistTaps="handled" bounces={false}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{editingId ? 'Sửa kế hoạch' : 'Thêm kế hoạch'}</Text>
@@ -444,70 +486,96 @@ export default function WeeklyPlanScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Day picker */}
           <Text style={styles.inputLabel}>Ngày tập</Text>
           <View style={styles.filterWrap}>
             {WEEK_DAYS.map((day) => (
               <TouchableOpacity
                 key={day.key}
-                style={[styles.chip, form.dayKey === day.key && styles.chipActive]}
-                onPress={() => setForm((prev) => ({ ...prev, dayKey: day.key }))}
+                style={[styles.chip, formDay === day.key && styles.chipActive]}
+                onPress={() => setFormDay(day.key)}
               >
-                <Text style={[styles.chipText, form.dayKey === day.key && styles.chipTextActive]}>{day.label}</Text>
+                <Text style={[styles.chipText, formDay === day.key && styles.chipTextActive]}>{day.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={styles.inputLabel}>Nhóm cơ</Text>
-          <View style={styles.filterWrap}>
+          {/* Multi-muscle selector */}
+          <Text style={styles.inputLabel}>
+            {editingId
+              ? 'Nhóm cơ'
+              : `Nhóm cơ${Object.keys(selectedMuscles).length > 0 ? ` (${Object.keys(selectedMuscles).length} đã chọn)` : ''}`}
+          </Text>
+          <View style={styles.musclePickerList}>
             {groups.map((group) => {
-              const col = colorByMuscle[group.id] ?? getGroupTone(group.color);
-              const isActive = form.muscleGroupId === group.id;
+              const col = colorByMuscle[group.id];
+              const isChosen = selectedMuscles[group.id] !== undefined;
               return (
-                <TouchableOpacity
+                <View
                   key={group.id}
                   style={[
-                    styles.chip,
-                    isActive && { borderColor: col?.bar, backgroundColor: col?.badgeBg ?? Colors.accent + '1f' },
+                    styles.musclePickerRow,
+                    isChosen && { borderColor: col?.bar ?? Colors.accent, backgroundColor: col?.badgeBg ?? Colors.accent + '10' },
                   ]}
-                  onPress={() => setForm((prev) => ({ ...prev, muscleGroupId: group.id }))}
                 >
-                  {isActive && col && (
-                    <View style={[styles.chipDot, { backgroundColor: col.bar }]} />
+                  <TouchableOpacity
+                    style={styles.musclePickerLeft}
+                    onPress={() => !editingId && toggleMuscle(group.id)}
+                    activeOpacity={editingId ? 1 : 0.6}
+                  >
+                    <View style={[styles.musclePickerCheck, isChosen && { backgroundColor: col?.bar ?? Colors.accent, borderColor: col?.bar ?? Colors.accent }]}>
+                      {isChosen && <Text style={styles.musclePickerCheckMark}>✓</Text>}
+                    </View>
+                    <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
+                      {group.name}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {isChosen && (
+                    <View style={styles.musclePickerSetsWrap}>
+                      <TextInput
+                        style={[styles.musclePickerSetsInput, { borderColor: col?.bar ?? Colors.accent }]}
+                        keyboardType="number-pad"
+                        value={selectedMuscles[group.id]}
+                        onChangeText={(val) => updateMuscleSets(group.id, val)}
+                        selectTextOnFocus
+                      />
+                      <Text style={[styles.musclePickerSetsUnit, { color: col?.badgeText ?? Colors.accent }]}>sets</Text>
+                    </View>
                   )}
-                  <Text style={[styles.chipText, isActive && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
-                    {group.name}
-                  </Text>
-                </TouchableOpacity>
+                </View>
               );
             })}
           </View>
 
-          <Text style={styles.inputLabel}>Số sets</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="number-pad"
-            value={form.sets}
-            onChangeText={(text) => setForm((prev) => ({ ...prev, sets: text }))}
-            placeholder="VD: 12"
-            placeholderTextColor={Colors.textMuted}
-          />
-
-          <Text style={styles.inputLabel}>Ghi chú (tuỳ chọn)</Text>
-          <TextInput
-            style={[styles.input, styles.noteInput]}
-            multiline
-            value={form.note}
-            onChangeText={(text) => setForm((prev) => ({ ...prev, note: text }))}
-            placeholder="VD: ưu tiên volume vừa, giữ kỹ thuật"
-            placeholderTextColor={Colors.textMuted}
-          />
+          {/* Note — edit mode only */}
+          {editingId && (
+            <>
+              <Text style={styles.inputLabel}>Ghi chú (tuỳ chọn)</Text>
+              <TextInput
+                style={[styles.input, styles.noteInput]}
+                multiline
+                value={editNote}
+                onChangeText={setEditNote}
+                placeholder="VD: ưu tiên volume vừa, giữ kỹ thuật"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </>
+          )}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={submit} disabled={saving}>
-            <Text style={styles.saveBtnText}>{saving ? 'Đang lưu...' : 'Lưu kế hoạch'}</Text>
+            <Text style={styles.saveBtnText}>
+              {saving
+                ? 'Đang lưu...'
+                : editingId
+                  ? 'Lưu thay đổi'
+                  : `Thêm${Object.keys(selectedMuscles).length > 1 ? ` ${Object.keys(selectedMuscles).length} nhóm cơ` : ' kế hoạch'}`}
+            </Text>
           </TouchableOpacity>
-        </View>
+          <View style={{ height: 24 }} />
+        </ScrollView>
       </Modal>
     </View>
   );
@@ -534,10 +602,7 @@ const styles = StyleSheet.create({
   },
 
   // Stats row
-  statsRow: {
-    flexDirection: 'row', gap: 10,
-    marginHorizontal: 20, marginBottom: 16,
-  },
+  statsRow: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginBottom: 16 },
   statCard: {
     flex: 1, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
@@ -551,9 +616,8 @@ const styles = StyleSheet.create({
   dayStrip: { paddingHorizontal: 20, paddingBottom: 14, gap: 8 },
   dayBtn: {
     alignItems: 'center', gap: 3, paddingVertical: 8, paddingHorizontal: 10,
-    borderRadius: 12, borderWidth: 1,
-    borderColor: Colors.border, backgroundColor: Colors.surface,
-    minWidth: 44,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface, minWidth: 44,
   },
   dayBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   dayBtnToday: { borderColor: Colors.accent },
@@ -585,10 +649,7 @@ const styles = StyleSheet.create({
   },
   dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dayDetailTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  todayBadge: {
-    backgroundColor: Colors.accent, borderRadius: 999,
-    paddingHorizontal: 8, paddingVertical: 2,
-  },
+  todayBadge: { backgroundColor: Colors.accent, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   todayBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.bg },
   dayDetailDate: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
   daySetsPill: {
@@ -613,41 +674,49 @@ const styles = StyleSheet.create({
   dayAddInlineText: { fontSize: 12, fontWeight: '600', color: Colors.accent },
 
   // Muscle entries
-  muscleList: { paddingHorizontal: 0 },
+  muscleList: {},
   muscleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
   },
-  muscleRowBorder: {
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  muscleRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
+
+  // Colour bar — acts as vertical progress indicator
+  colorBar: {
+    width: 3, height: 52, borderRadius: 999,
+    flexShrink: 0, overflow: 'hidden',
+    justifyContent: 'flex-end',
   },
-  colorBar: { width: 3, height: 36, borderRadius: 999, flexShrink: 0 },
+  colorBarFill: { width: '100%', borderRadius: 999 },
+
   muscleInfo: { flex: 1 },
+  muscleNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   muscleName: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  muscleNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  progressWrap: { marginTop: 6, gap: 4 },
-  progressTrack: {
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: Colors.border,
-    overflow: 'hidden',
+  doneBadge: {
+    borderRadius: 999, borderWidth: 1,
+    paddingHorizontal: 7, paddingVertical: 2,
   },
+  doneBadgeText: { fontSize: 10, fontWeight: '700' },
+  muscleNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+
+  // Progress
+  progressWrap: { marginTop: 6, gap: 3 },
+  progressTrack: { height: 4, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
   progressText: { fontSize: 11, color: Colors.textMuted },
-  setsBadge: {
-    borderRadius: 999, borderWidth: 1,
-    paddingHorizontal: 10, paddingVertical: 4,
-  },
+
+  // Right side of muscle row
+  entryRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
+  setsBadge: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
   setsBadgeText: { fontSize: 12, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', gap: 5 },
   actionEdit: {
-    paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: 6, borderWidth: 1,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
     borderColor: Colors.border, backgroundColor: Colors.surfaceElevated,
   },
   actionEditText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
   actionDelete: {
-    paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: 6, borderWidth: 1,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
     borderColor: Colors.error + '44', backgroundColor: Colors.error + '10',
   },
   actionDeleteText: { fontSize: 11, fontWeight: '600', color: Colors.error },
@@ -670,18 +739,45 @@ const styles = StyleSheet.create({
     borderRadius: 999, borderWidth: 1,
     borderColor: Colors.border, backgroundColor: Colors.surface,
   },
-  chipDot: { width: 6, height: 6, borderRadius: 3 },
   chipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '1f' },
   chipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
   chipTextActive: { color: Colors.accent, fontWeight: '700' },
+
+  // Multi-muscle picker
+  musclePickerList: { gap: 6, marginBottom: 4 },
+  musclePickerRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12,
+    backgroundColor: Colors.surface,
+  },
+  musclePickerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  musclePickerCheck: {
+    width: 20, height: 20, borderRadius: 6,
+    borderWidth: 1.5, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.bg,
+  },
+  musclePickerCheckMark: { fontSize: 11, color: Colors.bg, fontWeight: '700', lineHeight: 14 },
+  musclePickerName: { fontSize: 14, color: Colors.text, fontWeight: '500' },
+  musclePickerSetsWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  musclePickerSetsInput: {
+    width: 48, textAlign: 'center',
+    borderWidth: 1.5, borderRadius: 8,
+    paddingVertical: 4, paddingHorizontal: 6,
+    fontSize: 14, fontWeight: '700',
+    color: Colors.text, backgroundColor: Colors.bg,
+  },
+  musclePickerSetsUnit: { fontSize: 12, fontWeight: '600' },
+
   overlay: { flex: 1, backgroundColor: '#00000088' },
   sheet: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 18, borderTopRightRadius: 18,
     borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1,
     borderColor: Colors.border,
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 18,
-    maxHeight: '85%',
+    paddingHorizontal: 16, paddingTop: 8,
+    maxHeight: '90%',
   },
   sheetHandle: {
     width: 44, height: 4, borderRadius: 999,
