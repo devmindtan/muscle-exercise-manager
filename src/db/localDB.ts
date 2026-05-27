@@ -172,7 +172,6 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_body_measurements ON body_measurements(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_goals ON muscle_goals(dirty) WHERE dirty = 1;
-    CREATE INDEX IF NOT EXISTS idx_dirty_weekly_plan_entries ON weekly_plan_entries(dirty) WHERE dirty = 1;
   `);
   await migrateLegacySchema(database);
 }
@@ -219,6 +218,12 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'weekly_plan_entries', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
+
+  // Create this index after legacy columns are ensured, otherwise old DBs
+  // (created before dirty/deleted existed) can crash on startup.
+  await database.execAsync(
+    'CREATE INDEX IF NOT EXISTS idx_dirty_weekly_plan_entries ON weekly_plan_entries(dirty) WHERE dirty = 1'
+  );
 }
 
 // Retained for backward-compat: schema is now applied inside getDatabase(),
