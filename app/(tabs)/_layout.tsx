@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Dumbbell, ClipboardList, Activity } from 'lucide-react-native';
+import { LayoutDashboard, Dumbbell, ClipboardList, Activity, CalendarRange } from 'lucide-react-native';
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/colors';
@@ -73,6 +73,15 @@ export default function TabLayout() {
           title: 'Chỉ số',
           tabBarIcon: ({ color, size }) => (
             <Activity color={color} size={size} strokeWidth={1.8} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{
+          title: 'Kế hoạch',
+          tabBarIcon: ({ color, size }) => (
+            <CalendarRange color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
