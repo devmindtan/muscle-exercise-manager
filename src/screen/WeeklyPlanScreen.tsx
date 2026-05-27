@@ -41,6 +41,8 @@ const DAY_ORDER_MAP: Record<WeekDayKey, number> = WEEK_DAYS.reduce((acc, day) =>
   return acc;
 }, {} as Record<WeekDayKey, number>);
 
+const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
+
 function hexToRgba(hex: string, alpha: number) {
   const normalized = hex.replace('#', '');
   const value = normalized.length === 3
@@ -109,6 +111,18 @@ function getDayBounds(dayKey: WeekDayKey) {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function getWeekBounds() {
+  const now = new Date();
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((day + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { start: monday.toISOString(), end: sunday.toISOString() };
+}
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function WeeklyPlanScreen() {
@@ -123,7 +137,9 @@ export default function WeeklyPlanScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actualSetsByMuscle, setActualSetsByMuscle] = useState<Record<string, number>>({});
+  const [weeklyActualSetsByMuscle, setWeeklyActualSetsByMuscle] = useState<Record<string, number>>({});
   const [dayProgressLoading, setDayProgressLoading] = useState(false);
+  const [weekProgressLoading, setWeekProgressLoading] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState<WeekDayKey>(todayKey ?? 'mon');
 
@@ -140,6 +156,7 @@ export default function WeeklyPlanScreen() {
   const [editNote, setEditNote] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
 
   // ── Data loading ──
 
@@ -181,10 +198,27 @@ export default function WeeklyPlanScreen() {
     }
   }, []);
 
+  const loadWeekProgress = useCallback(async () => {
+    setWeekProgressLoading(true);
+    try {
+      const { start, end } = getWeekBounds();
+      const logs = await getWorkoutLogs(start, end);
+      const nextMap = logs.reduce<Record<string, number>>((acc, log: any) => {
+        const muscleGroupId = log.muscle_group_id;
+        acc[muscleGroupId] = (acc[muscleGroupId] || 0) + Number(log.sets || 0);
+        return acc;
+      }, {});
+      setWeeklyActualSetsByMuscle(nextMap);
+    } finally {
+      setWeekProgressLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void loadDayProgress(selectedDay);
-    }, [loadDayProgress, selectedDay]),
+      void loadWeekProgress();
+    }, [loadDayProgress, loadWeekProgress, selectedDay]),
   );
 
   // ── Derived data ──
@@ -207,6 +241,10 @@ export default function WeeklyPlanScreen() {
   }, [groups]);
 
   const totalWeeklySets = useMemo(() => plans.reduce((s, e) => s + e.sets, 0), [plans]);
+  const totalWeeklyActualSets = useMemo(
+    () => Object.values(weeklyActualSetsByMuscle).reduce((sum, val) => sum + val, 0),
+    [weeklyActualSetsByMuscle],
+  );
   const activeDays = useMemo(() => new Set(plans.map((p) => p.dayKey)).size, [plans]);
 
   const byDay = useMemo(() => {
@@ -229,23 +267,46 @@ export default function WeeklyPlanScreen() {
     }, {});
   }, [plans]);
 
-  const draftPlannedByMuscle = useMemo(() => {
+  const projectedPlannedByMuscle = useMemo(() => {
+    const base = plans.reduce<Record<string, number>>((acc, entry) => {
+      acc[entry.muscleGroupId] = (acc[entry.muscleGroupId] || 0) + entry.sets;
+      return acc;
+    }, {});
+
     const source = {
       ...createDaySelections,
       [formDayCreate]: selectedMuscles,
     };
 
-    return WEEK_DAYS.reduce<Record<string, number>>((acc, day) => {
-      const musclesForDay = source[day.key] || {};
+    WEEK_DAYS.forEach(({ key }) => {
+      const dayEntries = byDay[key] || [];
+      const musclesForDay = source[key];
+      if (!musclesForDay) return;
+
+      dayEntries.forEach((entry) => {
+        base[entry.muscleGroupId] = Math.max((base[entry.muscleGroupId] || 0) - entry.sets, 0);
+      });
+
       Object.entries(musclesForDay).forEach(([muscleGroupId, setsRaw]) => {
         const sets = Number(setsRaw);
         if (Number.isFinite(sets) && sets > 0) {
-          acc[muscleGroupId] = (acc[muscleGroupId] || 0) + sets;
+          base[muscleGroupId] = (base[muscleGroupId] || 0) + sets;
         }
       });
-      return acc;
-    }, {});
-  }, [createDaySelections, formDayCreate, selectedMuscles]);
+    });
+
+    return base;
+  }, [byDay, createDaySelections, formDayCreate, plans, selectedMuscles]);
+
+  const dayActualTotal = useMemo(
+    () => Object.values(actualSetsByMuscle).reduce((sum, val) => sum + val, 0),
+    [actualSetsByMuscle],
+  );
+
+  const filteredGroups = useMemo(() => {
+    if (selectedCategories.size === 0) return groups;
+    return groups.filter((group) => selectedCategories.has(group.category || 'Khác'));
+  }, [groups, selectedCategories]);
 
   const selectedEntries = byDay[selectedDay] ?? [];
   const configuredCreateDaysCount = useMemo(
@@ -298,6 +359,7 @@ export default function WeeklyPlanScreen() {
     setCreateDaySelections({});
     setSelectedMuscles({});
     setEditNote('');
+    setSelectedCategories(new Set());
     setShowEditor(true);
   };
 
@@ -313,7 +375,20 @@ export default function WeeklyPlanScreen() {
     setCreateDaySelections({});
     setSelectedMuscles({ [entry.muscleGroupId]: String(entry.sets) });
     setEditNote(entry.note || '');
+    setSelectedCategories(new Set());
     setShowEditor(true);
+  };
+
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) {
+        next.delete(cat);
+      } else {
+        next.add(cat);
+      }
+      return next;
+    });
   };
 
   const submit = async () => {
@@ -427,9 +502,12 @@ export default function WeeklyPlanScreen() {
         {/* ── Summary stats — 2 cards only ── */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Tổng sets</Text>
-            <Text style={styles.statValue}>{totalWeeklySets}</Text>
-            <Text style={styles.statSub}>tuần này</Text>
+            <Text style={styles.statLabel}>Tiến độ sets tuần</Text>
+            <Text style={styles.statValue}>
+              {weekProgressLoading ? '…' : totalWeeklyActualSets}
+              <Text style={styles.statValueSub}> / {totalWeeklySets}</Text>
+            </Text>
+            <Text style={styles.statSub}>đã tập / đã kế hoạch</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Ngày tập</Text>
@@ -488,7 +566,9 @@ export default function WeeklyPlanScreen() {
             </View>
             <Text style={styles.dayDetailDate}>
               {formatShortDate(selectedDate)}
-              {setsPerDay[selectedDay] > 0 ? ` · ${setsPerDay[selectedDay]} sets` : ''}
+              {setsPerDay[selectedDay] > 0
+                ? ` · ${dayProgressLoading ? '…' : dayActualTotal}/${setsPerDay[selectedDay]} sets`
+                : ` · ${dayProgressLoading ? '…' : dayActualTotal} sets`}
             </Text>
           </View>
 
@@ -509,28 +589,29 @@ export default function WeeklyPlanScreen() {
                 const targetSets = targetSetsByMuscle[entry.muscleGroupId] ?? 0;
                 const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
                 const done = actualSets >= entry.sets && entry.sets > 0;
+                const doneAccent = done ? Colors.success : col.bar;
 
                 return (
                   <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
-                    <View style={[styles.entryDot, { backgroundColor: col.bar }]} />
+                    <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
 
                     <View style={styles.muscleInfo}>
                       <Text style={styles.muscleName} numberOfLines={1}>
                         {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
-                        <Text style={[styles.setsNow, done && { color: col.bar }]}>
+                        <Text style={[styles.setsNow, done && { color: Colors.success }]}>
                           {dayProgressLoading ? '…' : actualSets}
                           <Text style={styles.setsDivider}> / {entry.sets}</Text>
                         </Text>
                       </Text>
                       {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
                       <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: col.bar }]} />
+                        <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
                       </View>
                     </View>
 
                     <View style={styles.entryRight}>
                       {done
-                        ? <Text style={[styles.doneChip, { color: col.bar }]}>✓ xong</Text>
+                        ? <Text style={[styles.doneChip, { color: Colors.success }]}>✓ xong</Text>
                         : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
                       }
                       <View style={styles.actionRow}>
@@ -603,14 +684,35 @@ export default function WeeklyPlanScreen() {
               ? 'Nhóm cơ'
               : `Nhóm cơ${Object.keys(selectedMuscles).length > 0 ? ` (${Object.keys(selectedMuscles).length} đã chọn)` : ''}`}
           </Text>
+
+          <View style={styles.categoryFilterWrap}>
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategories.has(cat);
+              const count = groups.filter((group) => (group.category || 'Khác') === cat).length;
+              return (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.categoryFilterChip, isSelected && styles.categoryFilterChipActive]}
+                  onPress={() => toggleCategory(cat)}
+                >
+                  <Text style={[styles.categoryFilterChipText, isSelected && styles.categoryFilterChipTextActive]}>
+                    {cat} ({count})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           <View style={styles.musclePickerList}>
-            {groups.map((group) => {
+            {filteredGroups.map((group) => {
               const col = colorByMuscle[group.id];
               const isChosen = selectedMuscles[group.id] !== undefined;
               const targetSets = Number(group.target_sets_per_week || 0);
-              const plannedWeeklySets = (editingId ? plannedSetsByMuscle[group.id] : draftPlannedByMuscle[group.id]) ?? 0;
-              const remain = Math.max(targetSets - plannedWeeklySets, 0);
-              const reached = targetSets > 0 ? plannedWeeklySets >= targetSets : plannedWeeklySets > 0;
+              const plannedWeeklySets = (editingId ? plannedSetsByMuscle[group.id] : projectedPlannedByMuscle[group.id]) ?? 0;
+              const actualWeeklySets = weeklyActualSetsByMuscle[group.id] ?? 0;
+              const consumedWeeklySets = actualWeeklySets + plannedWeeklySets;
+              const remain = Math.max(targetSets - consumedWeeklySets, 0);
+              const reached = targetSets > 0 ? consumedWeeklySets >= targetSets : consumedWeeklySets > 0;
               return (
                 <View
                   key={group.id}
@@ -637,7 +739,7 @@ export default function WeeklyPlanScreen() {
                         </Text>
                       </View>
                       <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
-                        Tuần: {targetSets} sets · Đã plan: {plannedWeeklySets} sets
+                        Tuần: {targetSets} sets · Đã tập: {weekProgressLoading ? '…' : actualWeeklySets} · Đã plan: {plannedWeeklySets}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -833,6 +935,16 @@ const styles = StyleSheet.create({
   chipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '1f' },
   chipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
   chipTextActive: { color: Colors.accent, fontWeight: '700' },
+
+  categoryFilterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  categoryFilterChip: {
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 999, borderWidth: 1,
+    borderColor: Colors.border, backgroundColor: Colors.surface,
+  },
+  categoryFilterChipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '20' },
+  categoryFilterChipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  categoryFilterChipTextActive: { color: Colors.accent, fontWeight: '700' },
 
   // Multi-muscle picker
   musclePickerList: { gap: 6, marginBottom: 4 },
