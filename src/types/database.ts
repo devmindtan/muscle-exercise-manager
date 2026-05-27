@@ -152,6 +152,32 @@ export type Database = {
           },
         ];
       };
+      weekly_plan_entries: {
+        Row: WeeklyPlanEntry;
+        Insert: {
+          id?: string;
+          day_key: string;
+          muscle_group_id: string;
+          sets: number;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          day_key?: string;
+          muscle_group_id?: string;
+          sets?: number;
+          note?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'weekly_plan_entries_muscle_group_id_fkey';
+            columns: ['muscle_group_id'];
+            isOneToOne: false;
+            referencedRelation: 'muscle_groups';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -244,6 +270,19 @@ export type MuscleGoal = {
   target_value: number;
   unit: string;
   target_date: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type WeeklyPlanEntry = {
+  id: string;
+  day_key: string;
+  muscle_group_id: string;
+  sets: number;
   note: string | null;
   created_at: string;
   updated_at: string;
