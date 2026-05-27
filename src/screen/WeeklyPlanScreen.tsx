@@ -20,6 +20,7 @@ import {
   deleteWeeklyPlanEntry,
   getWeeklyPlanEntries,
   upsertWeeklyPlanEntry,
+  upsertWeeklyPlanEntries,
   WEEK_DAYS,
   WeekDayKey,
   WeeklyPlanEntry,
@@ -279,12 +280,16 @@ export default function WeeklyPlanScreen() {
         );
         setPlans(sortPlans(nextPlans));
       } else {
-        const results = await Promise.all(
-          entries.map((e) =>
-            upsertWeeklyPlanEntry({ dayKey: formDay, muscleGroupId: e.muscleGroupId, sets: e.sets, note: '' }, userKey),
-          ),
+        const nextPlans = await upsertWeeklyPlanEntries(
+          entries.map((entry) => ({
+            dayKey: formDay,
+            muscleGroupId: entry.muscleGroupId,
+            sets: entry.sets,
+            note: '',
+          })),
+          userKey,
         );
-        setPlans(sortPlans(results[results.length - 1]));
+        setPlans(sortPlans(nextPlans));
       }
       setShowEditor(false);
       setEditingId(null);

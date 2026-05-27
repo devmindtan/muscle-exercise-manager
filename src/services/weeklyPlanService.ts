@@ -155,6 +155,69 @@ export async function upsertWeeklyPlanEntry(
   return getWeeklyPlanEntries(userId);
 }
 
+export async function upsertWeeklyPlanEntries(
+  inputs: WeeklyPlanEntryInput[],
+  userId?: string | null,
+) {
+  if (inputs.length === 0) {
+    return getWeeklyPlanEntries(userId);
+  }
+
+  const now = new Date().toISOString();
+  const nextEntries = inputs.map<WeeklyPlanEntry>((input) => ({
+    id: input.id || generateId(),
+    dayKey: input.dayKey,
+    muscleGroupId: input.muscleGroupId,
+    sets: Math.max(1, Math.round(input.sets)),
+    note: input.note?.trim() || null,
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  if (Platform.OS === 'web') {
+    const entries = await getWebWeeklyPlanEntries(userId);
+
+    for (const nextEntry of nextEntries) {
+      const existingIndex = entries.findIndex((entry) => entry.id === nextEntry.id);
+
+      if (existingIndex >= 0) {
+        const existing = entries[existingIndex];
+        entries[existingIndex] = {
+          ...nextEntry,
+          createdAt: existing.createdAt,
+          updatedAt: now,
+        };
+      } else {
+        entries.push(nextEntry);
+      }
+    }
+
+    await saveWebWeeklyPlanEntries(entries, userId);
+    return entries;
+  }
+
+  const existingEntries = await getWeeklyPlanEntries(userId);
+  const existingById = new Map(existingEntries.map((entry) => [entry.id, entry]));
+
+  for (const nextEntry of nextEntries) {
+    const existing = existingById.get(nextEntry.id);
+
+    await LocalDB.upsertWeeklyPlanEntry({
+      id: nextEntry.id,
+      day_key: nextEntry.dayKey,
+      muscle_group_id: nextEntry.muscleGroupId,
+      sets: nextEntry.sets,
+      note: nextEntry.note,
+      created_at: existing?.createdAt || now,
+      updated_at: now,
+      dirty: 1,
+      deleted: 0,
+    });
+  }
+
+  return getWeeklyPlanEntries(userId);
+}
+
 export async function deleteWeeklyPlanEntry(id: string, userId?: string | null) {
   if (Platform.OS === 'web') {
     const entries = await getWebWeeklyPlanEntries(userId);
