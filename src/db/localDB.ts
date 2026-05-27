@@ -31,6 +31,16 @@ export type LocalMuscleGoal = Database['public']['Tables']['muscle_goals']['Row'
   deleted?: 0 | 1;
 };
 
+export type LocalWeeklyPlanEntry = {
+  id: string;
+  day_key: string;
+  muscle_group_id: string;
+  sets: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -134,6 +144,16 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       deleted INTEGER DEFAULT 0,
       FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
     );
+    CREATE TABLE IF NOT EXISTS weekly_plan_entries (
+      id TEXT PRIMARY KEY,
+      day_key TEXT NOT NULL,
+      muscle_group_id TEXT NOT NULL,
+      sets INTEGER NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
+    );
     CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_exercise_id ON workout_logs(exercise_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_muscle_group_id ON workout_logs(muscle_group_id);
@@ -141,6 +161,8 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_body_measurements_metric_key ON body_measurements(metric_key);
     CREATE INDEX IF NOT EXISTS idx_body_measurements_measured_at ON body_measurements(measured_at);
     CREATE INDEX IF NOT EXISTS idx_muscle_goals_muscle_group_id ON muscle_goals(muscle_group_id);
+    CREATE INDEX IF NOT EXISTS idx_weekly_plan_day_key ON weekly_plan_entries(day_key);
+    CREATE INDEX IF NOT EXISTS idx_weekly_plan_muscle_group_id ON weekly_plan_entries(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_groups ON muscle_groups(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_exercises ON exercises(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
@@ -188,6 +210,8 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'muscle_goals', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'muscle_goals', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'muscle_goals', 'metric_key', "TEXT DEFAULT 'muscle_mass'");
+
+  await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
 }
 
 // Retained for backward-compat: schema is now applied inside getDatabase(),
@@ -703,10 +727,59 @@ export async function upsertMuscleGoal(goal: LocalMuscleGoal) {
   );
 }
 
+export async function getWeeklyPlanEntries() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalWeeklyPlanEntry>(
+    `SELECT * FROM weekly_plan_entries
+     ORDER BY
+       CASE day_key
+         WHEN 'mon' THEN 1
+         WHEN 'tue' THEN 2
+         WHEN 'wed' THEN 3
+         WHEN 'thu' THEN 4
+         WHEN 'fri' THEN 5
+         WHEN 'sat' THEN 6
+         WHEN 'sun' THEN 7
+         ELSE 99
+       END ASC,
+       created_at ASC`
+  );
+}
+
+export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
+  const database = await getDatabase();
+
+  await database.runAsync(
+    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, sets, note, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       day_key = excluded.day_key,
+       muscle_group_id = excluded.muscle_group_id,
+       sets = excluded.sets,
+       note = excluded.note,
+       updated_at = datetime('now')`,
+    [
+      entry.id,
+      entry.day_key,
+      entry.muscle_group_id,
+      Math.max(1, Math.round(entry.sets)),
+      entry.note || null,
+      entry.created_at,
+      entry.updated_at || new Date().toISOString(),
+    ]
+  );
+}
+
+export async function deleteWeeklyPlanEntry(id: string) {
+  const database = await getDatabase();
+  await database.runAsync('DELETE FROM weekly_plan_entries WHERE id = ?', [id]);
+}
+
 // Clear all local data (for logout or account switch)
 export async function clearAllLocalData() {
   const database = await getDatabase();
   try {
+    await database.runAsync('DELETE FROM weekly_plan_entries');
     await database.runAsync('DELETE FROM body_measurements');
     await database.runAsync('DELETE FROM muscle_goals');
     await database.runAsync('DELETE FROM workout_logs');
@@ -720,12 +793,13 @@ export async function clearAllLocalData() {
 
 export async function hasAnyLocalData() {
   const database = await getDatabase();
-  const [groups, exercises, logs, measurements, goals] = await Promise.all([
+  const [groups, exercises, logs, measurements, goals, weeklyPlans] = await Promise.all([
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_groups'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercises'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM workout_logs'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM body_measurements'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_goals'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM weekly_plan_entries'),
   ]);
 
   return (
@@ -733,7 +807,8 @@ export async function hasAnyLocalData() {
     (exercises?.count ?? 0) > 0 ||
     (logs?.count ?? 0) > 0 ||
     (measurements?.count ?? 0) > 0 ||
-    (goals?.count ?? 0) > 0
+    (goals?.count ?? 0) > 0 ||
+    (weeklyPlans?.count ?? 0) > 0
   );
 }
 
