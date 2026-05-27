@@ -40,15 +40,36 @@ const DAY_ORDER_MAP: Record<WeekDayKey, number> = WEEK_DAYS.reduce((acc, day) =>
   return acc;
 }, {} as Record<WeekDayKey, number>);
 
-// Colour palette — each muscle group gets a unique accent
-const MUSCLE_PALETTE = [
-  { bar: '#1D9E75', badgeBg: '#E1F5EE', badgeBorder: '#9FE1CB', badgeText: '#085041' },
-  { bar: '#534AB7', badgeBg: '#EEEDFE', badgeBorder: '#CECBF6', badgeText: '#3C3489' },
-  { bar: '#BA7517', badgeBg: '#FAEEDA', badgeBorder: '#FAC775', badgeText: '#633806' },
-  { bar: '#D85A30', badgeBg: '#FAECE7', badgeBorder: '#F5C4B3', badgeText: '#712B13' },
-  { bar: '#378ADD', badgeBg: '#E6F1FB', badgeBorder: '#B5D4F4', badgeText: '#0C447C' },
-  { bar: '#D4537E', badgeBg: '#FBEAF0', badgeBorder: '#F4C0D1', badgeText: '#72243E' },
-];
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '');
+  const value = normalized.length === 3
+    ? normalized.split('').map((char) => char + char).join('')
+    : normalized;
+
+  if (value.length !== 6) {
+    return `rgba(232, 255, 90, ${alpha})`;
+  }
+
+  const intValue = Number.parseInt(value, 16);
+  const r = (intValue >> 16) & 255;
+  const g = (intValue >> 8) & 255;
+  const b = intValue & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getGroupAccent(groupColor?: string | null) {
+  return groupColor && groupColor.trim() ? groupColor : Colors.accent;
+}
+
+function getGroupTone(groupColor?: string | null) {
+  const accent = getGroupAccent(groupColor);
+  return {
+    bar: accent,
+    badgeBg: hexToRgba(accent, 0.14),
+    badgeBorder: hexToRgba(accent, 0.35),
+    badgeText: accent,
+  };
+}
 
 function sortPlans(plans: WeeklyPlanEntry[]) {
   return [...plans].sort((a, b) => {
@@ -167,8 +188,10 @@ export default function WeeklyPlanScreen() {
     [groups]);
 
   const colorByMuscle = useMemo(() => {
-    const map: Record<string, typeof MUSCLE_PALETTE[0]> = {};
-    groups.forEach((g, i) => { map[g.id] = MUSCLE_PALETTE[i % MUSCLE_PALETTE.length]; });
+    const map: Record<string, ReturnType<typeof getGroupTone>> = {};
+    groups.forEach((g) => {
+      map[g.id] = getGroupTone(g.color);
+    });
     return map;
   }, [groups]);
 
@@ -356,7 +379,7 @@ export default function WeeklyPlanScreen() {
           ) : (
             <View style={styles.muscleList}>
               {selectedEntries.map((entry, idx) => {
-                const col = colorByMuscle[entry.muscleGroupId] ?? MUSCLE_PALETTE[0];
+                const col = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
                 const isLast = idx === selectedEntries.length - 1;
                 const actualSets = actualSetsByMuscle[entry.muscleGroupId] || 0;
                 const achievedPct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
@@ -437,7 +460,7 @@ export default function WeeklyPlanScreen() {
           <Text style={styles.inputLabel}>Nhóm cơ</Text>
           <View style={styles.filterWrap}>
             {groups.map((group) => {
-              const col = colorByMuscle[group.id];
+              const col = colorByMuscle[group.id] ?? getGroupTone(group.color);
               const isActive = form.muscleGroupId === group.id;
               return (
                 <TouchableOpacity
