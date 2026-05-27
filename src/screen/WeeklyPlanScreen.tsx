@@ -128,10 +128,8 @@ export default function WeeklyPlanScreen() {
 
   // ── Editor state ──
   const [showEditor, setShowEditor] = useState(false);
-  // null = multi-create mode, non-null = single edit mode
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formDay, setFormDay] = useState<WeekDayKey>('mon');
-  // Multi-select: muscleGroupId → sets string
   const [selectedMuscles, setSelectedMuscles] = useState<Record<string, string>>({});
   const [editNote, setEditNote] = useState('');
   const [error, setError] = useState('');
@@ -198,9 +196,7 @@ export default function WeeklyPlanScreen() {
 
   const colorByMuscle = useMemo(() => {
     const map: Record<string, ReturnType<typeof getGroupTone>> = {};
-    groups.forEach((g) => {
-      map[g.id] = getGroupTone(g.color);
-    });
+    groups.forEach((g) => { map[g.id] = getGroupTone(g.color); });
     return map;
   }, [groups]);
 
@@ -277,14 +273,12 @@ export default function WeeklyPlanScreen() {
     setSaving(true);
     try {
       if (editingId) {
-        // Single edit — preserve id & note
         const nextPlans = await upsertWeeklyPlanEntry(
           { id: editingId, dayKey: formDay, muscleGroupId: muscleIds[0], sets: entries[0].sets, note: editNote },
           userKey,
         );
         setPlans(sortPlans(nextPlans));
       } else {
-        // Batch create — fire all in parallel, use last result
         const results = await Promise.all(
           entries.map((e) =>
             upsertWeeklyPlanEntry({ dayKey: formDay, muscleGroupId: e.muscleGroupId, sets: e.sets, note: '' }, userKey),
@@ -333,22 +327,20 @@ export default function WeeklyPlanScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Summary stats ── */}
+        {/* ── Summary stats — 2 cards only ── */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Tổng sets</Text>
             <Text style={styles.statValue}>{totalWeeklySets}</Text>
-            <Text style={styles.statSub}>sets / tuần</Text>
+            <Text style={styles.statSub}>tuần này</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Ngày tập</Text>
-            <Text style={styles.statValue}>{activeDays}</Text>
-            <Text style={styles.statSub}>trên 7 ngày</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Nhóm cơ</Text>
-            <Text style={styles.statValue}>{new Set(plans.map((p) => p.muscleGroupId)).size}</Text>
-            <Text style={styles.statSub}>đang theo dõi</Text>
+            <Text style={styles.statValue}>
+              {activeDays}
+              <Text style={styles.statValueSub}> / 7</Text>
+            </Text>
+            <Text style={styles.statSub}>đã lên kế hoạch</Text>
           </View>
         </View>
 
@@ -388,24 +380,20 @@ export default function WeeklyPlanScreen() {
 
         {/* ── Selected day detail ── */}
         <View style={styles.dayDetail}>
-          {/* Day header */}
+          {/* Day header — sets count gộp vào subtitle */}
           <View style={[styles.dayDetailHeader, selectedDay === todayKey && styles.dayDetailHeaderToday]}>
-            <View>
-              <View style={styles.dayDetailTitleRow}>
-                <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay]}</Text>
-                {selectedDay === todayKey && (
-                  <View style={styles.todayBadge}>
-                    <Text style={styles.todayBadgeText}>Hôm nay</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.dayDetailDate}>{formatShortDate(selectedDate)}</Text>
+            <View style={styles.dayDetailTitleRow}>
+              <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay]}</Text>
+              {selectedDay === todayKey && (
+                <View style={styles.todayBadge}>
+                  <Text style={styles.todayBadgeText}>Hôm nay</Text>
+                </View>
+              )}
             </View>
-            {setsPerDay[selectedDay] > 0 && (
-              <View style={styles.daySetsPill}>
-                <Text style={styles.daySetsText}>{setsPerDay[selectedDay]} sets</Text>
-              </View>
-            )}
+            <Text style={styles.dayDetailDate}>
+              {formatShortDate(selectedDate)}
+              {setsPerDay[selectedDay] > 0 ? ` · ${setsPerDay[selectedDay]} sets` : ''}
+            </Text>
           </View>
 
           {/* Muscle entries */}
@@ -424,48 +412,35 @@ export default function WeeklyPlanScreen() {
                 const isLast = idx === selectedEntries.length - 1;
                 const actualSets = actualSetsByMuscle[entry.muscleGroupId] ?? 0;
                 const targetSets = targetSetsByMuscle[entry.muscleGroupId] ?? 0;
-                const plannedWeeklySets = plannedSetsByMuscle[entry.muscleGroupId] ?? 0;
                 const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
                 const done = actualSets >= entry.sets && entry.sets > 0;
 
                 return (
                   <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
-                    {/* Colour bar — full height when done */}
-                    <View style={[styles.colorBar, { backgroundColor: done ? col.bar : col.bar + '55' }]}>
-                      <View style={[styles.colorBarFill, { height: `${Math.round(pct * 100)}%`, backgroundColor: col.bar }]} />
-                    </View>
+                    {/* Dot màu thay colorBar */}
+                    <View style={[styles.entryDot, { backgroundColor: col.bar }]} />
 
-                    {/* Name + note + progress */}
+                    {/* Tên + progress bar */}
                     <View style={styles.muscleInfo}>
-                      <View style={styles.muscleNameRow}>
-                        <Text style={styles.muscleName}>{muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}</Text>
-                        {done && (
-                          <View style={[styles.doneBadge, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
-                            <Text style={[styles.doneBadgeText, { color: col.badgeText }]}>✓ Hoàn thành</Text>
-                          </View>
-                        )}
-                      </View>
+                      <Text style={styles.muscleName} numberOfLines={1}>
+                        {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'} - {" "}
+                        <Text style={[styles.setsNow, done && { color: col.bar }]}>
+                        {dayProgressLoading ? '…' : actualSets}
+                        <Text style={styles.setsDivider}> / {entry.sets}</Text>
+                      </Text>
+                      </Text>
                       {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
-                      
-
-                      {/* Progress bar + label */}
-                      <View style={styles.progressWrap}>
-                        <View style={styles.progressTrack}>
-                          <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: col.bar }]} />
-                        </View>
-                        <Text style={[styles.progressText, done && { color: col.bar }]}>
-                          {dayProgressLoading
-                            ? 'Đang cập nhật...'
-                            : `${actualSets} / ${entry.sets} sets`}
-                        </Text>
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: col.bar }]} />
                       </View>
                     </View>
 
-                    {/* Sets target badge */}
+                    {/* Số liệu + actions */}
                     <View style={styles.entryRight}>
-                      <View style={[styles.setsBadge, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
-                        <Text style={[styles.setsBadgeText, { color: col.badgeText }]}>Plan: {entry.sets}s / Tuần: {targetSets}s</Text>
-                      </View>
+                      {done
+                        ? <Text style={[styles.doneChip, { color: col.bar }]}>✓ xong</Text>
+                        : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
+                      }
                       <View style={styles.actionRow}>
                         <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
                           <Text style={styles.actionEditText}>Sửa</Text>
@@ -625,16 +600,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
   },
 
-  // Stats row
+  // Stats row — 2 cards
   statsRow: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginBottom: 16 },
   statCard: {
     flex: 1, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 14,
   },
-  statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 2 },
-  statValue: { fontSize: 22, fontWeight: '700', color: Colors.text, lineHeight: 28 },
-  statSub: { fontSize: 10, color: Colors.textMuted, marginTop: 1, textAlign: 'center' },
+  statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 3 },
+  statValue: { fontSize: 24, fontWeight: '700', color: Colors.text, lineHeight: 30 },
+  statValueSub: { fontSize: 14, fontWeight: '400', color: Colors.textMuted },
+  statSub: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
 
   // Day picker strip
   dayStrip: { paddingHorizontal: 20, paddingBottom: 14, gap: 8 },
@@ -665,23 +641,16 @@ const styles = StyleSheet.create({
   dayDetailHeader: {
     paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   dayDetailHeaderToday: {
     backgroundColor: Colors.accent + '15',
     borderBottomColor: Colors.accent + '40',
   },
-  dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
   dayDetailTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
   todayBadge: { backgroundColor: Colors.accent, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   todayBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.bg },
-  dayDetailDate: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  daySetsPill: {
-    borderRadius: 999, borderWidth: 1,
-    borderColor: Colors.accent + '55', backgroundColor: Colors.accent + '15',
-    paddingHorizontal: 10, paddingVertical: 4,
-  },
-  daySetsText: { fontSize: 12, fontWeight: '700', color: Colors.accent },
+  dayDetailDate: { fontSize: 11, color: Colors.textMuted },
 
   // Rest row
   dayRestRow: {
@@ -700,41 +669,29 @@ const styles = StyleSheet.create({
   // Muscle entries
   muscleList: {},
   muscleRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
   },
   muscleRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
 
-  // Colour bar — acts as vertical progress indicator
-  colorBar: {
-    width: 3, height: 52, borderRadius: 999,
-    flexShrink: 0, overflow: 'hidden',
-    justifyContent: 'flex-end',
-  },
-  colorBarFill: { width: '100%', borderRadius: 999 },
+  // Dot màu — thay colorBar
+  entryDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
 
-  muscleInfo: { flex: 1 },
-  muscleNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  muscleName: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  doneBadge: {
-    borderRadius: 999, borderWidth: 1,
-    paddingHorizontal: 7, paddingVertical: 2,
-  },
-  doneBadgeText: { fontSize: 10, fontWeight: '700' },
-  muscleNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  muscleTargetText: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
+  muscleInfo: { flex: 1, minWidth: 0 },
+  muscleName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 4 },
+  muscleNote: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
 
-  // Progress
-  progressWrap: { marginTop: 6, gap: 3 },
-  progressTrack: { height: 4, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
+  // Progress bar
+  progressTrack: { height: 3, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
-  progressText: { fontSize: 11, color: Colors.textMuted },
 
-  // Right side of muscle row
-  entryRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
-  setsBadge: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
-  setsBadgeText: { fontSize: 12, fontWeight: '700' },
-  actionRow: { flexDirection: 'row', gap: 5 },
+  // Right side
+  entryRight: { alignItems: 'flex-end', gap: 3, flexShrink: 0 },
+  setsNow: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  setsDivider: { fontSize: 11, fontWeight: '400', color: Colors.textMuted },
+  setsWeekTarget: { fontSize: 10, color: Colors.textMuted },
+  doneChip: { fontSize: 10, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', gap: 5, marginTop: 4 },
   actionEdit: {
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
     borderColor: Colors.border, backgroundColor: Colors.surfaceElevated,
