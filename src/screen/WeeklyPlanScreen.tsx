@@ -229,6 +229,24 @@ export default function WeeklyPlanScreen() {
     }, {});
   }, [plans]);
 
+  const draftPlannedByMuscle = useMemo(() => {
+    const source = {
+      ...createDaySelections,
+      [formDayCreate]: selectedMuscles,
+    };
+
+    return WEEK_DAYS.reduce<Record<string, number>>((acc, day) => {
+      const musclesForDay = source[day.key] || {};
+      Object.entries(musclesForDay).forEach(([muscleGroupId, setsRaw]) => {
+        const sets = Number(setsRaw);
+        if (Number.isFinite(sets) && sets > 0) {
+          acc[muscleGroupId] = (acc[muscleGroupId] || 0) + sets;
+        }
+      });
+      return acc;
+    }, {});
+  }, [createDaySelections, formDayCreate, selectedMuscles]);
+
   const selectedEntries = byDay[selectedDay] ?? [];
   const configuredCreateDaysCount = useMemo(
     () => Object.values(createDaySelections).filter((value) => value && Object.keys(value).length > 0).length,
@@ -327,12 +345,19 @@ export default function WeeklyPlanScreen() {
         const payload = WEEK_DAYS.flatMap(({ key }) => {
           const musclesForDay = source[key] || {};
           return Object.entries(musclesForDay)
-            .map(([muscleGroupId, setsRaw]) => ({
-              dayKey: key,
-              muscleGroupId,
-              sets: Number(setsRaw),
-              note: '',
-            }))
+            .map(([muscleGroupId, setsRaw]) => {
+              const existing = plans.find(
+                (plan) => plan.dayKey === key && plan.muscleGroupId === muscleGroupId,
+              );
+
+              return {
+                id: existing?.id,
+                dayKey: key,
+                muscleGroupId,
+                sets: Number(setsRaw),
+                note: existing?.note || '',
+              };
+            })
             .filter((entry) => Number.isFinite(entry.sets) && entry.sets > 0);
         });
 
@@ -583,7 +608,9 @@ export default function WeeklyPlanScreen() {
               const col = colorByMuscle[group.id];
               const isChosen = selectedMuscles[group.id] !== undefined;
               const targetSets = Number(group.target_sets_per_week || 0);
-              const plannedWeeklySets = plannedSetsByMuscle[group.id] ?? 0;
+              const plannedWeeklySets = (editingId ? plannedSetsByMuscle[group.id] : draftPlannedByMuscle[group.id]) ?? 0;
+              const remain = Math.max(targetSets - plannedWeeklySets, 0);
+              const reached = targetSets > 0 ? plannedWeeklySets >= targetSets : plannedWeeklySets > 0;
               return (
                 <View
                   key={group.id}
@@ -601,9 +628,14 @@ export default function WeeklyPlanScreen() {
                       {isChosen && <Text style={styles.musclePickerCheckMark}>✓</Text>}
                     </View>
                     <View style={styles.musclePickerTextWrap}>
-                      <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
-                        {group.name}
-                      </Text>
+                      <View style={styles.musclePickerNameRow}>
+                        <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
+                          {group.name}
+                        </Text>
+                        <Text style={[styles.musclePickerGoalStatus, reached ? styles.musclePickerGoalReached : styles.musclePickerGoalPending]}>
+                          {reached ? 'Đủ' : `Thiếu ${remain}`}
+                        </Text>
+                      </View>
                       <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
                         Tuần: {targetSets} sets · Đã plan: {plannedWeeklySets} sets
                       </Text>
@@ -819,7 +851,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg,
   },
   musclePickerCheckMark: { fontSize: 11, color: Colors.bg, fontWeight: '700', lineHeight: 14 },
+  musclePickerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   musclePickerName: { fontSize: 14, color: Colors.text, fontWeight: '500' },
+  musclePickerGoalStatus: { fontSize: 10, fontWeight: '700' },
+  musclePickerGoalReached: { color: Colors.success },
+  musclePickerGoalPending: { color: Colors.warning },
   musclePickerMeta: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   musclePickerSetsWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   musclePickerSetsInput: {
