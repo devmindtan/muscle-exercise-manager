@@ -130,7 +130,12 @@ export default function WeeklyPlanScreen() {
   // ── Editor state ──
   const [showEditor, setShowEditor] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formDay, setFormDay] = useState<WeekDayKey>('mon');
+  // create mode: each day has its own selected muscle map
+  const [formDayCreate, setFormDayCreate] = useState<WeekDayKey>('mon');
+  const [createDaySelections, setCreateDaySelections] = useState<
+    Partial<Record<WeekDayKey, Record<string, string>>>
+  >({});
+  const [formDaySingle, setFormDaySingle] = useState<WeekDayKey>('mon');
   const [selectedMuscles, setSelectedMuscles] = useState<Record<string, string>>({});
   const [editNote, setEditNote] = useState('');
   const [error, setError] = useState('');
@@ -225,37 +230,69 @@ export default function WeeklyPlanScreen() {
   }, [plans]);
 
   const selectedEntries = byDay[selectedDay] ?? [];
+  const configuredCreateDaysCount = useMemo(
+    () => Object.values(createDaySelections).filter((value) => value && Object.keys(value).length > 0).length,
+    [createDaySelections],
+  );
 
   // ── Editor helpers ──
 
   const toggleMuscle = (id: string) => {
     setSelectedMuscles((prev) => {
+      let next: Record<string, string>;
       if (prev[id] !== undefined) {
-        const next = { ...prev };
+        next = { ...prev };
         delete next[id];
-        return next;
+      } else {
+        next = { ...prev, [id]: '10' };
       }
-      return { ...prev, [id]: '10' };
+
+      if (!editingId) {
+        setCreateDaySelections((dayPrev) => ({
+          ...dayPrev,
+          [formDayCreate]: next,
+        }));
+      }
+
+      return next;
     });
   };
 
   const updateMuscleSets = (id: string, val: string) => {
-    setSelectedMuscles((prev) => ({ ...prev, [id]: val }));
+    setSelectedMuscles((prev) => {
+      const next = { ...prev, [id]: val };
+
+      if (!editingId) {
+        setCreateDaySelections((dayPrev) => ({
+          ...dayPrev,
+          [formDayCreate]: next,
+        }));
+      }
+
+      return next;
+    });
   };
 
   const openCreate = () => {
     setEditingId(null);
     setError('');
-    setFormDay(selectedDay);
+    setFormDayCreate(selectedDay);
+    setCreateDaySelections({});
     setSelectedMuscles({});
     setEditNote('');
     setShowEditor(true);
   };
 
+  const switchCreateDay = (dayKey: WeekDayKey) => {
+    setFormDayCreate(dayKey);
+    setSelectedMuscles({ ...(createDaySelections[dayKey] || {}) });
+  };
+
   const openEdit = (entry: WeeklyPlanEntry) => {
     setEditingId(entry.id);
     setError('');
-    setFormDay(entry.dayKey);
+    setFormDaySingle(entry.dayKey);
+    setCreateDaySelections({});
     setSelectedMuscles({ [entry.muscleGroupId]: String(entry.sets) });
     setEditNote(entry.note || '');
     setShowEditor(true);
@@ -265,8 +302,8 @@ export default function WeeklyPlanScreen() {
     const muscleIds = Object.keys(selectedMuscles);
     if (muscleIds.length === 0) { setError('Vui lòng chọn ít nhất một nhóm cơ.'); return; }
 
-    const entries = muscleIds.map((id) => ({ muscleGroupId: id, sets: Number(selectedMuscles[id]) }));
-    if (entries.some((e) => !Number.isFinite(e.sets) || e.sets <= 0)) {
+    const muscleEntries = muscleIds.map((id) => ({ muscleGroupId: id, sets: Number(selectedMuscles[id]) }));
+    if (muscleEntries.some((e) => !Number.isFinite(e.sets) || e.sets <= 0)) {
       setError('Sets cần là số lớn hơn 0.');
       return;
     }
@@ -274,21 +311,38 @@ export default function WeeklyPlanScreen() {
     setSaving(true);
     try {
       if (editingId) {
+        // Single edit — single day, single muscle
         const nextPlans = await upsertWeeklyPlanEntry(
-          { id: editingId, dayKey: formDay, muscleGroupId: muscleIds[0], sets: entries[0].sets, note: editNote },
+          { id: editingId, dayKey: formDaySingle, muscleGroupId: muscleIds[0], sets: muscleEntries[0].sets, note: editNote },
           userKey,
         );
         setPlans(sortPlans(nextPlans));
       } else {
-        const nextPlans = await upsertWeeklyPlanEntries(
-          entries.map((entry) => ({
-            dayKey: formDay,
-            muscleGroupId: entry.muscleGroupId,
-            sets: entry.sets,
-            note: '',
-          })),
-          userKey,
-        );
+        // Batch create — each day uses its own configured muscle set.
+        const source = {
+          ...createDaySelections,
+          [formDayCreate]: selectedMuscles,
+        };
+
+        const payload = WEEK_DAYS.flatMap(({ key }) => {
+          const musclesForDay = source[key] || {};
+          return Object.entries(musclesForDay)
+            .map(([muscleGroupId, setsRaw]) => ({
+              dayKey: key,
+              muscleGroupId,
+              sets: Number(setsRaw),
+              note: '',
+            }))
+            .filter((entry) => Number.isFinite(entry.sets) && entry.sets > 0);
+        });
+
+        if (payload.length === 0) {
+          setError('Vui lòng chọn nhóm cơ cho ít nhất một ngày.');
+          setSaving(false);
+          return;
+        }
+
+        const nextPlans = await upsertWeeklyPlanEntries(payload, userKey);
         setPlans(sortPlans(nextPlans));
       }
       setShowEditor(false);
@@ -314,6 +368,19 @@ export default function WeeklyPlanScreen() {
   }
 
   const selectedDate = getDateForDayKey(selectedDay);
+
+  // Label cho nút Thêm
+  const createLabel = (() => {
+    if (saving) return 'Đang lưu...';
+    const dCount = configuredCreateDaysCount;
+    const mCount = dCount > 0
+      ? Math.max(...Object.values(createDaySelections).map((value) => Object.keys(value || {}).length), 0)
+      : 0;
+    if (dCount > 1 && mCount > 1) return `Thêm ${mCount} nhóm cơ × ${dCount} ngày`;
+    if (dCount > 1) return `Thêm ${dCount} ngày`;
+    if (mCount > 1) return `Thêm ${mCount} nhóm cơ`;
+    return 'Thêm kế hoạch';
+  })();
 
   return (
     <View style={styles.container}>
@@ -385,7 +452,6 @@ export default function WeeklyPlanScreen() {
 
         {/* ── Selected day detail ── */}
         <View style={styles.dayDetail}>
-          {/* Day header — sets count gộp vào subtitle */}
           <View style={[styles.dayDetailHeader, selectedDay === todayKey && styles.dayDetailHeaderToday]}>
             <View style={styles.dayDetailTitleRow}>
               <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay]}</Text>
@@ -401,7 +467,6 @@ export default function WeeklyPlanScreen() {
             </Text>
           </View>
 
-          {/* Muscle entries */}
           {selectedEntries.length === 0 ? (
             <View style={styles.dayRestRow}>
               <Text style={styles.dayRestText}>Nghỉ ngơi — chưa có lịch tập</Text>
@@ -422,17 +487,15 @@ export default function WeeklyPlanScreen() {
 
                 return (
                   <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
-                    {/* Dot màu thay colorBar */}
                     <View style={[styles.entryDot, { backgroundColor: col.bar }]} />
 
-                    {/* Tên + progress bar */}
                     <View style={styles.muscleInfo}>
                       <Text style={styles.muscleName} numberOfLines={1}>
-                        {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'} - {" "}
+                        {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
                         <Text style={[styles.setsNow, done && { color: col.bar }]}>
-                        {dayProgressLoading ? '…' : actualSets}
-                        <Text style={styles.setsDivider}> / {entry.sets}</Text>
-                      </Text>
+                          {dayProgressLoading ? '…' : actualSets}
+                          <Text style={styles.setsDivider}> / {entry.sets}</Text>
+                        </Text>
                       </Text>
                       {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
                       <View style={styles.progressTrack}>
@@ -440,7 +503,6 @@ export default function WeeklyPlanScreen() {
                       </View>
                     </View>
 
-                    {/* Số liệu + actions */}
                     <View style={styles.entryRight}>
                       {done
                         ? <Text style={[styles.doneChip, { color: col.bar }]}>✓ xong</Text>
@@ -462,7 +524,6 @@ export default function WeeklyPlanScreen() {
           )}
         </View>
 
-        {/* ── Empty state ── */}
         {groups.length === 0 && (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>Chưa có nhóm cơ</Text>
@@ -483,18 +544,32 @@ export default function WeeklyPlanScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Day picker */}
-          <Text style={styles.inputLabel}>Ngày tập</Text>
+          {/* Day picker — multi-select khi tạo, single khi sửa */}
+          <Text style={styles.inputLabel}>
+            {editingId
+              ? 'Ngày tập'
+              : `Ngày tập${configuredCreateDaysCount > 0 ? ` (${configuredCreateDaysCount} ngày đã set)` : ''}`}
+          </Text>
           <View style={styles.filterWrap}>
-            {WEEK_DAYS.map((day) => (
-              <TouchableOpacity
-                key={day.key}
-                style={[styles.chip, formDay === day.key && styles.chipActive]}
-                onPress={() => setFormDay(day.key)}
-              >
-                <Text style={[styles.chipText, formDay === day.key && styles.chipTextActive]}>{day.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {WEEK_DAYS.map((day) => {
+              const isActive = editingId ? formDaySingle === day.key : formDayCreate === day.key;
+              const hasConfig = !editingId && Object.keys(createDaySelections[day.key] || {}).length > 0;
+              return (
+                <TouchableOpacity
+                  key={day.key}
+                  style={[styles.chip, hasConfig && styles.chipConfigured, isActive && styles.chipActive]}
+                  onPress={() => {
+                    if (editingId) {
+                      setFormDaySingle(day.key);
+                    } else {
+                      switchCreateDay(day.key);
+                    }
+                  }}
+                >
+                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{day.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Multi-muscle selector */}
@@ -571,11 +646,7 @@ export default function WeeklyPlanScreen() {
 
           <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={submit} disabled={saving}>
             <Text style={styles.saveBtnText}>
-              {saving
-                ? 'Đang lưu...'
-                : editingId
-                  ? 'Lưu thay đổi'
-                  : `Thêm${Object.keys(selectedMuscles).length > 1 ? ` ${Object.keys(selectedMuscles).length} nhóm cơ` : ' kế hoạch'}`}
+              {editingId ? (saving ? 'Đang lưu...' : 'Lưu thay đổi') : createLabel}
             </Text>
           </TouchableOpacity>
           <View style={{ height: 24 }} />
@@ -679,20 +750,17 @@ const styles = StyleSheet.create({
   },
   muscleRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
 
-  // Dot màu — thay colorBar
   entryDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
 
   muscleInfo: { flex: 1, minWidth: 0 },
   muscleName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 4 },
   muscleNote: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
 
-  // Progress bar
   progressTrack: { height: 3, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
 
-  // Right side
   entryRight: { alignItems: 'flex-end', gap: 3, flexShrink: 0 },
-  setsNow: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  setsNow: { fontSize: 13, fontWeight: '700', color: Colors.text },
   setsDivider: { fontSize: 11, fontWeight: '400', color: Colors.textMuted },
   setsWeekTarget: { fontSize: 10, color: Colors.textMuted },
   doneChip: { fontSize: 10, fontWeight: '700' },
@@ -725,6 +793,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6,
     borderRadius: 999, borderWidth: 1,
     borderColor: Colors.border, backgroundColor: Colors.surface,
+  },
+  chipConfigured: {
+    borderColor: Colors.success + '66',
+    backgroundColor: Colors.success + '14',
   },
   chipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '1f' },
   chipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
