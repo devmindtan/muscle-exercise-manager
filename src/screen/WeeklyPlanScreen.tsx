@@ -670,8 +670,6 @@ export default function WeeklyPlanScreen() {
 
                   <View style={styles.outOfPlanList}>
                     {outOfPlanEntries.map((item, idx) => {
-                      const group = groups.find((g) => g.id === item.muscleGroupId);
-                      const tone = colorByMuscle[item.muscleGroupId] ?? getGroupTone(group?.color);
                       const isLast = idx === outOfPlanEntries.length - 1;
                       return (
                         <View key={item.muscleGroupId} style={[styles.outOfPlanRow, !isLast && styles.outOfPlanRowBorder]}>
@@ -783,9 +781,9 @@ export default function WeeklyPlanScreen() {
               const targetSets = Number(group.target_sets_per_week || 0);
               const plannedWeeklySets = (editingId ? plannedSetsByMuscle[group.id] : projectedPlannedByMuscle[group.id]) ?? 0;
               const actualWeeklySets = weeklyActualSetsByMuscle[group.id] ?? 0;
-              const consumedWeeklySets = actualWeeklySets + plannedWeeklySets;
-              const remain = Math.max(targetSets - consumedWeeklySets, 0);
-              const reached = targetSets > 0 ? consumedWeeklySets >= targetSets : consumedWeeklySets > 0;
+              const mergedWeeklyProgress = Math.max(actualWeeklySets, plannedWeeklySets);
+              const remain = Math.max(targetSets - mergedWeeklyProgress, 0);
+              const reached = targetSets > 0 ? mergedWeeklyProgress >= targetSets : mergedWeeklyProgress > 0;
               return (
                 <View
                   key={group.id}
@@ -812,7 +810,7 @@ export default function WeeklyPlanScreen() {
                         </Text>
                       </View>
                       <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
-                        Tuần: {targetSets} sets · Đã tập: {weekProgressLoading ? '…' : actualWeeklySets} · Đã plan: {plannedWeeklySets}
+                        Tuần: {targetSets} sets · Đã tập: {weekProgressLoading ? '…' : mergedWeeklyProgress}
                       </Text>
                     </View>
                   </TouchableOpacity>
