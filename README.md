@@ -1,113 +1,92 @@
 # Muscle Exercise Manager
 
-Offline-first workout tracking app tối ưu cho ghi log nhanh, đồng bộ cloud, hỗ trợ đăng nhập Google và chế độ khách.
+Ứng dụng workout tracking **offline-first**, tối ưu cho việc ghi log nhanh, lưu local ổn định và tự động đồng bộ cloud khi có mạng. Hỗ trợ Google Sign-In và chế độ khách.
 
-## Features
+---
 
-- Đăng nhập Google hoặc dùng chế độ Khách
-- Quản lý nhóm cơ, bài tập, log tập luyện
-- Thêm/sửa/xoá nhóm cơ, bài tập, log (soft delete)
-- Tìm kiếm, lọc, thống kê tiến độ
-- Đồng bộ dữ liệu local <-> cloud (Supabase)
-- Upload ảnh minh hoạ lên MinIO
-- Hoạt động offline, tự động đồng bộ khi có mạng
+## Screenshots
+
+| Dashboard | Weekly Plan | Body Metrics | Log Workout |
+|-----------|-------------|--------------|-------------|
+| ![Dashboard](assets/images/dashboard.jpg) | ![Weekly Plan](assets/images/weekly-plan.jpg) | ![Body Metrics](assets/images/body-metrics.jpg) | ![Log Workout](assets/images/log-workout.jpg) |
+
+---
+
+## Tính năng chính
+
+- **Weekly Plan** — lập kế hoạch theo ngày và nhóm cơ, theo dõi tiến độ sets thực tế so với mục tiêu; hiển thị nhóm cơ ngoài kế hoạch và thêm nhanh vào ngày hiện tại.
+- **Dashboard** — tổng quan sets tuần (actual/target), khối lượng tháng, trạng thái từng nhóm cơ (hoàn thành / chưa đủ / vượt mục tiêu).
+- **Body Metrics** — nhập tay hoặc quét, UI tab rõ ràng, dễ bảo trì.
+- **Workout Log** — thêm, sửa, xoá theo từng bài tập; hỗ trợ soft delete.
+- **Offline-first** — toàn bộ dữ liệu lưu local bằng SQLite, đồng bộ Supabase khi có mạng, dirty sync ổn định.
+- **Ảnh minh hoạ** — upload lên MinIO, đồng bộ tự động khi online.
+
+---
 
 ## Tech Stack
 
-- React Native (Expo, TypeScript)
-- SQLite (localDB)
-- Supabase (cloud sync, auth)
-- MinIO (image upload)
-- Google Sign-In
+| Layer | Công nghệ |
+|---|---|
+| Mobile / Web | Expo · React Native · TypeScript |
+| Local store | SQLite |
+| Auth + Sync | Supabase |
+| Image storage | MinIO |
 
-## Prerequisites
+---
 
-- Node.js >= 20
-- npm >= 10
-- Expo CLI
-
-## Installation
+## Quick Start
 
 ```bash
-git clone https://github.com/username/muscle-exercise-manager.git
+git clone https://github.com/devmindtan/muscle-exercise-manager.git
 cd muscle-exercise-manager
 npm install
+npx expo start
 ```
 
-## Environment Variables
+---
 
-Tạo file `.env` với các biến sau (hoặc cấu hình trong eas.json):
+## Cấu hình môi trường
+
+Tạo file `.env` ở root:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_KEY=
+
+# MinIO — hai biến dưới được hỗ trợ như alias của nhau
 EXPO_PUBLIC_MINIO_ENDPOINT=
 EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL=
 EXPO_PUBLIC_MINIO_BUCKET=muscle-manager
+
+# Google Sign-In — hai biến dưới được hỗ trợ như alias của nhau
 EXPO_PUBLIC_WEB_CLIENT_ID=
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+
+# Cần khớp với Callback URL trong Supabase Auth khi deploy web
 EXPO_PUBLIC_WEB_REDIRECT_URL=
-
-`EXPO_PUBLIC_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` are treated as aliases, and `EXPO_PUBLIC_MINIO_ENDPOINT` and `EXPO_PUBLIC_MINIO_PUBLIC_BASE_URL` are treated as aliases.
-
-For web OAuth deployments (Vercel/Netlify), set `EXPO_PUBLIC_WEB_REDIRECT_URL` to your public callback URL (for example `https://your-app.vercel.app/auth-callback`) and add the same URL in Supabase Auth Redirect URLs.
-```
-## Running The Application
-
-```bash
-npx expo start
-# hoặc build preview:
-EAS_LOCAL_BUILD_WORKINGDIR="$PWD/tmp/eas-preview" npx eas-cli@latest build --profile preview --platform android --local --non-interactive
 ```
 
-## Folder Structure
+---
 
-```md
-src/
-	components/
-	context/
-	db/
-	docs/
-	lib/
-	screen/
-	services/
-	supabase/
-	types/
-```
-
-## Dataflow & Architecture
-
-Xem chi tiết luồng dữ liệu các chức năng tại [src/docs/dataflow.md](src/docs/dataflow.md)
-
-## API & Cloud
-
-- Supabase: auth, cloud sync (muscle_groups, exercises, workout_logs)
-- MinIO: upload ảnh minh hoạ
-
-## Testing
-
-```bash
-# (Chưa có test tự động)
-```
-
-## Deployment
+## Build Web
 
 ```bash
 npm run build:web
 ```
 
-For Vercel deployments, use `vercel.json` in the repo root so Expo Router routes like `/auth-callback` resolve correctly on refresh and direct navigation.
+> Deploy lên Vercel hoặc Netlify: đảm bảo `EXPO_PUBLIC_WEB_REDIRECT_URL` trùng với callback URL đã cấu hình trong Supabase Auth.
 
-## Roadmap
+---
 
-- [ ] AI recommendation system
-- [ ] Mobile notifications
-- [ ] Multi-device synchronization
+## Releases
 
-## Contributing
+| Tag | Trạng thái |
+|-----|------------|
+| `v1.0.1-preview` | Latest |
+| `v1.0.0-preview` | Stable |
 
-Pull requests are welcome. Hãy mở issue trước với thay đổi lớn.
+---
 
 ## License
 
-MIT License
+[MIT](./LICENSE)
