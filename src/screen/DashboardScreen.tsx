@@ -163,6 +163,12 @@ export default function DashboardScreen() {
   const [progressTab, setProgressTab] = useState<ProgressTab>('pending');
   const [weekKey, setWeekKey] = useState(getWeekKey());
 
+  // Total target sets across all muscle groups
+  const totalTargetSets = useMemo(
+    () => stats.reduce((s, r) => s + r.targetSetsPerWeek, 0),
+    [stats],
+  );
+
   const load = useCallback(async () => {
     try {
       const { start, end } = getWeekRange();
@@ -238,10 +244,12 @@ export default function DashboardScreen() {
   const hasStatsForCurrentTab = filteredStats.length > 0;
   const displayedStats = hasStatsForCurrentTab ? filteredStats : categoryFilteredStats;
 
-  const monthlyVolumeLabel =
+  // Monthly volume: number only, unit in hint
+  const monthlyVolumeNumber =
     monthlyVolume >= 1000
-      ? `${(monthlyVolume / 1000).toFixed(1)} tấn`
-      : `${Math.round(monthlyVolume).toLocaleString('vi-VN')} kg`;
+      ? (monthlyVolume / 1000).toFixed(1)
+      : Math.round(monthlyVolume).toLocaleString('vi-VN');
+  const monthlyVolumeUnit = monthlyVolume >= 1000 ? 'tấn' : 'kg';
 
   if (loading) {
     return (
@@ -264,7 +272,7 @@ export default function DashboardScreen() {
           />
         }
       >
-        {/* ── Header (giữ nguyên bản gốc) ── */}
+        {/* ── Header ── */}
         <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
           <View style={styles.headerRow}>
             <View>
@@ -277,24 +285,29 @@ export default function DashboardScreen() {
 
         {/* ── 2-col stat grid: sets + volume ── */}
         <View style={styles.statGrid}>
+          {/* Sets tuần này — hiển thị totalSets/totalTargetSets */}
           <View style={styles.statCard}>
             <View style={styles.statLabelRow}>
               <TrendingUp color={Colors.accent} size={14} strokeWidth={2} />
               <Text style={styles.statLabel}>Sets tuần này</Text>
             </View>
-            <Text style={[styles.statValue, { color: Colors.accent }]}>{totalSets}</Text>
+            <View style={styles.statValueRow}>
+              <Text style={[styles.statValue, { color: Colors.accent }]}>{totalSets}</Text>
+              <Text style={styles.statValueDivider}>/{totalTargetSets}</Text>
+            </View>
             <Text style={styles.statHint}>
               {stats.filter((s) => getProgressState(s) !== 'pending').length}/{stats.length} nhóm cơ
             </Text>
           </View>
 
+          {/* Khối lượng / tháng — số thuần, đơn vị ở hint */}
           <View style={styles.statCard}>
             <View style={styles.statLabelRow}>
               <Dumbbell color={Colors.textSecondary} size={14} strokeWidth={2} />
-              <Text style={styles.statLabel}>Khối lượng tháng</Text>
+              <Text style={styles.statLabel}>Khối lượng / tháng</Text>
             </View>
-            <Text style={styles.statValue}>{monthlyVolumeLabel}</Text>
-            <Text style={styles.statHint}>sets × reps × kg</Text>
+            <Text style={styles.statValue}>{monthlyVolumeNumber}</Text>
+            <Text style={styles.statHint}>sets × reps × kg ({monthlyVolumeUnit}) </Text>
           </View>
         </View>
 
@@ -499,7 +512,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 32 },
 
-  // ── Header (giữ nguyên) ──
+  // ── Header ──
   header: { paddingHorizontal: 20, paddingBottom: 16 },
   headerRow: {
     flexDirection: 'row',
@@ -536,6 +549,17 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   statLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  // Row for "totalSets / totalTargetSets"
+  statValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  statValueDivider: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
   statValue: {
     fontSize: 32,
     fontWeight: '800',
