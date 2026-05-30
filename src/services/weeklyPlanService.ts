@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import * as LocalDB from '@/src/db/localDB';
+import { supabase } from '@/src/lib/supabase';
 
 export const WEEK_DAYS = [
   { key: 'mon', label: 'Thứ 2', order: 1 },
@@ -40,6 +41,13 @@ function getWebStorageKey(userId?: string | null) {
   return `weekly_plan_entries_v1_${userId || 'guest'}`;
 }
 
+async function getWebUserId() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.user?.id || null;
+}
+
 function normalizeEntries(value: unknown): WeeklyPlanEntry[] {
   if (!Array.isArray(value)) return [];
 
@@ -66,6 +74,31 @@ function normalizeEntries(value: unknown): WeeklyPlanEntry[] {
 }
 
 async function getWebWeeklyPlanEntries(userId?: string | null) {
+  const resolvedUserId = userId || (await getWebUserId());
+
+  if (resolvedUserId) {
+    const { data, error } = await supabase
+      .from('weekly_plan_entries')
+      .select('*')
+      .eq('user_id', resolvedUserId)
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    return normalizeEntries((data || []).map((row: any) => ({
+      id: row.id,
+      dayKey: row.day_key,
+      muscleGroupId: row.muscle_group_id,
+      sets: row.sets,
+      note: row.note,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })));
+  }
+
   const raw = await AsyncStorage.getItem(getWebStorageKey(userId));
   if (!raw) return [];
 
@@ -119,6 +152,25 @@ export async function upsertWeeklyPlanEntry(
   };
 
   if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+
+    if (resolvedUserId) {
+      const { error } = await (supabase.from('weekly_plan_entries').upsert({
+        id: nextEntry.id,
+        user_id: resolvedUserId,
+        day_key: nextEntry.dayKey,
+        muscle_group_id: nextEntry.muscleGroupId,
+        sets: nextEntry.sets,
+        note: nextEntry.note,
+        created_at: nextEntry.createdAt,
+        updated_at: now,
+        deleted_at: null,
+      }) as any);
+
+      if (error) throw error;
+      return getWebWeeklyPlanEntries(resolvedUserId);
+    }
+
     const entries = await getWebWeeklyPlanEntries(userId);
     const existingIndex = entries.findIndex((entry) => entry.id === nextEntry.id);
 
@@ -175,6 +227,26 @@ export async function upsertWeeklyPlanEntries(
   }));
 
   if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+
+    if (resolvedUserId) {
+      const payload = nextEntries.map((nextEntry) => ({
+        id: nextEntry.id,
+        user_id: resolvedUserId,
+        day_key: nextEntry.dayKey,
+        muscle_group_id: nextEntry.muscleGroupId,
+        sets: nextEntry.sets,
+        note: nextEntry.note,
+        created_at: nextEntry.createdAt,
+        updated_at: now,
+        deleted_at: null,
+      }));
+
+      const { error } = await (supabase.from('weekly_plan_entries').upsert(payload as any) as any);
+      if (error) throw error;
+      return getWebWeeklyPlanEntries(resolvedUserId);
+    }
+
     const entries = await getWebWeeklyPlanEntries(userId);
 
     for (const nextEntry of nextEntries) {
@@ -220,6 +292,20 @@ export async function upsertWeeklyPlanEntries(
 
 export async function deleteWeeklyPlanEntry(id: string, userId?: string | null) {
   if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+
+    if (resolvedUserId) {
+      const { error } = await (supabase
+        .from('weekly_plan_entries')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any)
+        .eq('id', id)
+        .eq('user_id', resolvedUserId)
+        .is('deleted_at', null) as any);
+
+      if (error) throw error;
+      return getWebWeeklyPlanEntries(resolvedUserId);
+    }
+
     const entries = await getWebWeeklyPlanEntries(userId);
     const filtered = entries.filter((entry) => entry.id !== id);
     await saveWebWeeklyPlanEntries(filtered, userId);

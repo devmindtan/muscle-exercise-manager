@@ -131,6 +131,7 @@ export default function WeeklyPlanScreen() {
   const userKey = user?.id || 'guest';
   const todayKey = getTodayKey();
   const dayScrollRef = useRef<ScrollView>(null);
+  const dayProgressCacheRef = useRef<Partial<Record<WeekDayKey, Record<string, number>>>>({});
 
   const [groups, setGroups] = useState<MuscleGroupWithCount[]>([]);
   const [plans, setPlans] = useState<WeeklyPlanEntry[]>([]);
@@ -142,6 +143,8 @@ export default function WeeklyPlanScreen() {
   const [weekProgressLoading, setWeekProgressLoading] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState<WeekDayKey>(todayKey ?? 'mon');
+  const selectedDayRef = useRef<WeekDayKey>(todayKey ?? 'mon');
+  selectedDayRef.current = selectedDay;
 
   // ── Editor state ──
   const [showEditor, setShowEditor] = useState(false);
@@ -169,20 +172,24 @@ export default function WeeklyPlanScreen() {
     setPlans(sortPlans(nextPlans));
   }, [userKey]);
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      load().finally(() => setLoading(false));
-    }, [load]),
-  );
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    dayProgressCacheRef.current = {};
+    await Promise.all([
+      load(),
+      loadWeekProgress(),
+      loadDayProgress(selectedDay, { force: true }),
+    ]);
     setRefreshing(false);
   };
 
-  const loadDayProgress = useCallback(async (dayKey: WeekDayKey) => {
+  const loadDayProgress = useCallback(async (dayKey: WeekDayKey, options?: { force?: boolean }) => {
+    const cached = dayProgressCacheRef.current[dayKey];
+    if (!options?.force && cached) {
+      setActualSetsByMuscle(cached);
+      return;
+    }
+
     setDayProgressLoading(true);
     try {
       const { start, end } = getDayBounds(dayKey);
@@ -192,6 +199,7 @@ export default function WeeklyPlanScreen() {
         acc[muscleGroupId] = (acc[muscleGroupId] || 0) + Number(log.sets || 0);
         return acc;
       }, {});
+      dayProgressCacheRef.current[dayKey] = nextMap;
       setActualSetsByMuscle(nextMap);
     } finally {
       setDayProgressLoading(false);
@@ -216,9 +224,13 @@ export default function WeeklyPlanScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadDayProgress(selectedDay);
-      void loadWeekProgress();
-    }, [loadDayProgress, loadWeekProgress, selectedDay]),
+      setLoading(true);
+      Promise.all([
+        load(),
+        loadWeekProgress(),
+        loadDayProgress(selectedDayRef.current),
+      ]).finally(() => setLoading(false));
+    }, [load, loadDayProgress, loadWeekProgress]),
   );
 
   // ── Derived data ──
@@ -260,43 +272,23 @@ export default function WeeklyPlanScreen() {
     return map;
   }, [byDay]);
 
-  const plannedSetsByMuscle = useMemo(() => {
-    return plans.reduce<Record<string, number>>((acc, entry) => {
-      acc[entry.muscleGroupId] = (acc[entry.muscleGroupId] || 0) + entry.sets;
-      return acc;
-    }, {});
-  }, [plans]);
-
-  const projectedPlannedByMuscle = useMemo(() => {
-    const base = plans.reduce<Record<string, number>>((acc, entry) => {
-      acc[entry.muscleGroupId] = (acc[entry.muscleGroupId] || 0) + entry.sets;
-      return acc;
-    }, {});
-
+  const draftSetsByMuscle = useMemo(() => {
     const source = {
       ...createDaySelections,
       [formDayCreate]: selectedMuscles,
     };
 
-    WEEK_DAYS.forEach(({ key }) => {
-      const dayEntries = byDay[key] || [];
-      const musclesForDay = source[key];
-      if (!musclesForDay) return;
-
-      dayEntries.forEach((entry) => {
-        base[entry.muscleGroupId] = Math.max((base[entry.muscleGroupId] || 0) - entry.sets, 0);
-      });
-
+    return WEEK_DAYS.reduce<Record<string, number>>((acc, day) => {
+      const musclesForDay = source[day.key] || {};
       Object.entries(musclesForDay).forEach(([muscleGroupId, setsRaw]) => {
         const sets = Number(setsRaw);
         if (Number.isFinite(sets) && sets > 0) {
-          base[muscleGroupId] = (base[muscleGroupId] || 0) + sets;
+          acc[muscleGroupId] = (acc[muscleGroupId] || 0) + sets;
         }
       });
-    });
-
-    return base;
-  }, [byDay, createDaySelections, formDayCreate, plans, selectedMuscles]);
+      return acc;
+    }, {});
+  }, [createDaySelections, formDayCreate, selectedMuscles]);
 
   const dayActualTotal = useMemo(
     () => Object.values(actualSetsByMuscle).reduce((sum, val) => sum + val, 0),
@@ -566,6 +558,7 @@ export default function WeeklyPlanScreen() {
                 key={day.key}
                 style={[styles.dayBtn, isSelected && styles.dayBtnActive, !isSelected && isToday && styles.dayBtnToday]}
                 onPress={() => {
+                  selectedDayRef.current = day.key;
                   setSelectedDay(day.key);
                   void loadDayProgress(day.key);
                 }}
@@ -779,9 +772,11 @@ export default function WeeklyPlanScreen() {
               const col = colorByMuscle[group.id];
               const isChosen = selectedMuscles[group.id] !== undefined;
               const targetSets = Number(group.target_sets_per_week || 0);
-              const plannedWeeklySets = (editingId ? plannedSetsByMuscle[group.id] : projectedPlannedByMuscle[group.id]) ?? 0;
               const actualWeeklySets = weeklyActualSetsByMuscle[group.id] ?? 0;
-              const mergedWeeklyProgress = Math.max(actualWeeklySets, plannedWeeklySets);
+              const draftWeeklySets = editingId
+                ? Number(selectedMuscles[group.id] || 0)
+                : (draftSetsByMuscle[group.id] ?? 0);
+              const mergedWeeklyProgress = actualWeeklySets + (Number.isFinite(draftWeeklySets) ? draftWeeklySets : 0);
               const remain = Math.max(targetSets - mergedWeeklyProgress, 0);
               const reached = targetSets > 0 ? mergedWeeklyProgress >= targetSets : mergedWeeklyProgress > 0;
               return (
