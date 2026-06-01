@@ -112,6 +112,20 @@ function sumReps(logs: any[]) {
   }, 0);
 }
 
+function sumVolume(logs: any[]) {
+  return logs.reduce((sum, log) => {
+    const volume = Number(log?.volume ?? log?.volume_kg ?? log?.volumeKg ?? 0);
+    if (Number.isFinite(volume) && volume > 0) {
+      return sum + volume;
+    }
+
+    const sets = Number(log?.sets || 0);
+    const reps = Number(log?.reps || 0);
+    const weightKg = Number(log?.weight ?? log?.weight_kg ?? log?.weightKg ?? 0);
+    return sum + (Number.isFinite(sets) && Number.isFinite(reps) && Number.isFinite(weightKg) ? sets * reps * weightKg : 0);
+  }, 0);
+}
+
 const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
 type ProgressTab = 'completed' | 'pending' | 'over';
@@ -267,6 +281,7 @@ export default function DashboardScreen() {
         title: period.title,
         sets: sumSets(weeklyLogsByPeriod[index] as any[]),
         reps: sumReps(weeklyLogsByPeriod[index] as any[]),
+        volume: sumVolume(weeklyLogsByPeriod[index] as any[]),
         isCurrent: period.isCurrent,
       }));
       const nextMonthly = monthPeriods.map((period, index) => ({
@@ -275,6 +290,7 @@ export default function DashboardScreen() {
         title: period.title,
         sets: sumSets(monthlyLogsByPeriod[index] as any[]),
         reps: sumReps(monthlyLogsByPeriod[index] as any[]),
+        volume: sumVolume(monthlyLogsByPeriod[index] as any[]),
         isCurrent: period.isCurrent,
       }));
 

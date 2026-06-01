@@ -7,7 +7,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { TrendingUp, TrendingDown, Minus, Activity, Layers } from 'lucide-react-native';
+import { TrendingUp, TrendingDown, Minus, Activity, Layers, Dumbbell } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 
 export type HistoryPoint = {
@@ -16,8 +16,17 @@ export type HistoryPoint = {
   title: string;
   sets: number;
   reps: number;
+  volume: number;
   isCurrent: boolean;
 };
+
+function formatVolume(volume: number) {
+  if (volume >= 1000) {
+    return `${(volume / 1000).toFixed(1)} tấn`;
+  }
+
+  return `${Math.round(volume).toLocaleString('vi-VN')} kg`;
+}
 
 function AnimatedBar({
   pct,
@@ -220,9 +229,20 @@ export function HistoryCompareChart({
             </View>
           </View>
 
+          <View style={histStyles.volumeCard}>
+            <View style={histStyles.volumeHeader}>
+              <View style={histStyles.volumeLabelRow}>
+                <Dumbbell size={14} color={Colors.warning ?? Colors.textSecondary} strokeWidth={2} />
+                <Text style={histStyles.volumeLabel}>Khối lượng</Text>
+              </View>
+              {prevPoint ? <TrendIndicator current={selectedPoint.volume} prev={prevPoint.volume} /> : null}
+            </View>
+            <Text style={histStyles.volumeValue}>{formatVolume(selectedPoint.volume)}</Text>
+          </View>
+
           {prevPoint ? (
             <Text style={histStyles.detailCompareHint}>
-              So với kỳ trước: {prevPoint.sets} sets · {prevPoint.reps} reps
+              So với kỳ trước: {prevPoint.sets} sets · {prevPoint.reps} reps · {formatVolume(prevPoint.volume)}
             </Text>
           ) : null}
         </View>
@@ -511,6 +531,36 @@ const histStyles = StyleSheet.create({
     borderTopColor: Colors.border,
     paddingTop: 8,
     marginTop: -2,
+  },
+  volumeCard: {
+    backgroundColor: Colors.surfaceElevated ?? Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  volumeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  volumeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  volumeLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '600',
+  },
+  volumeValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.text,
+    letterSpacing: -0.3,
   },
   loadingCard: {
     marginHorizontal: 20,
