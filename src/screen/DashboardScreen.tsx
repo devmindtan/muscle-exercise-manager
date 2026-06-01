@@ -13,19 +13,12 @@ import { router } from 'expo-router';
 import { TrendingUp, ChevronRight, Dumbbell } from 'lucide-react-native';
 import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
 import type { WeekStat } from '@/src/lib/repository';
+import { HistoryTabSection } from '../components/dashboard-tabs/HistoryTab';
+import type { HistoryPoint } from '../components/dashboard-tabs/HistoryTab';
 import { SyncStatusChip } from '@/src/components/SyncStatusChip';
 import { Colors } from '@/src/constants/colors';
 
 type DashboardTab = 'overview' | 'history';
-
-type HistoryPoint = {
-  key: string;
-  label: string;
-  title: string;
-  sets: number;
-  reps: number;
-  isCurrent: boolean;
-};
 
 function getWeekRange() {
   const now = new Date();
@@ -118,84 +111,6 @@ function sumReps(logs: any[]) {
     return sum + (Number.isFinite(sets) && Number.isFinite(reps) ? sets * reps : 0);
   }, 0);
 }
-
-function HistoryCompareChart({
-  points,
-  selectedKey,
-  onSelect,
-}: {
-  points: HistoryPoint[];
-  selectedKey: string | null;
-  onSelect: (point: HistoryPoint) => void;
-}) {
-  const maxSets = Math.max(...points.map((p) => p.sets), 1);
-  const maxReps = Math.max(...points.map((p) => p.reps), 1);
-
-  return (
-    <View style={styles.historyChartWrap}>
-      <View style={styles.historyLegendRow}>
-        <View style={styles.historyLegendItem}>
-          <View style={[styles.historyLegendDot, { backgroundColor: Colors.accent }]} />
-          <Text style={styles.historyLegendText}>Sets</Text>
-        </View>
-        <View style={styles.historyLegendItem}>
-          <View style={[styles.historyLegendDot, { backgroundColor: Colors.success }]} />
-          <Text style={styles.historyLegendText}>Reps</Text>
-        </View>
-      </View>
-
-      <View style={styles.historyBarsRow}>
-        {points.map((point) => {
-          const setsPct = Math.max((point.sets / maxSets) * 100, point.sets > 0 ? 8 : 0);
-          const repsPct = Math.max((point.reps / maxReps) * 100, point.reps > 0 ? 8 : 0);
-          const isSelected = selectedKey === point.key;
-
-          return (
-            <TouchableOpacity
-              key={point.key}
-              style={[
-                styles.historyBarCol,
-                point.isCurrent && styles.historyBarColCurrent,
-                isSelected && styles.historyBarColSelected,
-              ]}
-              onPress={() => onSelect(point)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.historyBarPair}>
-                <View style={styles.historyBarTrack}>
-                  <View
-                    style={[
-                      styles.historyBarFill,
-                      {
-                        height: `${setsPct}%`,
-                        backgroundColor: point.isCurrent ? Colors.accent : Colors.accent + '99',
-                      },
-                    ]}
-                  />
-                </View>
-                <View style={styles.historyBarTrack}>
-                  <View
-                    style={[
-                      styles.historyBarFill,
-                      {
-                        height: `${repsPct}%`,
-                        backgroundColor: point.isCurrent ? Colors.success : Colors.success + '99',
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-              <Text style={[styles.historyBarLabel, point.isCurrent && styles.historyBarLabelCurrent]} numberOfLines={1}>
-                {point.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
 
 const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
@@ -439,14 +354,6 @@ export default function DashboardScreen() {
       ? (monthlyVolume / 1000).toFixed(1)
       : Math.round(monthlyVolume).toLocaleString('vi-VN');
   const monthlyVolumeUnit = monthlyVolume >= 1000 ? 'tấn' : 'kg';
-  const selectedWeekPoint = useMemo(
-    () => weeklyHistory.find((point) => point.key === selectedWeekKey) ?? weeklyHistory[weeklyHistory.length - 1] ?? null,
-    [selectedWeekKey, weeklyHistory],
-  );
-  const selectedMonthPoint = useMemo(
-    () => monthlyHistory.find((point) => point.key === selectedMonthKey) ?? monthlyHistory[monthlyHistory.length - 1] ?? null,
-    [selectedMonthKey, monthlyHistory],
-  );
 
   if (loading) {
     return (
@@ -709,53 +616,15 @@ export default function DashboardScreen() {
             )}
           </>
         ) : (
-          <>
-            {historyLoading ? (
-              <View style={styles.historyLoadingCard}>
-                <Text style={styles.historyLoadingText}>Đang tải lịch sử...</Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.historyCard}>
-                  <View style={styles.historyCardHeader}>
-                    <Text style={styles.historyCardTitle}>Theo tuần</Text>
-                    <Text style={styles.historyCardMeta}>5 mốc gần nhất (gồm hiện tại)</Text>
-                  </View>
-                  <HistoryCompareChart
-                    points={weeklyHistory}
-                    selectedKey={selectedWeekPoint?.key ?? null}
-                    onSelect={(point) => setSelectedWeekKey(point.key)}
-                  />
-                  {selectedWeekPoint ? (
-                    <View style={styles.historyDetailBox}>
-                      <Text style={styles.historyDetailTitle}>{selectedWeekPoint.title}</Text>
-                      <Text style={styles.historyDetailText}>{selectedWeekPoint.sets} sets</Text>
-                      <Text style={styles.historyDetailText}>{selectedWeekPoint.reps} reps</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={styles.historyCard}>
-                  <View style={styles.historyCardHeader}>
-                    <Text style={styles.historyCardTitle}>Theo tháng</Text>
-                    <Text style={styles.historyCardMeta}>5 mốc gần nhất (gồm hiện tại)</Text>
-                  </View>
-                  <HistoryCompareChart
-                    points={monthlyHistory}
-                    selectedKey={selectedMonthPoint?.key ?? null}
-                    onSelect={(point) => setSelectedMonthKey(point.key)}
-                  />
-                  {selectedMonthPoint ? (
-                    <View style={styles.historyDetailBox}>
-                      <Text style={styles.historyDetailTitle}>{selectedMonthPoint.title}</Text>
-                      <Text style={styles.historyDetailText}>{selectedMonthPoint.sets} sets</Text>
-                      <Text style={styles.historyDetailText}>{selectedMonthPoint.reps} reps</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </>
-            )}
-          </>
+          <HistoryTabSection
+            historyLoading={historyLoading}
+            weeklyHistory={weeklyHistory}
+            monthlyHistory={monthlyHistory}
+            selectedWeekKey={selectedWeekKey}
+            selectedMonthKey={selectedMonthKey}
+            setSelectedWeekKey={setSelectedWeekKey}
+            setSelectedMonthKey={setSelectedMonthKey}
+          />
         )}
       </ScrollView>
 
@@ -1048,81 +917,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-
-  historyLoadingCard: {
-    marginHorizontal: 20,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 20,
-  },
-  historyLoadingText: { fontSize: 13, color: Colors.textMuted },
-
-  historyCard: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 14,
-  },
-  historyCardHeader: { marginBottom: 10 },
-  historyCardTitle: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  historyCardMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
-
-  historyChartWrap: { gap: 8 },
-  historyLegendRow: { flexDirection: 'row', gap: 14, marginBottom: 2 },
-  historyLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  historyLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  historyLegendText: { fontSize: 11, color: Colors.textSecondary },
-
-  historyBarsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
-    minHeight: 128,
-  },
-  historyBarCol: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 3,
-    paddingBottom: 4,
-    borderRadius: 8,
-  },
-  historyBarColCurrent: {
-    backgroundColor: Colors.accent + '10',
-    borderWidth: 1,
-    borderColor: Colors.accent + '33',
-  },
-  historyBarColSelected: {
-    borderWidth: 1,
-    borderColor: Colors.textSecondary + '66',
-    backgroundColor: Colors.surfaceElevated,
-  },
-  historyBarPair: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 88, width: '100%' },
-  historyBarTrack: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'flex-end',
-    backgroundColor: Colors.border,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  historyBarFill: { width: '100%', borderRadius: 6 },
-  historyBarLabel: { fontSize: 9, color: Colors.textMuted, marginTop: 5 },
-  historyBarLabelCurrent: { color: Colors.accent, fontWeight: '700' },
-
-  historyDetailBox: {
-    marginTop: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceElevated,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  historyDetailTitle: { fontSize: 12, fontWeight: '700', color: Colors.text, marginBottom: 3 },
-  historyDetailText: { fontSize: 12, color: Colors.textSecondary },
 });
