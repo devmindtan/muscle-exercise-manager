@@ -1,7 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
-  Modal,
-  Pressable,
   View,
   Text,
   ScrollView,
@@ -13,20 +11,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { TrendingUp, ChevronRight, Dumbbell } from 'lucide-react-native';
-import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
+import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume } from '@/src/lib/repository';
 import type { WeekStat } from '@/src/lib/repository';
 import { SyncStatusChip } from '@/src/components/SyncStatusChip';
 import { Colors } from '@/src/constants/colors';
-
-type DashboardTab = 'overview' | 'history';
-
-type HistoryPoint = {
-  key: string;
-  label: string;
-  sets: number;
-  reps: number;
-  isCurrent: boolean;
-};
 
 function getWeekRange() {
   const now = new Date();
@@ -58,127 +46,6 @@ function getMonthRange() {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function getWeekStart(baseDate: Date) {
-  const day = baseDate.getDay();
-  const monday = new Date(baseDate);
-  monday.setDate(baseDate.getDate() - ((day + 6) % 7));
-  monday.setHours(0, 0, 0, 0);
-  return monday;
-}
-
-function getWeekRangeByOffset(offset: number) {
-  const now = new Date();
-  const monday = getWeekStart(now);
-  monday.setDate(monday.getDate() - offset * 7);
-
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
-
-  const startLabel = monday.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-  const endLabel = sunday.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-
-  return {
-    key: `week-${monday.toISOString()}`,
-    label: offset === 0 ? 'Hiện tại' : `${startLabel}-${endLabel}`,
-    start: monday.toISOString(),
-    end: sunday.toISOString(),
-    isCurrent: offset === 0,
-  };
-}
-
-function getMonthRangeByOffset(offset: number) {
-  const now = new Date();
-  const anchor = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-  const start = new Date(anchor);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-  end.setHours(23, 59, 59, 999);
-
-  return {
-    key: `month-${start.toISOString()}`,
-    label: offset === 0
-      ? 'Hiện tại'
-      : start.toLocaleDateString('vi-VN', { month: '2-digit', year: '2-digit' }),
-    start: start.toISOString(),
-    end: end.toISOString(),
-    isCurrent: offset === 0,
-  };
-}
-
-function sumSets(logs: any[]) {
-  return logs.reduce((sum, log) => sum + Number(log?.sets || 0), 0);
-}
-
-function sumReps(logs: any[]) {
-  return logs.reduce((sum, log) => {
-    const sets = Number(log?.sets || 0);
-    const reps = Number(log?.reps || 0);
-    return sum + (Number.isFinite(sets) && Number.isFinite(reps) ? sets * reps : 0);
-  }, 0);
-}
-
-function HistoryCompareChart({
-  points,
-}: {
-  points: HistoryPoint[];
-}) {
-  const maxSets = Math.max(...points.map((p) => p.sets), 1);
-  const maxReps = Math.max(...points.map((p) => p.reps), 1);
-
-  return (
-    <View style={styles.historyChartWrap}>
-      <View style={styles.historyLegendRow}>
-        <View style={styles.historyLegendItem}>
-          <View style={[styles.historyLegendDot, { backgroundColor: Colors.accent }]} />
-          <Text style={styles.historyLegendText}>Sets</Text>
-        </View>
-        <View style={styles.historyLegendItem}>
-          <View style={[styles.historyLegendDot, { backgroundColor: Colors.success }]} />
-          <Text style={styles.historyLegendText}>Reps</Text>
-        </View>
-      </View>
-
-      <View style={styles.historyBarsRow}>
-        {points.map((point) => {
-          const setsPct = Math.max((point.sets / maxSets) * 100, point.sets > 0 ? 8 : 0);
-          const repsPct = Math.max((point.reps / maxReps) * 100, point.reps > 0 ? 8 : 0);
-          return (
-            <View key={point.key} style={[styles.historyBarCol, point.isCurrent && styles.historyBarColCurrent]}>
-              <View style={styles.historyBarPair}>
-                <View style={styles.historyBarTrack}>
-                  <View
-                    style={[
-                      styles.historyBarFill,
-                      {
-                        height: `${setsPct}%`,
-                        backgroundColor: point.isCurrent ? Colors.accent : Colors.accent + '99',
-                      },
-                    ]}
-                  />
-                </View>
-                <View style={styles.historyBarTrack}>
-                  <View
-                    style={[
-                      styles.historyBarFill,
-                      {
-                        height: `${repsPct}%`,
-                        backgroundColor: point.isCurrent ? Colors.success : Colors.success + '99',
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-              <Text style={[styles.historyBarLabel, point.isCurrent && styles.historyBarLabelCurrent]} numberOfLines={1}>
-                {point.label}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
 
 const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
@@ -291,11 +158,6 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState<WeekStat[]>([]);
   const [totalSets, setTotalSets] = useState(0);
   const [monthlyVolume, setMonthlyVolume] = useState(0);
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [weeklyHistory, setWeeklyHistory] = useState<HistoryPoint[]>([]);
-  const [monthlyHistory, setMonthlyHistory] = useState<HistoryPoint[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
@@ -318,37 +180,7 @@ export default function DashboardScreen() {
       const { start: mStart, end: mEnd } = getMonthRange();
       const volume = await getMonthlyVolume(mStart, mEnd);
       setMonthlyVolume(volume);
-
-      setHistoryLoading(true);
-      const weekPeriods = Array.from({ length: 8 }, (_, idx) => getWeekRangeByOffset(7 - idx));
-      const monthPeriods = Array.from({ length: 8 }, (_, idx) => getMonthRangeByOffset(7 - idx));
-
-      const [weeklyLogsByPeriod, monthlyLogsByPeriod] = await Promise.all([
-        Promise.all(weekPeriods.map((period) => getWorkoutLogs(period.start, period.end))),
-        Promise.all(monthPeriods.map((period) => getWorkoutLogs(period.start, period.end))),
-      ]);
-
-      setWeeklyHistory(
-        weekPeriods.map((period, index) => ({
-          key: period.key,
-          label: period.label,
-          sets: sumSets(weeklyLogsByPeriod[index] as any[]),
-          reps: sumReps(weeklyLogsByPeriod[index] as any[]),
-          isCurrent: period.isCurrent,
-        })),
-      );
-
-      setMonthlyHistory(
-        monthPeriods.map((period, index) => ({
-          key: period.key,
-          label: period.label,
-          sets: sumSets(monthlyLogsByPeriod[index] as any[]),
-          reps: sumReps(monthlyLogsByPeriod[index] as any[]),
-          isCurrent: period.isCurrent,
-        })),
-      );
     } finally {
-      setHistoryLoading(false);
       setLoading(false);
     }
   }, []);
@@ -419,8 +251,6 @@ export default function DashboardScreen() {
       ? (monthlyVolume / 1000).toFixed(1)
       : Math.round(monthlyVolume).toLocaleString('vi-VN');
   const monthlyVolumeUnit = monthlyVolume >= 1000 ? 'tấn' : 'kg';
-  const currentWeekHistory = weeklyHistory.find((item) => item.isCurrent) || null;
-  const currentMonthHistory = monthlyHistory.find((item) => item.isCurrent) || null;
 
   if (loading) {
     return (
@@ -456,24 +286,18 @@ export default function DashboardScreen() {
 
         <View style={styles.dashboardTabRow}>
           <TouchableOpacity
-            style={[styles.dashboardTabBtn, dashboardTab === 'overview' && styles.dashboardTabBtnActive]}
-            onPress={() => {
-              setDashboardTab('overview');
-              setShowHistoryModal(false);
-            }}
+            style={[styles.dashboardTabBtn, styles.dashboardTabBtnActive]}
+            onPress={() => undefined}
           >
-            <Text style={[styles.dashboardTabText, dashboardTab === 'overview' && styles.dashboardTabTextActive]}>
+            <Text style={[styles.dashboardTabText, styles.dashboardTabTextActive]}>
               Tổng quan
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.dashboardTabBtn, dashboardTab === 'history' && styles.dashboardTabBtnActive]}
-            onPress={() => {
-              setDashboardTab('history');
-              setShowHistoryModal(true);
-            }}
+            style={styles.dashboardTabBtn}
+            onPress={() => router.push('/dashboard-history')}
           >
-            <Text style={[styles.dashboardTabText, dashboardTab === 'history' && styles.dashboardTabTextActive]}>
+            <Text style={styles.dashboardTabText}>
               Lịch sử
             </Text>
           </TouchableOpacity>
@@ -698,58 +522,6 @@ export default function DashboardScreen() {
         )}
       </ScrollView>
 
-      <Modal
-        visible={showHistoryModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setShowHistoryModal(false);
-          setDashboardTab('overview');
-        }}
-      >
-        <Pressable
-          style={styles.historyOverlay}
-          onPress={() => {
-            setShowHistoryModal(false);
-            setDashboardTab('overview');
-          }}
-        />
-        <View style={styles.historySheet}>
-          <View style={styles.historySheetHandle} />
-          <View style={styles.historySheetHeader}>
-            <Text style={styles.historySheetTitle}>Lịch sử so sánh tuần / tháng</Text>
-            <Text style={styles.historySheetHint}>Hiển thị hiện tại + tối đa 7 mốc quá khứ</Text>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.historySheetContent}>
-            {historyLoading ? (
-              <Text style={styles.historyLoadingText}>Đang tải lịch sử...</Text>
-            ) : (
-              <>
-                <View style={styles.historyCard}>
-                  <View style={styles.historyCardHeader}>
-                    <Text style={styles.historyCardTitle}>Theo tuần</Text>
-                    <Text style={styles.historyCardMeta}>
-                      Hiện tại: {currentWeekHistory?.sets ?? 0} sets · {currentWeekHistory?.reps ?? 0} reps
-                    </Text>
-                  </View>
-                  <HistoryCompareChart points={weeklyHistory} />
-                </View>
-
-                <View style={styles.historyCard}>
-                  <View style={styles.historyCardHeader}>
-                    <Text style={styles.historyCardTitle}>Theo tháng</Text>
-                    <Text style={styles.historyCardMeta}>
-                      Hiện tại: {currentMonthHistory?.sets ?? 0} sets · {currentMonthHistory?.reps ?? 0} reps
-                    </Text>
-                  </View>
-                  <HistoryCompareChart points={monthlyHistory} />
-                </View>
-              </>
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -1039,78 +811,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-
-  historyOverlay: { flex: 1, backgroundColor: '#00000088' },
-  historySheet: {
-    maxHeight: '86%',
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderTopWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 16,
-  },
-  historySheetHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 999,
-    alignSelf: 'center',
-    backgroundColor: Colors.textMuted,
-    opacity: 0.4,
-    marginBottom: 10,
-  },
-  historySheetHeader: { marginBottom: 12 },
-  historySheetTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  historySheetHint: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
-  historySheetContent: { gap: 12, paddingBottom: 12 },
-  historyLoadingText: { fontSize: 13, color: Colors.textMuted, paddingVertical: 16 },
-
-  historyCard: {
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 12,
-  },
-  historyCardHeader: { marginBottom: 8 },
-  historyCardTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  historyCardMeta: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
-
-  historyChartWrap: { gap: 8 },
-  historyLegendRow: { flexDirection: 'row', gap: 14, marginBottom: 2 },
-  historyLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  historyLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  historyLegendText: { fontSize: 11, color: Colors.textSecondary },
-  historyBarsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
-    minHeight: 122,
-  },
-  historyBarCol: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 3,
-    paddingBottom: 4,
-    borderRadius: 8,
-  },
-  historyBarColCurrent: {
-    backgroundColor: Colors.accent + '12',
-    borderWidth: 1,
-    borderColor: Colors.accent + '33',
-  },
-  historyBarPair: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 86, width: '100%' },
-  historyBarTrack: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'flex-end',
-    backgroundColor: Colors.border,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  historyBarFill: { width: '100%', borderRadius: 6 },
-  historyBarLabel: { fontSize: 9, color: Colors.textMuted, marginTop: 5 },
-  historyBarLabelCurrent: { color: Colors.accent, fontWeight: '700' },
 });

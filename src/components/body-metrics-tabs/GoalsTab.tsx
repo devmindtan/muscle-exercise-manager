@@ -7,6 +7,8 @@ interface GoalsTabProps {
   prioritizedGoals: MuscleGoal[];
   goalFilterMode: 'all' | 'lean' | 'fat';
   onChangeGoalFilterMode: (mode: 'all' | 'lean' | 'fat') => void;
+  onEditGoal: (goal: MuscleGoal) => void;
+  onDeleteGoal: (goal: MuscleGoal) => void;
   getMetricLabel: (key: string) => string;
   formatDateFull: (value?: string | null) => string;
 }
@@ -15,6 +17,8 @@ function GoalsTabComponent({
   prioritizedGoals,
   goalFilterMode,
   onChangeGoalFilterMode,
+  onEditGoal,
+  onDeleteGoal,
   getMetricLabel,
   formatDateFull,
 }: GoalsTabProps) {
@@ -136,6 +140,23 @@ function GoalsTabComponent({
                   </Text>
                 </View>
               </View>
+
+              <View style={styles.goalActionsRow}>
+                <TouchableOpacity
+                  style={styles.goalActionBtn}
+                  onPress={() => onEditGoal(goal)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.goalActionBtnText}>Sửa</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.goalActionBtn, styles.goalActionBtnDanger]}
+                  onPress={() => onDeleteGoal(goal)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.goalActionBtnText, styles.goalActionBtnDangerText]}>Xóa</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           );
         })
@@ -206,6 +227,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  goalActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 10,
+  },
+  goalActionBtn: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  goalActionBtnDanger: {
+    borderColor: Colors.error + '66',
+    backgroundColor: Colors.error + '15',
+  },
+  goalActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  goalActionBtnDangerText: {
+    color: Colors.error,
   },
   goalTargetWrap: { alignItems: 'flex-end' },
   goalNumLabel: {

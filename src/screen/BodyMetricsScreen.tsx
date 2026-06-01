@@ -27,9 +27,11 @@ import {
   createBodyMeasurement,
   deleteInBodyRecord,
   createMuscleGoal,
+  deleteMuscleGoal,
   getBodyMeasurements,
   getMuscleGoals,
   getMuscleGroups,
+  updateMuscleGoal,
   updateBodyMeasurement,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
@@ -295,6 +297,7 @@ export default function BodyMetricsScreen() {
   const [inBodyForm, setInBodyForm] = useState<InBodyFormState>(DEFAULT_INBODY_FORM);
   const [editingRecordKey, setEditingRecordKey] = useState<string | null>(null);
   const [goalForm, setGoalForm] = useState(DEFAULT_GOAL_FORM);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -595,24 +598,81 @@ export default function BodyMetricsScreen() {
     setSaving(true);
     setError('');
     try {
-      await createMuscleGoal({
-        muscleGroupId: fallbackGroupId,
-        metricKey: goalForm.metricKey,
-        currentValue,
-        targetValue,
-        unit,
-        targetDate: normalizedTargetDate,
-        note: goalForm.note.trim() || null,
-      });
+      if (editingGoalId) {
+        await updateMuscleGoal(editingGoalId, {
+          metricKey: goalForm.metricKey,
+          currentValue,
+          targetValue,
+          unit,
+          targetDate: normalizedTargetDate,
+          note: goalForm.note.trim() || null,
+        });
+      } else {
+        await createMuscleGoal({
+          muscleGroupId: fallbackGroupId,
+          metricKey: goalForm.metricKey,
+          currentValue,
+          targetValue,
+          unit,
+          targetDate: normalizedTargetDate,
+          note: goalForm.note.trim() || null,
+        });
+      }
       setGoalForm(DEFAULT_GOAL_FORM);
+      setEditingGoalId(null);
       setShowGoalModal(false);
-      setStatusMessage('Đã lưu goal thành công.');
+      setStatusMessage(editingGoalId ? 'Đã cập nhật goal.' : 'Đã lưu goal thành công.');
       await load();
     } catch (err: any) {
       setError(err?.message ?? 'Không thể lưu mục tiêu.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const openCreateGoal = () => {
+    setError('');
+    setEditingGoalId(null);
+    setGoalForm(DEFAULT_GOAL_FORM);
+    setShowGoalModal(true);
+  };
+
+  const openEditGoal = (goal: MuscleGoal) => {
+    const dateOnly = goal.target_date ? toDateInputValue(goal.target_date) : '';
+    setError('');
+    setEditingGoalId(goal.id);
+    setGoalForm({
+      metricKey: goal.metric_key,
+      targetValue: String(goal.target_value),
+      targetDate: dateOnly || DEFAULT_GOAL_FORM.targetDate,
+      note: goal.note || '',
+    });
+    setShowGoalModal(true);
+  };
+
+  const confirmDeleteGoal = (goal: MuscleGoal) => {
+    confirmDestructive(
+      'Xóa goal',
+      `Bạn có chắc muốn xóa goal ${getMetricLabel(goal.metric_key)}?`,
+      async () => {
+        setSaving(true);
+        setError('');
+        try {
+          await deleteMuscleGoal(goal.id);
+          if (editingGoalId === goal.id) {
+            setEditingGoalId(null);
+            setShowGoalModal(false);
+            setGoalForm(DEFAULT_GOAL_FORM);
+          }
+          setStatusMessage('Đã xóa goal.');
+          await load();
+        } catch (err: any) {
+          setError(err?.message ?? 'Không thể xóa goal.');
+        } finally {
+          setSaving(false);
+        }
+      },
+    );
   };
 
   // ── Loading ──
@@ -658,10 +718,7 @@ export default function BodyMetricsScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerBtn, styles.headerBtnGhost]}
-              onPress={() => {
-                setError('');
-                setShowGoalModal(true);
-              }}
+              onPress={openCreateGoal}
             >
               <Target color={Colors.accent} size={15} strokeWidth={2.2} />
               <Text style={[styles.headerBtnText, styles.headerBtnGhostText]}>Thêm goal</Text>
@@ -720,6 +777,8 @@ export default function BodyMetricsScreen() {
               prioritizedGoals={prioritizedGoals}
               goalFilterMode={goalFilterMode}
               onChangeGoalFilterMode={setGoalFilterMode}
+              onEditGoal={openEditGoal}
+              onDeleteGoal={confirmDeleteGoal}
               getMetricLabel={getMetricLabel}
               formatDateFull={formatDateFull}
             />
@@ -899,9 +958,20 @@ export default function BodyMetricsScreen() {
         visible={showGoalModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowGoalModal(false)}
+        onRequestClose={() => {
+          setShowGoalModal(false);
+          setEditingGoalId(null);
+          setGoalForm(DEFAULT_GOAL_FORM);
+        }}
       >
-        <Pressable style={styles.overlay} onPress={() => setShowGoalModal(false)} />
+        <Pressable
+          style={styles.overlay}
+          onPress={() => {
+            setShowGoalModal(false);
+            setEditingGoalId(null);
+            setGoalForm(DEFAULT_GOAL_FORM);
+          }}
+        />
         <KeyboardAvoidingView
           style={styles.sheetWrap}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -910,8 +980,14 @@ export default function BodyMetricsScreen() {
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Tạo goal Lean / Fat</Text>
-              <TouchableOpacity onPress={() => setShowGoalModal(false)}>
+              <Text style={styles.sheetTitle}>{editingGoalId ? 'Sửa goal Lean / Fat' : 'Tạo goal Lean / Fat'}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowGoalModal(false);
+                  setEditingGoalId(null);
+                  setGoalForm(DEFAULT_GOAL_FORM);
+                }}
+              >
                 <X color={Colors.textSecondary} size={20} />
               </TouchableOpacity>
             </View>
@@ -989,7 +1065,9 @@ export default function BodyMetricsScreen() {
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
               <TouchableOpacity style={styles.primaryBtn} onPress={saveGoal} disabled={saving}>
-                <Text style={styles.primaryBtnText}>{saving ? 'Đang lưu...' : 'Lưu goal'}</Text>
+                <Text style={styles.primaryBtnText}>
+                  {saving ? 'Đang lưu...' : editingGoalId ? 'Cập nhật goal' : 'Lưu goal'}
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </View>

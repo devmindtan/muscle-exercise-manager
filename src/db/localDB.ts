@@ -703,6 +703,26 @@ export async function getMuscleGoals() {
   );
 }
 
+export async function getMuscleGoalById(id: string) {
+  const database = await getDatabase();
+  return database.getFirstAsync<LocalMuscleGoal>(
+    'SELECT * FROM muscle_goals WHERE id = ? LIMIT 1',
+    [id],
+  );
+}
+
+export async function softDeleteMuscleGoal(id: string) {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE muscle_goals
+     SET deleted = 1,
+         dirty = 1,
+         updated_at = datetime('now')
+     WHERE id = ? AND deleted = 0`,
+    [id],
+  );
+}
+
 export async function upsertMuscleGoal(goal: LocalMuscleGoal) {
   const database = await getDatabase();
   const dirty = goal.dirty ?? 0;

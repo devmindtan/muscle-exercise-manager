@@ -71,12 +71,10 @@ interface Props {
 // Mini body SVG for the input section (smaller 160×240)
 function MiniBodySvg({
   valuesByZone,
-  mode,
   selected,
   onZonePress,
 }: {
   valuesByZone: Record<SegZone, string>;
-  mode: FormMode;
   selected: SegZone | null;
   onZonePress: (z: SegZone) => void;
 }) {
@@ -212,7 +210,6 @@ export function SegmentalFormSection({ form, onChange }: Props) {
         <View style={fs.figureWrap}>
           <MiniBodySvg
             valuesByZone={valuesByZone}
-            mode={mode}
             selected={selected}
             onZonePress={handleZonePress}
           />
@@ -222,6 +219,7 @@ export function SegmentalFormSection({ form, onChange }: Props) {
         {/* Input fields column */}
         <View style={fs.fieldsCol}>
           {SEG_ZONES.map((zone) => {
+            const metricKey = keys[zone];
             const isActive = selected === zone;
             return (
               <TouchableOpacity
@@ -322,7 +320,6 @@ export function SegmentalMetricPicker({
         <View style={fs.figureWrap}>
           <MiniBodySvg
             valuesByZone={valuesByZone}
-            mode={mode}
             selected={selected}
             onZonePress={handleZonePress}
           />

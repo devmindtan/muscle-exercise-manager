@@ -111,6 +111,15 @@ export interface MuscleGoalInput {
   note?: string | null;
 }
 
+export interface MuscleGoalUpdateInput {
+  metricKey?: string;
+  currentValue?: number | null;
+  targetValue?: number;
+  unit?: string;
+  targetDate?: string | null;
+  note?: string | null;
+}
+
 async function getWebUserIdOrThrow() {
   const {
     data: { session },
@@ -1135,6 +1144,76 @@ export async function createMuscleGoal(data: MuscleGoalInput) {
 
   await LocalDB.upsertMuscleGoal(goal);
   return goal;
+}
+
+export async function updateMuscleGoal(id: string, data: MuscleGoalUpdateInput) {
+  const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const payload = {
+      metric_key: data.metricKey,
+      current_value: data.currentValue,
+      target_value: data.targetValue,
+      unit: data.unit,
+      target_date: data.targetDate,
+      note: data.note,
+      updated_at: now,
+    } as any;
+
+    const { error } = await supabase
+      .from('muscle_goals')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
+  const existing = await LocalDB.getMuscleGoalById(id);
+  if (!existing) {
+    throw new Error(`Muscle goal ${id} not found`);
+  }
+
+  const updated: any = {
+    ...existing,
+    id,
+    metric_key: data.metricKey ?? existing.metric_key,
+    current_value: data.currentValue ?? existing.current_value,
+    target_value: data.targetValue ?? existing.target_value,
+    unit: data.unit ?? existing.unit,
+    target_date: data.targetDate ?? existing.target_date,
+    note: data.note ?? existing.note,
+    updated_at: now,
+    dirty: 1,
+  };
+
+  await LocalDB.upsertMuscleGoal(updated);
+}
+
+export async function deleteMuscleGoal(id: string) {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+
+    const { data: deletedRows, error } = await supabase
+      .from('muscle_goals')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .select('id');
+
+    if (error) throw error;
+    if (!deletedRows || deletedRows.length === 0) {
+      throw new Error('Không tìm thấy goal để xoá hoặc bạn không có quyền');
+    }
+    return;
+  }
+
+  await LocalDB.softDeleteMuscleGoal(id);
 }
 
 export async function getRecentLogs(limit = 20) {
