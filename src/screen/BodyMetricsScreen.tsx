@@ -409,10 +409,17 @@ export default function BodyMetricsScreen() {
   const prioritizedGoals = useMemo(
     () =>
       [...goals]
-        .filter((g) => g.current_value != null && g.target_value > (g.current_value ?? 0))
+        .filter((g) => {
+          if (g.current_value == null) return true;
+          const current = g.current_value ?? 0;
+          if (g.metric_key.startsWith('segmental_fat_')) {
+            return g.target_value < current;
+          }
+          return g.target_value > current;
+        })
         .sort((a, b) => {
-          const gapA = a.target_value - (a.current_value ?? 0);
-          const gapB = b.target_value - (b.current_value ?? 0);
+          const gapA = Math.abs(a.target_value - (a.current_value ?? 0));
+          const gapB = Math.abs(b.target_value - (b.current_value ?? 0));
           return gapB - gapA;
         }),
     [goals],

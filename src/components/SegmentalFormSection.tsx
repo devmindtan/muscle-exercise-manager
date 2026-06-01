@@ -156,7 +156,7 @@ function MiniBodySvg({
         };
         const pos = positions[zone];
         return (
-          <G key={zone}>
+          <G key={zone} pointerEvents="none">
             <Rect x={pos.x - 14} y={pos.y - 10} width={28} height={14} rx={4} fill="rgba(0,0,0,0.55)" />
             <SvgText x={pos.x} y={pos.y} textAnchor="middle" fontSize={9} fontWeight="700" fill="#fff">
               {v}
@@ -222,7 +222,6 @@ export function SegmentalFormSection({ form, onChange }: Props) {
         {/* Input fields column */}
         <View style={fs.fieldsCol}>
           {SEG_ZONES.map((zone) => {
-            const metricKey = keys[zone];
             const isActive = selected === zone;
             return (
               <TouchableOpacity
@@ -332,7 +331,6 @@ export function SegmentalMetricPicker({
 
         <View style={fs.fieldsCol}>
           {SEG_ZONES.map((zone) => {
-            const metricKey = keys[zone];
             const isActive = selected === zone;
             return (
               <TouchableOpacity

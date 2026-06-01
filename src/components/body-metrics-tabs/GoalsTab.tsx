@@ -18,6 +18,20 @@ function GoalsTabComponent({
   getMetricLabel,
   formatDateFull,
 }: GoalsTabProps) {
+  const getGoalProgressPct = (goal: MuscleGoal) => {
+    const current = goal.current_value ?? 0;
+    const target = goal.target_value;
+    if (target <= 0) return 0;
+
+    const isLean = goal.metric_key.startsWith('segmental_lean_');
+    if (isLean) {
+      return Math.min(Math.round((current / target) * 100), 100);
+    }
+
+    if (current <= 0) return 100;
+    return Math.min(Math.round((target / current) * 100), 100);
+  };
+
   const filtered = prioritizedGoals.filter((g) => {
     if (goalFilterMode === 'all') return true;
     return goalFilterMode === 'lean'
@@ -27,7 +41,7 @@ function GoalsTabComponent({
 
   const totalGoals = prioritizedGoals.length;
   const goodCount = prioritizedGoals.filter((g) => {
-    const pct = g.target_value > 0 ? Math.round(((g.current_value ?? 0) / g.target_value) * 100) : 0;
+    const pct = getGoalProgressPct(g);
     return pct >= 60;
   }).length;
   const warnCount = totalGoals - goodCount;
@@ -76,7 +90,7 @@ function GoalsTabComponent({
         filtered.map((goal) => {
           const current = goal.current_value ?? 0;
           const isLean = goal.metric_key.startsWith('segmental_lean_');
-          const pct = goal.target_value > 0 ? Math.min(Math.round((current / goal.target_value) * 100), 100) : 0;
+          const pct = getGoalProgressPct(goal);
           const gap = Math.abs(goal.target_value - current);
           const isGood = pct >= 60;
           const daysLeft = goal.target_date
