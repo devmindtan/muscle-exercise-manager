@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { supabase } from '@/src/lib/supabase';
 
 const MINIO_ENDPOINT =
@@ -67,6 +68,35 @@ export async function uploadImage(
 
     const key = `users/${user.id}/images/${makeImageKey(fileName)}`;
     const uploadUrl = `${normalizeEndpoint(BASE_URL)}/${encodeObjectKey(key)}`;
+
+    if (Platform.OS === 'web') {
+      const fileResponse = await fetch(fileUri);
+      if (!fileResponse.ok) {
+        return { success: false, error: 'Cannot read image file on web' };
+      }
+
+      const blob = await fileResponse.blob();
+      onProgress?.({ loaded: blob.size, total: blob.size });
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': mimeType },
+        body: blob,
+      });
+
+      if (!uploadResponse.ok) {
+        return {
+          success: false,
+          error: `Upload failed with status ${uploadResponse.status}`,
+        };
+      }
+
+      return {
+        success: true,
+        key,
+        url: toImageUrl(key),
+      };
+    }
 
     const task = FileSystem.createUploadTask(
       uploadUrl,

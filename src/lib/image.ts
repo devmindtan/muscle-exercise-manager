@@ -1,7 +1,12 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 
 export async function persistImageLocally(uri: string): Promise<string> {
   if (!uri) return uri;
+  if (Platform.OS === 'web') {
+    // Web cannot use native file-system directory APIs.
+    return uri;
+  }
   if (uri.startsWith('file://') && uri.includes('/document/')) {
     return uri;
   }
