@@ -74,7 +74,17 @@ const IH = H - PAD.top - PAD.bottom;
 const GRAD_ID = 'histGrad';
 
 function shortLabel(label: string, mode: 'week' | 'month'): string {
-  if (mode === 'week') return label;
+  if (mode === 'week') {
+    const [start] = label.split(/-|–/);
+    const clean = start?.trim() || label;
+    const dm = clean.match(/(\d{1,2})\/(\d{1,2})/);
+    if (dm) {
+      const d = dm[1].padStart(2, '0');
+      const m = dm[2].padStart(2, '0');
+      return `${d}/${m}`;
+    }
+    return clean;
+  }
   const m = label.match(/(\d{1,2})/);
   return m ? `T${m[1]}` : label;
 }
@@ -130,107 +140,114 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
   });
 
   return (
-    <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
-      <Defs>
-        <LinearGradient id={GRAD_ID} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={Colors.accent} stopOpacity="0.18" />
-          <Stop offset="100%" stopColor={Colors.accent} stopOpacity="0.01" />
-        </LinearGradient>
-      </Defs>
+    <View style={s.chartWrap}>
+      <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
+        <Defs>
+          <LinearGradient id={GRAD_ID} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={Colors.accent} stopOpacity="0.18" />
+            <Stop offset="100%" stopColor={Colors.accent} stopOpacity="0.01" />
+          </LinearGradient>
+        </Defs>
 
-      {/* Grid + y-axis labels */}
-      {ticks.map((t, i) => (
-        <G key={`g${i}`}>
-          <Line
-            x1={PAD.left} y1={t.y}
-            x2={W - PAD.right} y2={t.y}
-            stroke={Colors.border} strokeWidth="0.5"
-          />
-          <SvgText
-            x={PAD.left - 5} y={t.y}
-            fontSize="9" fill={Colors.textMuted}
-            textAnchor="end" alignmentBaseline="middle"
-          >
-            {fmtVol(t.v)}
-          </SvgText>
-        </G>
-      ))}
-
-      {/* Area fill */}
-      <Path d={areaPath} fill={`url(#${GRAD_ID})`} />
-
-      {/* Trend dashed line */}
-      <Path
-        d={trendPath}
-        stroke={Colors.warning ?? '#F59E0B'}
-        strokeWidth="1.5"
-        strokeDasharray="6,4"
-        fill="none"
-        opacity="0.9"
-      />
-
-      {/* Main line */}
-      <Path
-        d={linePath}
-        stroke={Colors.accent}
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-
-      {/* Selected vertical guide */}
-      <Line
-        x1={toX(safe)} y1={PAD.top}
-        x2={toX(safe)} y2={PAD.top + IH}
-        stroke={Colors.accent} strokeWidth="1"
-        strokeDasharray="3,3" opacity="0.4"
-      />
-
-      {/* Dots — rendered AFTER lines so they sit on top */}
-      {points.map((p, i) => {
-        const cx = toX(i);
-        const cy = toY(p.volume);
-        const sel = i === safe;
-        return (
-          <G key={p.key}>
-            {sel && <Circle cx={cx} cy={cy} r={12} fill={Colors.accent} opacity="0.1" />}
-            <Circle
-              cx={cx} cy={cy}
-              r={sel ? 6 : 4}
-              fill={sel ? Colors.accent : Colors.surface}
-              stroke={Colors.accent}
-              strokeWidth="2"
+        {/* Grid + y-axis labels */}
+        {ticks.map((t, i) => (
+          <G key={`g${i}`}>
+            <Line
+              x1={PAD.left} y1={t.y}
+              x2={W - PAD.right} y2={t.y}
+              stroke={Colors.border} strokeWidth="0.5"
             />
-            {/* Large transparent hit area for reliable touch on mobile */}
-            <Circle
-              cx={cx} cy={cy}
-              r={20}
-              fill="transparent"
-              onPress={() => onSelect(i)}
-            />
+            <SvgText
+              x={PAD.left - 5} y={t.y}
+              fontSize="9" fill={Colors.textMuted}
+              textAnchor="end" alignmentBaseline="middle"
+            >
+              {fmtVol(t.v)}
+            </SvgText>
           </G>
-        );
-      })}
+        ))}
 
-      {/* X-axis labels */}
-      {points.map((p, i) => {
-        const isLast = i === points.length - 1;
-        const anchor = isLast ? 'end' : i === 0 ? 'start' : 'middle';
-        const xPos = isLast ? Math.min(toX(i), W - 4) : toX(i);
-        return (
-          <SvgText
-            key={`xl${p.key}`}
-            x={xPos} y={H - 5}
-            fontSize="10"
-            fill={i === safe ? Colors.accent : Colors.textMuted}
-            fontWeight={i === safe ? '700' : '400'}
-            textAnchor={anchor}
-          >
-            {shortLabel(p.label, mode)}
-          </SvgText>
-        );
-      })}
-    </Svg>
+        {/* Area fill */}
+        <Path d={areaPath} fill={`url(#${GRAD_ID})`} />
+
+        {/* Trend dashed line */}
+        <Path
+          d={trendPath}
+          stroke={Colors.warning ?? '#F59E0B'}
+          strokeWidth="1.5"
+          strokeDasharray="6,4"
+          fill="none"
+          opacity="0.9"
+        />
+
+        {/* Main line */}
+        <Path
+          d={linePath}
+          stroke={Colors.accent}
+          strokeWidth="2.5"
+          fill="none"
+          strokeLinecap="round"
+        />
+
+        {/* Selected vertical guide */}
+        <Line
+          x1={toX(safe)} y1={PAD.top}
+          x2={toX(safe)} y2={PAD.top + IH}
+          stroke={Colors.accent} strokeWidth="1"
+          strokeDasharray="3,3" opacity="0.4"
+        />
+
+        {/* Dots — rendered AFTER lines so they sit on top */}
+        {points.map((p, i) => {
+          const cx = toX(i);
+          const cy = toY(p.volume);
+          const sel = i === safe;
+          return (
+            <G key={p.key}>
+              {sel && <Circle cx={cx} cy={cy} r={12} fill={Colors.accent} opacity="0.1" />}
+              <Circle
+                cx={cx} cy={cy}
+                r={sel ? 6 : 4}
+                fill={sel ? Colors.accent : Colors.surface}
+                stroke={Colors.accent}
+                strokeWidth="2"
+              />
+            </G>
+          );
+        })}
+
+        {/* X-axis labels */}
+        {points.map((p, i) => {
+          const isLast = i === points.length - 1;
+          const anchor = isLast ? 'end' : i === 0 ? 'start' : 'middle';
+          const xPos = isLast ? Math.min(toX(i), W - 4) : toX(i);
+          return (
+            <SvgText
+              key={`xl${p.key}`}
+              x={xPos} y={H - 5}
+              fontSize="10"
+              fill={i === safe ? Colors.accent : Colors.textMuted}
+              fontWeight={i === safe ? '700' : '400'}
+              textAnchor={anchor}
+            >
+              {shortLabel(p.label, mode)}
+            </SvgText>
+          );
+        })}
+      </Svg>
+
+      {/* Full-height slice hit areas for mobile reliability */}
+      <View style={s.chartHitOverlay} pointerEvents="box-none">
+        {points.map((p, i) => (
+          <TouchableOpacity
+            key={`hit-${p.key}`}
+            style={s.chartHitZone}
+            activeOpacity={1}
+            onPress={() => onSelect(i)}
+          />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -656,5 +673,15 @@ const s = StyleSheet.create({
     fontSize: 10,
     color: Colors.textMuted,
     fontStyle: 'italic',
+  },
+  chartWrap: {
+    position: 'relative',
+  },
+  chartHitOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  chartHitZone: {
+    flex: 1,
   },
 });
