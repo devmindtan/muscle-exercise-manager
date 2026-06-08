@@ -192,7 +192,7 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
         const cy = toY(p.volume);
         const sel = i === safe;
         return (
-          <G key={p.key} onPress={() => onSelect(i)}>
+          <G key={p.key}>
             {sel && <Circle cx={cx} cy={cy} r={12} fill={Colors.accent} opacity="0.1" />}
             <Circle
               cx={cx} cy={cy}
@@ -200,6 +200,13 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
               fill={sel ? Colors.accent : Colors.surface}
               stroke={Colors.accent}
               strokeWidth="2"
+            />
+            {/* Large transparent hit area for reliable touch on mobile */}
+            <Circle
+              cx={cx} cy={cy}
+              r={20}
+              fill="transparent"
+              onPress={() => onSelect(i)}
             />
           </G>
         );
