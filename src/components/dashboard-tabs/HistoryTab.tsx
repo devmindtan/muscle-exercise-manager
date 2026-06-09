@@ -75,15 +75,11 @@ const GRAD_ID = 'histGrad';
 
 function shortLabel(label: string, mode: 'week' | 'month'): string {
   if (mode === 'week') {
-    const [start] = label.split(/-|–/);
-    const clean = start?.trim() || label;
-    const dm = clean.match(/(\d{1,2})\/(\d{1,2})/);
-    if (dm) {
-      const d = dm[1].padStart(2, '0');
-      const m = dm[2].padStart(2, '0');
-      return `${d}/${m}`;
+    const parts = label.split('-');
+    if (parts.length >= 2) {
+      return `${parts[0]}/${parts[1]}`;
     }
-    return clean;
+    return label;
   }
   const m = label.match(/(\d{1,2})/);
   return m ? `T${m[1]}` : label;
@@ -105,7 +101,7 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
   const minRaw = Math.min(...vols, 0);
   const maxRaw = Math.max(...vols, 1);
   const span = Math.max(maxRaw - minRaw, 1);
-  const minV = minRaw - span * 0.12;
+  const minV = Math.max(0, minRaw - span * 0.12);
   const maxV = maxRaw + span * 0.08;
   const range = Math.max(maxV - minV, 1);
 
@@ -136,7 +132,7 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
 
   const ticks = Array.from({ length: 4 }, (_, i) => {
     const v = minV + (range * i) / 3;
-    return { v: Math.round(v), y: toY(v) };
+    return { v: Math.max(0, Math.round(v)), y: toY(v) };
   });
 
   return (
@@ -219,8 +215,8 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
         {/* X-axis labels */}
         {points.map((p, i) => {
           const isLast = i === points.length - 1;
-          const anchor = isLast ? 'end' : i === 0 ? 'start' : 'middle';
-          const xPos = isLast ? Math.min(toX(i), W - 4) : toX(i);
+          const anchor = isLast ? 'middle' : i === 0 ? 'start' : 'middle'; // ← 'end' thành 'middle'
+          const xPos = isLast ? toX(i) : toX(i); // ← bỏ min clamp, dùng thẳng toX(i)
           return (
             <SvgText
               key={`xl${p.key}`}
