@@ -437,6 +437,19 @@ export default function BodyMetricsScreen() {
     [goalsWithLatestCurrent],
   );
 
+  const completedGoals = useMemo(
+  () =>
+    goalsWithLatestCurrent.filter((g) => {
+      if (g.current_value == null) return false;
+      const current = g.current_value ?? 0;
+      if (g.metric_key.startsWith('segmental_fat_')) {
+        return g.target_value >= current;
+      }
+      return g.target_value <= current;
+    }),
+  [goalsWithLatestCurrent],
+);
+
   const openCreateInBody = () => {
     setEditingRecordKey(null);
     setInBodyForm({
@@ -784,6 +797,7 @@ export default function BodyMetricsScreen() {
           {tab === 'goals' && (
             <GoalsTab
               prioritizedGoals={prioritizedGoals}
+              completedGoals={completedGoals}   
               goalFilterMode={goalFilterMode}
               onChangeGoalFilterMode={setGoalFilterMode}
               onEditGoal={openEditGoal}
