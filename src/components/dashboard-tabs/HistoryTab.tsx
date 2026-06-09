@@ -8,6 +8,8 @@ import Svg, {
   LinearGradient,
   Stop,
   G,
+  ClipPath,  
+  Rect,      
   Text as SvgText,
 } from 'react-native-svg';
 import { Colors } from '@/src/constants/colors';
@@ -143,6 +145,14 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
             <Stop offset="0%" stopColor={Colors.accent} stopOpacity="0.18" />
             <Stop offset="100%" stopColor={Colors.accent} stopOpacity="0.01" />
           </LinearGradient>
+           <ClipPath id="chartClip">
+            <Rect
+              x={PAD.left}
+              y={PAD.top}
+              width={IW}
+              height={IH}
+            />
+          </ClipPath>
         </Defs>
 
         {/* Grid + y-axis labels */}
@@ -154,7 +164,7 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
               stroke={Colors.border} strokeWidth="0.5"
             />
             <SvgText
-              x={PAD.left - 5} y={t.y}
+              x={PAD.left - 10} y={t.y}
               fontSize="9" fill={Colors.textMuted}
               textAnchor="end" alignmentBaseline="middle"
             >
@@ -174,6 +184,7 @@ function SvgAreaChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
           strokeDasharray="6,4"
           fill="none"
           opacity="0.9"
+          clipPath="url(#chartClip)"
         />
 
         {/* Main line */}
