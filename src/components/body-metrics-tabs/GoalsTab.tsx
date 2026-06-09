@@ -6,8 +6,8 @@ import type { MuscleGoal } from '@/src/types/database';
 interface GoalsTabProps {
   prioritizedGoals: MuscleGoal[];
   completedGoals: MuscleGoal[];
-  goalFilterMode: 'all' | 'lean' | 'fat';
-  onChangeGoalFilterMode: (mode: 'all' | 'lean' | 'fat') => void;
+  goalFilterMode: 'all' | 'lean' | 'fat' | 'done';
+  onChangeGoalFilterMode: (mode: 'all' | 'lean' | 'fat' | 'done') => void;
   onEditGoal: (goal: MuscleGoal) => void;
   onDeleteGoal: (goal: MuscleGoal) => void;
   getMetricLabel: (key: string) => string;
@@ -38,16 +38,16 @@ function GoalsTabComponent({
     return Math.min(Math.round((target / current) * 100), 100);
   };
 
-  const applyFilter = (goals: MuscleGoal[]) =>
+  const applyMetricFilter = (goals: MuscleGoal[]) =>
     goals.filter((g) => {
-      if (goalFilterMode === 'all') return true;
+      if (goalFilterMode === 'all' || goalFilterMode === 'done') return true;
       return goalFilterMode === 'lean'
         ? g.metric_key.startsWith('segmental_lean_')
         : g.metric_key.startsWith('segmental_fat_');
     });
 
-  const filteredActive = applyFilter(prioritizedGoals);
-  const filteredCompleted = applyFilter(completedGoals);
+  const filteredActive = goalFilterMode === 'done' ? [] : applyMetricFilter(prioritizedGoals);
+  const filteredCompleted = applyMetricFilter(completedGoals);
 
   const totalGoals = prioritizedGoals.length + completedGoals.length;
   const goodCount = prioritizedGoals.filter((g) => getGoalProgressPct(g) >= 60).length;
@@ -83,7 +83,7 @@ function GoalsTabComponent({
           <View style={styles.goalTopRight}>
             {completed ? (
               <View style={[styles.badge, styles.badgeCompleted]}>
-                <Text style={[styles.badgeText, styles.badgeCompletedText]}>✅ Đạt</Text>
+                <Text style={[styles.badgeText, styles.badgeCompletedText]}>Đạt</Text>
               </View>
             ) : (
               <View style={[styles.badge, isGood ? styles.badgeGood : styles.badgeWarn]}>
@@ -209,15 +209,30 @@ function GoalsTabComponent({
 
       {/* ── Filter chips ── */}
       <View style={styles.chipRow}>
-        {(['all', 'lean', 'fat'] as const).map((m) => (
+        {(['all', 'lean', 'fat', 'done'] as const).map((m) => (
           <TouchableOpacity
             key={m}
-            style={[styles.chip, goalFilterMode === m && styles.chipActive]}
+            style={[
+              styles.chip,
+              goalFilterMode === m && (m === 'done' ? styles.chipActiveDone : styles.chipActive),
+            ]}
             onPress={() => onChangeGoalFilterMode(m)}
             activeOpacity={0.75}
           >
-            <Text style={[styles.chipText, goalFilterMode === m && styles.chipTextActive]}>
-              {m === 'all' ? 'Tất cả' : m === 'lean' ? 'Lean (Cơ)' : 'Fat (Mỡ)'}
+            <Text
+              style={[
+                styles.chipText,
+                goalFilterMode === m &&
+                  (m === 'done' ? styles.chipTextActiveDone : styles.chipTextActive),
+              ]}
+            >
+              {m === 'all'
+                ? 'Tất cả'
+                : m === 'lean'
+                  ? 'Lean (Cơ)'
+                  : m === 'fat'
+                    ? 'Fat (Mỡ)'
+                    : 'Đã đạt' + (completedGoals.length > 0 ? ` (${completedGoals.length})` : '')}
             </Text>
           </TouchableOpacity>
         ))}
@@ -242,7 +257,7 @@ function GoalsTabComponent({
               <View style={styles.completedSectionHeader}>
                 <View style={styles.completedDivider} />
                 <Text style={styles.completedSectionTitle}>
-                  ✅ Đã đạt mục tiêu ({filteredCompleted.length})
+                  Đã đạt mục tiêu ({filteredCompleted.length})
                 </Text>
                 <View style={styles.completedDivider} />
               </View>
@@ -280,8 +295,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   chipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '20' },
+  chipActiveDone: { borderColor: Colors.success, backgroundColor: Colors.success + '20' },
   chipText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
   chipTextActive: { color: Colors.accent },
+  chipTextActiveDone: { color: Colors.success },
 
   goalCard: {
     backgroundColor: Colors.surface,

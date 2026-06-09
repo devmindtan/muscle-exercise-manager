@@ -293,7 +293,7 @@ export default function BodyMetricsScreen() {
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showGoalDatePicker, setShowGoalDatePicker] = useState(false);
-  const [goalFilterMode, setGoalFilterMode] = useState<'all' | 'lean' | 'fat'>('all');
+  const [goalFilterMode, setGoalFilterMode] = useState<'all' | 'lean' | 'fat' | 'done'>('all');
   const [inBodyForm, setInBodyForm] = useState<InBodyFormState>(DEFAULT_INBODY_FORM);
   const [editingRecordKey, setEditingRecordKey] = useState<string | null>(null);
   const [goalForm, setGoalForm] = useState(DEFAULT_GOAL_FORM);
