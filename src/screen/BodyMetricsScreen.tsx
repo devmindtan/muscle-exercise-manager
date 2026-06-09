@@ -404,6 +404,15 @@ export default function BodyMetricsScreen() {
     return latestMetrics.get(goalForm.metricKey)?.value ?? null;
   }, [goalForm.metricKey, latestMetrics]);
 
+  const goalsWithLatestCurrent = useMemo(
+    () =>
+      goals.map((goal) => ({
+        ...goal,
+        current_value: latestMetrics.get(goal.metric_key)?.value ?? goal.current_value,
+      })),
+    [goals, latestMetrics],
+  );
+
   const lastUpdated = useMemo(() => {
     if (measurements.length === 0) return null;
     return measurements[0].measured_at;
@@ -411,7 +420,7 @@ export default function BodyMetricsScreen() {
 
   const prioritizedGoals = useMemo(
     () =>
-      [...goals]
+      [...goalsWithLatestCurrent]
         .filter((g) => {
           if (g.current_value == null) return true;
           const current = g.current_value ?? 0;
@@ -425,7 +434,7 @@ export default function BodyMetricsScreen() {
           const gapB = Math.abs(b.target_value - (b.current_value ?? 0));
           return gapB - gapA;
         }),
-    [goals],
+    [goalsWithLatestCurrent],
   );
 
   const openCreateInBody = () => {
