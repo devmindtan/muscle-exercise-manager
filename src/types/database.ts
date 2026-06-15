@@ -178,6 +178,33 @@ export type Database = {
           },
         ];
       };
+      cardio_logs: {
+        Row: CardioLog;
+        Insert: {
+          id?: string;
+          name: string;
+          duration_minutes: number;
+          note?: string | null;
+          logged_at?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          name?: string;
+          duration_minutes?: number;
+          note?: string | null;
+          logged_at?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -284,6 +311,19 @@ export type WeeklyPlanEntry = {
   muscle_group_id: string;
   sets: number;
   note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type CardioLog = {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  note: string | null;
+  logged_at: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

@@ -23,6 +23,8 @@ import {
   Search,
   Download,
   Dumbbell,
+  Timer,
+  Flame,
 } from 'lucide-react-native';
 import {
   getMuscleGroups,
@@ -32,8 +34,12 @@ import {
   softDeleteWorkoutLog,
   getLogCountsByMuscleGroup,
   getExerciseById,
+  insertCardioLog,
+  getRecentCardioLogs,
+  softDeleteCardioLog,
 } from '@/src/lib/repository';
 import type { RecentLog } from '@/src/lib/repository';
+import type { CardioLog } from '@/src/lib/repository';
 import { MuscleGroup, Exercise } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 import { useSync } from '@/src/context/SyncContext';
@@ -65,6 +71,13 @@ export default function LogScreen() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  // ── Cardio state ──
+  const [mode, setMode] = useState<'strength' | 'cardio'>('strength');
+  const [cardioName, setCardioName] = useState('');
+  const [cardioDuration, setCardioDuration] = useState('');
+  const [cardioNote, setCardioNote] = useState('');
+  const [cardioLogs, setCardioLogs] = useState<CardioLog[]>([]);
+
   const selectedExerciseRef = useRef(selectedExercise);
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
 
@@ -73,14 +86,16 @@ export default function LogScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    const [groups, logs, counts] = await Promise.all([
+    const [groups, logs, counts, cardio] = await Promise.all([
       getMuscleGroups(),
       getRecentLogsWithNames(),
       getLogCountsByMuscleGroup(),
+      getRecentCardioLogs(),
     ]);
     setMuscleGroups(groups);
     setRecentLogs(logs);
     setLogCounts(counts);
+    setCardioLogs(cardio);
     setVisibleCount(PAGE_SIZE);
   }, []);
 
@@ -143,6 +158,38 @@ export default function LogScreen() {
     }
   };
 
+  const logCardio = async () => {
+    if (!cardioName.trim()) { setError('Nhập tên cardio'); return; }
+    if (!cardioDuration || isNaN(Number(cardioDuration)) || Number(cardioDuration) <= 0) {
+      setError('Nhập thời gian hợp lệ'); return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await insertCardioLog({
+        name: cardioName.trim(),
+        duration_minutes: parseInt(cardioDuration),
+        note: cardioNote.trim() || null,
+        logged_at: new Date().toISOString(),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      setCardioName('');
+      setCardioDuration('');
+      setCardioNote('');
+      load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Lỗi không xác định');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteCardioLog = async (logId: string) => {
+    await softDeleteCardioLog(logId);
+    load();
+  };
+
   const deleteLog = async (logId: string) => {
     await softDeleteWorkoutLog(logId);
     load();
@@ -173,6 +220,12 @@ export default function LogScreen() {
     return list;
   }, [recentLogs, filterGroupId, filterHasNotes, searchQuery, muscleGroups]);
 
+  const filteredCardioLogs = useMemo(() => {
+    if (!searchQuery.trim()) return cardioLogs;
+    const q = searchQuery.trim().toLowerCase();
+    return cardioLogs.filter((l) => l.name.toLowerCase().includes(q));
+  }, [cardioLogs, searchQuery]);
+
   const displayedLogs = filteredLogs.slice(0, visibleCount);
   const hasMore = visibleCount < filteredLogs.length;
 
@@ -196,6 +249,28 @@ export default function LogScreen() {
         {/* ── Form card ── */}
         <View style={styles.card}>
 
+          {/* Mode toggle */}
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[styles.modeBtn, mode === 'strength' && styles.modeBtnActive]}
+              onPress={() => { setMode('strength'); setError(''); }}
+              activeOpacity={0.7}
+            >
+              <Dumbbell color={mode === 'strength' ? '#000' : Colors.textMuted} size={14} strokeWidth={2} />
+              <Text style={[styles.modeBtnText, mode === 'strength' && styles.modeBtnTextActive]}>Tăng cơ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeBtn, mode === 'cardio' && styles.modeBtnCardioActive]}
+              onPress={() => { setMode('cardio'); setError(''); }}
+              activeOpacity={0.7}
+            >
+              <Flame color={mode === 'cardio' ? '#fff' : Colors.textMuted} size={14} strokeWidth={2} />
+              <Text style={[styles.modeBtnText, mode === 'cardio' && styles.modeBtnTextCardioActive]}>Cardio</Text>
+            </TouchableOpacity>
+          </View>
+
+          {mode === 'strength' ? (
+            <>
           {/* Muscle group */}
           <Text style={styles.label}>Nhóm cơ</Text>
           <TouchableOpacity
@@ -313,7 +388,7 @@ export default function LogScreen() {
             {saved ? (
               <>
                 <Check color="#fff" size={18} strokeWidth={2.5} />
-                <Text style={styles.logBtnText}>Đã lưu!</Text>
+                <Text style={styles.logBtnTextSave}>Đã lưu!</Text>
               </>
             ) : (
               <>
@@ -322,10 +397,74 @@ export default function LogScreen() {
               </>
             )}
           </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {/* Cardio form */}
+              <Text style={styles.label}>Tên cardio</Text>
+              <TextInput
+                style={[styles.input, styles.cardioNameInput]}
+                placeholder="VD: Chạy bộ, Đạp xe, Jump rope..."
+                placeholderTextColor={Colors.textMuted}
+                value={cardioName}
+                onChangeText={setCardioName}
+              />
+
+              <Text style={styles.label}>Thời gian</Text>
+              <View style={styles.inputWrapper}>
+                <Timer color={Colors.textMuted} size={15} strokeWidth={1.8} style={{ marginRight: 6 }} />
+                <TextInput
+                  style={styles.input}
+                  keyboardType="number-pad"
+                  placeholder="—"
+                  placeholderTextColor={Colors.textMuted}
+                  value={cardioDuration}
+                  onChangeText={setCardioDuration}
+                />
+                <Text style={styles.inputUnit}>phút</Text>
+              </View>
+
+              <Text style={styles.label}>Ghi chú</Text>
+              <TextInput
+                style={[styles.input, styles.noteInput]}
+                placeholder="VD: nhịp tim ổn, mệt nhẹ cuối..."
+                placeholderTextColor={Colors.textMuted}
+                value={cardioNote}
+                onChangeText={setCardioNote}
+                multiline
+                numberOfLines={3}
+              />
+
+              {error ? (
+                <View style={styles.errorBanner}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.logBtn, styles.logBtnCardio, saved && styles.logBtnSaved, saving && styles.logBtnSaving]}
+                onPress={logCardio}
+                disabled={saving || saved}
+                activeOpacity={0.85}
+              >
+                {saved ? (
+                  <>
+                    <Check color="#fff" size={18} strokeWidth={2.5} />
+                    <Text style={[styles.logBtnText, { color: '#fff' }]}>Đã lưu!</Text>
+                  </>
+                ) : (
+                  <>
+                    <Flame color="#fff" size={18} strokeWidth={2} />
+                    <Text style={[styles.logBtnText, { color: '#fff' }]}>{saving ? 'Đang lưu...' : 'Lưu cardio'}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* ── Recent logs ── */}
-        {recentLogs.length > 0 && (
+        {(recentLogs.length > 0 || cardioLogs.length > 0) && (
           <>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Gần đây</Text>
@@ -466,6 +605,47 @@ export default function LogScreen() {
                   Xem thêm · {filteredLogs.length - visibleCount} mục
                 </Text>
               </TouchableOpacity>
+            )}
+
+            {/* ── Cardio logs ── */}
+            {filteredCardioLogs.length > 0 && (
+              <>
+                <View style={[styles.sectionHeader, { marginTop: 8 }]}>
+                  <Text style={styles.sectionTitle}>Cardio gần đây</Text>
+                </View>
+                <View style={styles.logList}>
+                  {filteredCardioLogs.map((log) => (
+                    <View key={log.id} style={styles.logRow}>
+                      <View style={[styles.logAccent, { backgroundColor: '#F97316' }]} />
+                      <View style={styles.logBody}>
+                        <View style={styles.logTopRow}>
+                          <Text style={styles.logExName} numberOfLines={1}>{log.name}</Text>
+                          <TouchableOpacity
+                            onPress={() => deleteCardioLog(log.id)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <X color={Colors.textMuted} size={14} strokeWidth={2} />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.logStats}>
+                          <View style={[styles.logTag, { backgroundColor: '#F9731620' }]}>
+                            <Text style={[styles.logTagText, { color: '#F97316' }]}>Cardio</Text>
+                          </View>
+                          <Timer color={Colors.textSecondary} size={11} strokeWidth={1.8} />
+                          <Text style={styles.logStatText}>{log.duration_minutes} phút</Text>
+                        </View>
+                        {log.note ? (
+                          <Text style={styles.logNote} numberOfLines={2}>{log.note}</Text>
+                        ) : null}
+                        <View style={styles.logTimeRow}>
+                          <Clock color={Colors.textMuted} size={10} strokeWidth={1.8} />
+                          <Text style={styles.logTimeText}>{formatTime(log.logged_at)}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </>
             )}
           </>
         )}
@@ -722,6 +902,8 @@ const styles = StyleSheet.create({
   logBtnSaved: { backgroundColor: Colors.success },
   logBtnSaving: { opacity: 0.7 },
   logBtnText: { fontSize: 15, fontWeight: '700', color: '#000', letterSpacing: 0.2 },
+  logBtnTextSave: { fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+
 
   /* Section header */
   sectionHeader: {
@@ -951,5 +1133,59 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 24,
+  },
+
+  /* Mode toggle */
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 3,
+    marginBottom: 20,
+    gap: 3,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.accent,
+  },
+  modeBtnCardioActive: {
+    backgroundColor: '#F97316',
+  },
+  modeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
+  modeBtnTextActive: {
+    color: '#000',
+  },
+  modeBtnTextCardioActive: {
+    color: '#fff',
+  },
+  logBtnCardio: {
+    backgroundColor: '#F97316',
+  },
+  cardioNameInput: {
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+    flex: 0,
   },
 });

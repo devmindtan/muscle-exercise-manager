@@ -43,6 +43,8 @@ export type LocalWeeklyPlanEntry = {
   deleted?: 0 | 1;
 };
 
+export type LocalCardioLog = Database['public']['Tables']['cardio_logs']['Row'];
+
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -158,6 +160,18 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       deleted INTEGER DEFAULT 0,
       FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
     );
+    CREATE TABLE IF NOT EXISTS cardio_logs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL,
+      note TEXT,
+      logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_exercise_id ON workout_logs(exercise_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_muscle_group_id ON workout_logs(muscle_group_id);
@@ -167,6 +181,8 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_muscle_goals_muscle_group_id ON muscle_goals(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_weekly_plan_day_key ON weekly_plan_entries(day_key);
     CREATE INDEX IF NOT EXISTS idx_weekly_plan_muscle_group_id ON weekly_plan_entries(muscle_group_id);
+    CREATE INDEX IF NOT EXISTS idx_cardio_logs_logged_at ON cardio_logs(logged_at);
+    CREATE INDEX IF NOT EXISTS idx_cardio_logs_deleted_at ON cardio_logs(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_groups ON muscle_groups(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_exercises ON exercises(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
@@ -218,6 +234,32 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'weekly_plan_entries', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
+
+  await database.execAsync(
+    `CREATE TABLE IF NOT EXISTS cardio_logs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL,
+      note TEXT,
+      logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    )`
+  );
+  await ensureColumn(database, 'cardio_logs', 'created_at', "TEXT NOT NULL DEFAULT (datetime('now'))");
+  await ensureColumn(database, 'cardio_logs', 'updated_at', "TEXT NOT NULL DEFAULT (datetime('now'))");
+  await ensureColumn(database, 'cardio_logs', 'deleted_at', 'TEXT');
+  await ensureColumn(database, 'cardio_logs', 'sync_status', "TEXT DEFAULT 'pending'");
+  await ensureColumn(database, 'cardio_logs', 'user_id', 'TEXT');
+  await database.execAsync(
+    'CREATE INDEX IF NOT EXISTS idx_cardio_logs_logged_at ON cardio_logs(logged_at)'
+  );
+  await database.execAsync(
+    'CREATE INDEX IF NOT EXISTS idx_cardio_logs_deleted_at ON cardio_logs(deleted_at)'
+  );
 
   // Create this index after legacy columns are ensured, otherwise old DBs
   // (created before dirty/deleted existed) can crash on startup.
@@ -837,10 +879,62 @@ export async function markMissingWeeklyPlanEntriesDeleted(remoteIds: string[]) {
   await markMissingRowsDeleted('weekly_plan_entries', remoteIds);
 }
 
+function generateId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export async function insertCardioLog(data: {
+  name: string;
+  duration_minutes: number;
+  note: string | null;
+  logged_at: string;
+}) {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  await database.runAsync(
+    `INSERT INTO cardio_logs (id, name, duration_minutes, note, logged_at, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'pending', NULL)`,
+    [
+      generateId(),
+      data.name,
+      Math.max(1, Math.round(data.duration_minutes)),
+      data.note || null,
+      data.logged_at,
+      now,
+      now,
+    ]
+  );
+}
+
+export async function getRecentCardioLogs(limit = 100): Promise<LocalCardioLog[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalCardioLog>(
+    `SELECT id, name, duration_minutes, note, logged_at, created_at, updated_at, deleted_at, sync_status, user_id
+     FROM cardio_logs
+     WHERE deleted_at IS NULL
+     ORDER BY logged_at DESC
+     LIMIT ?`,
+    [limit]
+  );
+}
+
+export async function softDeleteCardioLog(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE cardio_logs
+     SET deleted_at = datetime('now'),
+         updated_at = datetime('now'),
+         sync_status = 'pending'
+     WHERE id = ? AND deleted_at IS NULL`,
+    [id]
+  );
+}
+
 // Clear all local data (for logout or account switch)
 export async function clearAllLocalData() {
   const database = await getDatabase();
   try {
+    await database.runAsync('DELETE FROM cardio_logs');
     await database.runAsync('DELETE FROM weekly_plan_entries');
     await database.runAsync('DELETE FROM body_measurements');
     await database.runAsync('DELETE FROM muscle_goals');
@@ -855,13 +949,14 @@ export async function clearAllLocalData() {
 
 export async function hasAnyLocalData() {
   const database = await getDatabase();
-  const [groups, exercises, logs, measurements, goals, weeklyPlans] = await Promise.all([
+  const [groups, exercises, logs, measurements, goals, weeklyPlans, cardioLogs] = await Promise.all([
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_groups'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercises'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM workout_logs'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM body_measurements'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_goals'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM weekly_plan_entries'),
+    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM cardio_logs'),
   ]);
 
   return (
@@ -870,7 +965,8 @@ export async function hasAnyLocalData() {
     (logs?.count ?? 0) > 0 ||
     (measurements?.count ?? 0) > 0 ||
     (goals?.count ?? 0) > 0 ||
-    (weeklyPlans?.count ?? 0) > 0
+    (weeklyPlans?.count ?? 0) > 0 ||
+    (cardioLogs?.count ?? 0) > 0
   );
 }
 

@@ -1470,3 +1470,79 @@ export async function deleteImageFromStorage(imageUrl: string): Promise<boolean>
     return false;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// CARDIO LOGS
+// ─────────────────────────────────────────────────────────────────
+
+export interface CardioLog {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  note: string | null;
+  logged_at: string;
+}
+
+export async function insertCardioLog(data: {
+  name: string;
+  duration_minutes: number;
+  note: string | null;
+  logged_at: string;
+}): Promise<void> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const now = new Date().toISOString();
+    const row = {
+      id: generateUUID(),
+      user_id: userId,
+      name: data.name,
+      duration_minutes: data.duration_minutes,
+      note: data.note,
+      logged_at: data.logged_at,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    const { error } = await supabase.from('cardio_logs').insert(row as any);
+    if (error) throw error;
+    return;
+  }
+
+  await LocalDB.insertCardioLog(data);
+}
+
+export async function getRecentCardioLogs(limit = 100): Promise<CardioLog[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('cardio_logs')
+      .select('id, name, duration_minutes, note, logged_at')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('logged_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return (data || []) as CardioLog[];
+  }
+
+  return LocalDB.getRecentCardioLogs(limit);
+}
+
+export async function softDeleteCardioLog(id: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+    const { error } = await supabase
+      .from('cardio_logs')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+
+    if (error) throw error;
+    return;
+  }
+
+  await LocalDB.softDeleteCardioLog(id);
+}
