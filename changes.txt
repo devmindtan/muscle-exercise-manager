@@ -1,0 +1,1191 @@
+diff --git a/src/screen/LogScreen.tsx b/src/screen/LogScreen.tsx
+index 54c42b3..059fa8b 100644
+--- a/src/screen/LogScreen.tsx
++++ b/src/screen/LogScreen.tsx
+@@ -1,248 +1,28 @@
+-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
++import { useState, useCallback } from 'react';
+ import {
+   Alert,
+   View,
+   Text,
+-  Image,
+   ScrollView,
+   TouchableOpacity,
+   StyleSheet,
+-  TextInput,
+-  Modal,
+-  Pressable,
+ } from 'react-native';
+-import { useFocusEffect } from '@react-navigation/native';
+ import { useSafeAreaInsets } from 'react-native-safe-area-context';
+-import {
+-  Check,
+-  ChevronDown,
+-  X,
+-  Clock,
+-  Minus,
+-  Plus,
+-  Search,
+-  Download,
+-  Dumbbell,
+-  Timer,
+-  Flame,
+-} from 'lucide-react-native';
+-import {
+-  getMuscleGroups,
+-  getActiveExercises,
+-  getRecentLogsWithNames,
+-  insertWorkoutLog,
+-  softDeleteWorkoutLog,
+-  getLogCountsByMuscleGroup,
+-  getExerciseById,
+-  insertCardioLog,
+-  getRecentCardioLogs,
+-  softDeleteCardioLog,
+-} from '@/src/lib/repository';
+-import type { RecentLog } from '@/src/lib/repository';
+-import type { CardioLog } from '@/src/lib/repository';
+-import { MuscleGroup, Exercise } from '@/src/types/database';
++import { Download, Dumbbell, Flame } from 'lucide-react-native';
+ import { Colors } from '@/src/constants/colors';
+-import { useSync } from '@/src/context/SyncContext';
++import StrengthTab from '../components/log-tabs/StrengthTab';
++import CardioTab from '../components/log-tabs/CardioTab';
+ 
+-const PAGE_SIZE = 10;
++type LogMode = 'strength' | 'cardio';
+ 
+ export default function LogScreen() {
+   const insets = useSafeAreaInsets();
+-  const { lastSyncAt, sync } = useSync();
+-  const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
+-  const [exercises, setExercises] = useState<Exercise[]>([]);
+-  const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
+-  const [logCounts, setLogCounts] = useState<Record<string, number>>({});
+-  const [searchQuery, setSearchQuery] = useState('');
+-  const [filterGroupId, setFilterGroupId] = useState<string | null>(null);
+-  const [filterHasNotes, setFilterHasNotes] = useState(false);
+-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+-
+-  const [selectedGroup, setSelectedGroup] = useState<MuscleGroup | null>(null);
+-  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
+-  const [sets, setSets] = useState(3);
+-  const [reps, setReps] = useState('');
+-  const [weight, setWeight] = useState('');
+-  const [note, setNote] = useState('');
+-
+-  const [showGroupPicker, setShowGroupPicker] = useState(false);
+-  const [showExPicker, setShowExPicker] = useState(false);
+-  const [saving, setSaving] = useState(false);
+-  const [saved, setSaved] = useState(false);
+-  const [error, setError] = useState('');
+-
+-  // ── Cardio state ──
+-  const [mode, setMode] = useState<'strength' | 'cardio'>('strength');
+-  const [cardioName, setCardioName] = useState('');
+-  const [cardioDuration, setCardioDuration] = useState('');
+-  const [cardioNote, setCardioNote] = useState('');
+-  const [cardioLogs, setCardioLogs] = useState<CardioLog[]>([]);
+-
+-  const selectedExerciseRef = useRef(selectedExercise);
+-  useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
++  const [mode, setMode] = useState<LogMode>('strength');
+ 
+   const exportDatabase = useCallback(() => {
+     Alert.alert('Thông báo', 'Chức năng xuất dữ liệu sẽ được bổ sung sau.');
+   }, []);
+ 
+-  const load = useCallback(async () => {
+-    try {
+-      const [groups, logs, counts] = await Promise.all([
+-        getMuscleGroups(),
+-        getRecentLogsWithNames(),
+-        getLogCountsByMuscleGroup(),
+-      ]);
+-      setMuscleGroups(groups);
+-      setRecentLogs(logs);
+-      setLogCounts(counts);
+-
+-      // Keep the screen usable even if cardio source fails on web (missing migration/RLS).
+-      try {
+-        const cardio = await getRecentCardioLogs();
+-        setCardioLogs(cardio);
+-      } catch (cardioErr) {
+-        console.error('Failed to load cardio logs:', cardioErr);
+-        setCardioLogs([]);
+-      }
+-
+-      setVisibleCount(PAGE_SIZE);
+-    } catch (e: unknown) {
+-      const message = e instanceof Error ? e.message : 'Không thể tải dữ liệu';
+-      setError(message);
+-    }
+-  }, []);
+-
+-  const loadExercises = useCallback(async (groupId: string) => {
+-    const data = await getActiveExercises(groupId);
+-    setExercises(data);
+-  }, []);
+-
+-  useFocusEffect(
+-    useCallback(() => {
+-      load();
+-      const current = selectedExerciseRef.current;
+-      if (current) {
+-        getExerciseById(current.id).then((fresh) => {
+-          if (!fresh || !fresh.is_active) {
+-            setSelectedExercise(null);
+-          } else {
+-            setSelectedExercise(fresh as Exercise);
+-          }
+-        });
+-      }
+-    }, [load]),
+-  );
+-
+-  useEffect(() => {
+-    if (!lastSyncAt) return;
+-    load();
+-  }, [lastSyncAt, load]);
+-
+-  const selectGroup = (g: MuscleGroup) => {
+-    setSelectedGroup(g);
+-    setSelectedExercise(null);
+-    setShowGroupPicker(false);
+-    loadExercises(g.id);
+-  };
+-
+-  const logWorkout = async () => {
+-    if (!selectedGroup) { setError('Chọn nhóm cơ'); return; }
+-    if (!selectedExercise) { setError('Chọn bài tập'); return; }
+-    setSaving(true);
+-    setError('');
+-    try {
+-      await insertWorkoutLog({
+-        exercise_id: selectedExercise.id,
+-        muscle_group_id: selectedGroup.id,
+-        sets,
+-        reps: reps ? parseInt(reps) : null,
+-        weight: weight ? parseFloat(weight) : null,
+-        note: note.trim() || null,
+-        logged_at: new Date().toISOString(),
+-      });
+-      setSaved(true);
+-      setTimeout(() => setSaved(false), 2000);
+-      setNote('');
+-      await load();
+-    } catch (e: unknown) {
+-      setError(e instanceof Error ? e.message : 'Lỗi không xác định');
+-    } finally {
+-      setSaving(false);
+-    }
+-  };
+-
+-  const logCardio = async () => {
+-    if (!cardioName.trim()) { setError('Nhập tên cardio'); return; }
+-    if (!cardioDuration || isNaN(Number(cardioDuration)) || Number(cardioDuration) <= 0) {
+-      setError('Nhập thời gian hợp lệ'); return;
+-    }
+-    setSaving(true);
+-    setError('');
+-    try {
+-      await insertCardioLog({
+-        name: cardioName.trim(),
+-        duration_minutes: parseInt(cardioDuration),
+-        note: cardioNote.trim() || null,
+-        logged_at: new Date().toISOString(),
+-      });
+-      await sync();
+-      setSaved(true);
+-      setTimeout(() => setSaved(false), 2000);
+-      setCardioName('');
+-      setCardioDuration('');
+-      setCardioNote('');
+-      await load();
+-    } catch (e: unknown) {
+-      setError(e instanceof Error ? e.message : 'Lỗi không xác định');
+-    } finally {
+-      setSaving(false);
+-    }
+-  };
+-
+-  const deleteCardioLog = async (logId: string) => {
+-    await softDeleteCardioLog(logId);
+-    await load();
+-  };
+-
+-  const deleteLog = async (logId: string) => {
+-    await softDeleteWorkoutLog(logId);
+-    await load();
+-  };
+-
+-  const formatTime = (iso: string) => {
+-    const d = new Date(iso);
+-    return d.toLocaleString('vi-VN', {
+-      hour: '2-digit',
+-      minute: '2-digit',
+-      day: '2-digit',
+-      month: '2-digit',
+-    });
+-  };
+-
+-  const filteredLogs = useMemo(() => {
+-    let list = recentLogs;
+-    if (filterGroupId) list = list.filter((l) => l.muscleGroupId === filterGroupId);
+-    if (filterHasNotes) list = list.filter((l) => !!l.note?.trim());
+-    if (searchQuery.trim()) {
+-      const q = searchQuery.trim().toLowerCase();
+-      list = list.filter(
+-        (l) =>
+-          l.exerciseName?.toLowerCase().includes(q) ||
+-          muscleGroups.find((g) => g.id === l.muscleGroupId)?.name.toLowerCase().includes(q),
+-      );
+-    }
+-    return list;
+-  }, [recentLogs, filterGroupId, filterHasNotes, searchQuery, muscleGroups]);
+-
+-  const filteredCardioLogs = useMemo(() => {
+-    if (!searchQuery.trim()) return cardioLogs;
+-    const q = searchQuery.trim().toLowerCase();
+-    return cardioLogs.filter((l) => l.name.toLowerCase().includes(q));
+-  }, [cardioLogs, searchQuery]);
+-
+-  const displayedLogs = filteredLogs.slice(0, visibleCount);
+-  const hasMore = visibleCount < filteredLogs.length;
+-
+   return (
+     <View style={styles.container}>
+       <ScrollView
+@@ -251,478 +31,40 @@ export default function LogScreen() {
+       >
+         {/* ── Header ── */}
+         <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
+-          <View>
+-            <Text style={styles.title}>Ghi lại</Text>
+-          </View>
++          <Text style={styles.title}>Ghi lại</Text>
+           <TouchableOpacity style={styles.exportBtn} onPress={exportDatabase} activeOpacity={0.7}>
+             <Download color={Colors.textSecondary} size={14} strokeWidth={2} />
+             <Text style={styles.exportBtnText}>Xuất</Text>
+           </TouchableOpacity>
+         </View>
+ 
+-        {/* ── Form card ── */}
+-        <View style={styles.card}>
+-
+-          {/* Mode toggle */}
+-          <View style={styles.modeToggle}>
+-            <TouchableOpacity
+-              style={[styles.modeBtn, mode === 'strength' && styles.modeBtnActive]}
+-              onPress={() => { setMode('strength'); setError(''); }}
+-              activeOpacity={0.7}
+-            >
+-              <Dumbbell color={mode === 'strength' ? '#000' : Colors.textMuted} size={14} strokeWidth={2} />
+-              <Text style={[styles.modeBtnText, mode === 'strength' && styles.modeBtnTextActive]}>Tăng cơ</Text>
+-            </TouchableOpacity>
+-            <TouchableOpacity
+-              style={[styles.modeBtn, mode === 'cardio' && styles.modeBtnCardioActive]}
+-              onPress={() => { setMode('cardio'); setError(''); }}
+-              activeOpacity={0.7}
+-            >
+-              <Flame color={mode === 'cardio' ? '#fff' : Colors.textMuted} size={14} strokeWidth={2} />
+-              <Text style={[styles.modeBtnText, mode === 'cardio' && styles.modeBtnTextCardioActive]}>Cardio</Text>
+-            </TouchableOpacity>
+-          </View>
+-
+-          {mode === 'strength' ? (
+-            <>
+-          {/* Muscle group */}
+-          <Text style={styles.label}>Nhóm cơ</Text>
++        {/* ── Mode toggle ── */}
++        <View style={styles.modeToggle}>
+           <TouchableOpacity
+-            style={[styles.picker, selectedGroup && styles.pickerFilled]}
+-            onPress={() => setShowGroupPicker(true)}
++            style={[styles.modeBtn, mode === 'strength' && styles.modeBtnActive]}
++            onPress={() => setMode('strength')}
+             activeOpacity={0.7}
+           >
+-            {selectedGroup ? (
+-              <View style={styles.pickerSelected}>
+-                <View style={[styles.pickerDot, { backgroundColor: selectedGroup.color }]} />
+-                <Text style={styles.pickerText}>{selectedGroup.name}</Text>
+-              </View>
+-            ) : (
+-              <Text style={styles.pickerPlaceholder}>Chọn nhóm cơ...</Text>
+-            )}
+-            <ChevronDown color={Colors.textMuted} size={16} strokeWidth={2} />
++            <Dumbbell color={mode === 'strength' ? '#000' : Colors.textMuted} size={14} strokeWidth={2} />
++            <Text style={[styles.modeBtnText, mode === 'strength' && styles.modeBtnTextActive]}>
++              Tăng cơ
++            </Text>
+           </TouchableOpacity>
+-
+-          {/* Exercise */}
+-          <Text style={styles.label}>Bài tập</Text>
+           <TouchableOpacity
+-            style={[styles.picker, !selectedGroup && styles.pickerDisabled, selectedExercise && styles.pickerFilled]}
+-            onPress={() => selectedGroup && setShowExPicker(true)}
++            style={[styles.modeBtn, mode === 'cardio' && styles.modeBtnCardioActive]}
++            onPress={() => setMode('cardio')}
+             activeOpacity={0.7}
+           >
+-            {selectedExercise ? (
+-              <Text style={styles.pickerText}>{selectedExercise.name}</Text>
+-            ) : (
+-              <Text style={styles.pickerPlaceholder}>
+-                {selectedGroup ? 'Chọn bài tập...' : 'Chọn nhóm cơ trước'}
+-              </Text>
+-            )}
+-            <ChevronDown color={Colors.textMuted} size={16} strokeWidth={2} />
+-          </TouchableOpacity>
+-
+-          {/* Sets counter */}
+-          <Text style={styles.label}>Số sets</Text>
+-          <View style={styles.setsControl}>
+-            <TouchableOpacity
+-              style={styles.setsBtn}
+-              onPress={() => setSets((s) => Math.max(1, s - 1))}
+-              activeOpacity={0.7}
+-            >
+-              <Minus color={Colors.text} size={16} strokeWidth={2.5} />
+-            </TouchableOpacity>
+-            <View style={styles.setsDisplay}>
+-              <Text style={styles.setsNum}>{sets}</Text>
+-              <Text style={styles.setsUnit}>sets</Text>
+-            </View>
+-            <TouchableOpacity
+-              style={styles.setsBtn}
+-              onPress={() => setSets((s) => s + 1)}
+-              activeOpacity={0.7}
+-            >
+-              <Plus color={Colors.text} size={16} strokeWidth={2.5} />
+-            </TouchableOpacity>
+-          </View>
+-
+-          {/* Reps & Weight */}
+-          <View style={styles.optRow}>
+-            <View style={styles.optField}>
+-              <Text style={styles.label}>Reps</Text>
+-              <View style={styles.inputWrapper}>
+-                <TextInput
+-                  style={styles.input}
+-                  keyboardType="number-pad"
+-                  placeholder="—"
+-                  placeholderTextColor={Colors.textMuted}
+-                  value={reps}
+-                  onChangeText={setReps}
+-                />
+-                <Text style={styles.inputUnit}>lần</Text>
+-              </View>
+-            </View>
+-            <View style={styles.optField}>
+-              <Text style={styles.label}>Tạ</Text>
+-              <View style={styles.inputWrapper}>
+-                <TextInput
+-                  style={styles.input}
+-                  keyboardType="decimal-pad"
+-                  placeholder="—"
+-                  placeholderTextColor={Colors.textMuted}
+-                  value={weight}
+-                  onChangeText={setWeight}
+-                />
+-                <Text style={styles.inputUnit}>kg</Text>
+-              </View>
+-            </View>
+-          </View>
+-
+-          {/* Note */}
+-          <Text style={styles.label}>Ghi chú</Text>
+-          <TextInput
+-            style={[styles.input, styles.noteInput]}
+-            placeholder="VD: vai hơi mỏi, giữ kỹ thuật chậm..."
+-            placeholderTextColor={Colors.textMuted}
+-            value={note}
+-            onChangeText={setNote}
+-            multiline
+-            numberOfLines={3}
+-          />
+-
+-          {error ? (
+-            <View style={styles.errorBanner}>
+-              <Text style={styles.errorText}>{error}</Text>
+-            </View>
+-          ) : null}
+-
+-          <TouchableOpacity
+-            style={[styles.logBtn, saved && styles.logBtnSaved, saving && styles.logBtnSaving]}
+-            onPress={logWorkout}
+-            disabled={saving || saved}
+-            activeOpacity={0.85}
+-          >
+-            {saved ? (
+-              <>
+-                <Check color="#fff" size={18} strokeWidth={2.5} />
+-                <Text style={styles.logBtnTextSave}>Đã lưu!</Text>
+-              </>
+-            ) : (
+-              <>
+-                <Dumbbell color="#000" size={18} strokeWidth={2} />
+-                <Text style={styles.logBtnText}>{saving ? 'Đang lưu...' : 'Lưu workout'}</Text>
+-              </>
+-            )}
++            <Flame color={mode === 'cardio' ? '#fff' : Colors.textMuted} size={14} strokeWidth={2} />
++            <Text style={[styles.modeBtnText, mode === 'cardio' && styles.modeBtnTextCardioActive]}>
++              Cardio
++            </Text>
+           </TouchableOpacity>
+-            </>
+-          ) : (
+-            <>
+-              {/* Cardio form */}
+-              <Text style={styles.label}>Tên cardio</Text>
+-              <TextInput
+-                style={[styles.input, styles.cardioNameInput]}
+-                placeholder="VD: Chạy bộ, Đạp xe, Jump rope..."
+-                placeholderTextColor={Colors.textMuted}
+-                value={cardioName}
+-                onChangeText={setCardioName}
+-              />
+-
+-              <Text style={styles.label}>Thời gian</Text>
+-              <View style={styles.inputWrapper}>
+-                <Timer color={Colors.textMuted} size={15} strokeWidth={1.8} style={{ marginRight: 6 }} />
+-                <TextInput
+-                  style={styles.input}
+-                  keyboardType="number-pad"
+-                  placeholder="—"
+-                  placeholderTextColor={Colors.textMuted}
+-                  value={cardioDuration}
+-                  onChangeText={setCardioDuration}
+-                />
+-                <Text style={styles.inputUnit}>phút</Text>
+-              </View>
+-
+-              <Text style={styles.label}>Ghi chú</Text>
+-              <TextInput
+-                style={[styles.input, styles.noteInput]}
+-                placeholder="VD: nhịp tim ổn, mệt nhẹ cuối..."
+-                placeholderTextColor={Colors.textMuted}
+-                value={cardioNote}
+-                onChangeText={setCardioNote}
+-                multiline
+-                numberOfLines={3}
+-              />
+-
+-              {error ? (
+-                <View style={styles.errorBanner}>
+-                  <Text style={styles.errorText}>{error}</Text>
+-                </View>
+-              ) : null}
+-
+-              <TouchableOpacity
+-                style={[styles.logBtn, styles.logBtnCardio, saved && styles.logBtnSaved, saving && styles.logBtnSaving]}
+-                onPress={logCardio}
+-                disabled={saving || saved}
+-                activeOpacity={0.85}
+-              >
+-                {saved ? (
+-                  <>
+-                    <Check color="#fff" size={18} strokeWidth={2.5} />
+-                    <Text style={[styles.logBtnText, { color: '#fff' }]}>Đã lưu!</Text>
+-                  </>
+-                ) : (
+-                  <>
+-                    <Flame color="#fff" size={18} strokeWidth={2} />
+-                    <Text style={[styles.logBtnText, { color: '#fff' }]}>{saving ? 'Đang lưu...' : 'Lưu cardio'}</Text>
+-                  </>
+-                )}
+-              </TouchableOpacity>
+-            </>
+-          )}
+         </View>
+ 
+-        {/* ── Recent logs ── */}
+-        {(recentLogs.length > 0 || cardioLogs.length > 0) && (
+-          <>
+-            <View style={styles.sectionHeader}>
+-              <Text style={styles.sectionTitle}>Gần đây</Text>
+-            </View>
+-
+-            {/* Search */}
+-            <View style={styles.searchBar}>
+-              <Search color={Colors.textMuted} size={15} strokeWidth={2} />
+-              <TextInput
+-                style={styles.searchInput}
+-                placeholder="Tìm bài tập, nhóm cơ..."
+-                placeholderTextColor={Colors.textMuted}
+-                value={searchQuery}
+-                onChangeText={(t) => { setSearchQuery(t); setVisibleCount(PAGE_SIZE); }}
+-              />
+-              {searchQuery.length > 0 && (
+-                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+-                  <X color={Colors.textMuted} size={14} />
+-                </TouchableOpacity>
+-              )}
+-            </View>
+-
+-            {/* Filter chips */}
+-            <View
+-              style={styles.filterRow}
+-            >
+-              <TouchableOpacity
+-                style={[styles.filterChip, !filterGroupId && !filterHasNotes && styles.filterChipActive]}
+-                onPress={() => { setFilterGroupId(null); setFilterHasNotes(false); setVisibleCount(PAGE_SIZE); }}
+-                activeOpacity={0.7}
+-              >
+-                <Text style={[styles.filterChipText, !filterGroupId && !filterHasNotes && styles.filterChipTextActive]}>
+-                  Tất cả
+-                </Text>
+-              </TouchableOpacity>
+-
+-              {muscleGroups.map((g) => {
+-                const count = logCounts[g.id] ?? 0;
+-                if (count === 0) return null;
+-                const countLabel = count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+-                const isActive = filterGroupId === g.id;
+-                return (
+-                  <TouchableOpacity
+-                    key={g.id}
+-                    style={[
+-                      styles.filterChip,
+-                      isActive && styles.filterChipActive,
+-                      isActive && { borderColor: g.color, backgroundColor: g.color + '18' },
+-                    ]}
+-                    onPress={() => { setFilterGroupId(isActive ? null : g.id); setVisibleCount(PAGE_SIZE); }}
+-                    activeOpacity={0.7}
+-                  >
+-                    <View style={[styles.filterDot, { backgroundColor: isActive ? g.color : Colors.textMuted }]} />
+-                    <Text
+-                      style={[
+-                        styles.filterChipText,
+-                        isActive && styles.filterChipTextActive,
+-                        isActive && { color: g.color },
+-                      ]}
+-                      numberOfLines={1}
+-                    >
+-                      {g.name}
+-                    </Text>
+-                    <Text style={[styles.filterCount, isActive && { color: g.color + 'BB' }]}>
+-                      {countLabel}
+-                    </Text>
+-                  </TouchableOpacity>
+-                );
+-              })}
+-
+-              <TouchableOpacity
+-                style={[styles.filterChip, filterHasNotes && styles.filterChipActive]}
+-                onPress={() => { setFilterHasNotes((v) => !v); setVisibleCount(PAGE_SIZE); }}
+-                activeOpacity={0.7}
+-              >
+-                <Text style={[styles.filterChipText, filterHasNotes && styles.filterChipTextActive]}>
+-                  Có ghi chú
+-                </Text>
+-              </TouchableOpacity>
+-            </View>
+-
+-            {displayedLogs.length === 0 && (
+-              <Text style={styles.noResults}>Không tìm thấy kết quả</Text>
+-            )}
+-
+-            <View style={styles.logList}>
+-              {displayedLogs.map((log, index) => {
+-                const groupColor =
+-                  muscleGroups.find((g) => g.id === log.muscleGroupId)?.color || Colors.textMuted;
+-                const groupName =
+-                  muscleGroups.find((g) => g.id === log.muscleGroupId)?.name || '';
+-                return (
+-                  <View key={log.id} style={styles.logRow}>
+-                    <View style={[styles.logAccent, { backgroundColor: groupColor }]} />
+-                    <View style={styles.logBody}>
+-                      <View style={styles.logTopRow}>
+-                        <Text style={styles.logExName} numberOfLines={1}>
+-                          {log.exerciseName || 'Không rõ'}
+-                        </Text>
+-                        <TouchableOpacity
+-                          onPress={() => deleteLog(log.id)}
+-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+-                        >
+-                          <X color={Colors.textMuted} size={14} strokeWidth={2} />
+-                        </TouchableOpacity>
+-                      </View>
+-
+-                      <View style={styles.logStats}>
+-                        <View style={[styles.logTag, { backgroundColor: groupColor + '20' }]}>
+-                          <Text style={[styles.logTagText, { color: groupColor }]}>{groupName}</Text>
+-                        </View>
+-                        <Text style={styles.logStatText}>{log.sets} sets</Text>
+-                        {log.reps ? <Text style={styles.logStatText}>× {log.reps} reps</Text> : null}
+-                        {log.weight ? <Text style={styles.logStatText}>{log.weight} kg</Text> : null}
+-                      </View>
+-
+-                      {log.note ? (
+-                        <Text style={styles.logNote} numberOfLines={2}>{log.note}</Text>
+-                      ) : null}
+-
+-                      <View style={styles.logTimeRow}>
+-                        <Clock color={Colors.textMuted} size={10} strokeWidth={1.8} />
+-                        <Text style={styles.logTimeText}>{formatTime(log.logged_at)}</Text>
+-                      </View>
+-                    </View>
+-                  </View>
+-                );
+-              })}
+-            </View>
+-
+-            {hasMore && (
+-              <TouchableOpacity
+-                style={styles.loadMoreBtn}
+-                onPress={() => setVisibleCount((v) => v + PAGE_SIZE)}
+-                activeOpacity={0.7}
+-              >
+-                <Text style={styles.loadMoreText}>
+-                  Xem thêm · {filteredLogs.length - visibleCount} mục
+-                </Text>
+-              </TouchableOpacity>
+-            )}
+-
+-            {/* ── Cardio logs ── */}
+-            {filteredCardioLogs.length > 0 && (
+-              <>
+-                <View style={[styles.sectionHeader, { marginTop: 8 }]}>
+-                  <Text style={styles.sectionTitle}>Cardio gần đây</Text>
+-                </View>
+-                <View style={styles.logList}>
+-                  {filteredCardioLogs.map((log) => (
+-                    <View key={log.id} style={styles.logRow}>
+-                      <View style={[styles.logAccent, { backgroundColor: '#F97316' }]} />
+-                      <View style={styles.logBody}>
+-                        <View style={styles.logTopRow}>
+-                          <Text style={styles.logExName} numberOfLines={1}>{log.name}</Text>
+-                          <TouchableOpacity
+-                            onPress={() => deleteCardioLog(log.id)}
+-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+-                          >
+-                            <X color={Colors.textMuted} size={14} strokeWidth={2} />
+-                          </TouchableOpacity>
+-                        </View>
+-                        <View style={styles.logStats}>
+-                          <View style={[styles.logTag, { backgroundColor: '#F9731620' }]}>
+-                            <Text style={[styles.logTagText, { color: '#F97316' }]}>Cardio</Text>
+-                          </View>
+-                          <Timer color={Colors.textSecondary} size={11} strokeWidth={1.8} />
+-                          <Text style={styles.logStatText}>{log.duration_minutes} phút</Text>
+-                        </View>
+-                        {log.note ? (
+-                          <Text style={styles.logNote} numberOfLines={2}>{log.note}</Text>
+-                        ) : null}
+-                        <View style={styles.logTimeRow}>
+-                          <Clock color={Colors.textMuted} size={10} strokeWidth={1.8} />
+-                          <Text style={styles.logTimeText}>{formatTime(log.logged_at)}</Text>
+-                        </View>
+-                      </View>
+-                    </View>
+-                  ))}
+-                </View>
+-              </>
+-            )}
+-          </>
+-        )}
++        {/* ── Active tab ── */}
++        {mode === 'strength' ? <StrengthTab /> : <CardioTab />}
+       </ScrollView>
+-
+-      {/* ── Group picker modal ── */}
+-      <Modal
+-        visible={showGroupPicker}
+-        transparent
+-        animationType="slide"
+-        onRequestClose={() => setShowGroupPicker(false)}
+-      >
+-        <Pressable style={styles.overlay} onPress={() => setShowGroupPicker(false)} />
+-        <View style={styles.sheet}>
+-          <View style={styles.sheetHandle} />
+-          <Text style={styles.sheetTitle}>Nhóm cơ</Text>
+-          <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+-            {muscleGroups.map((g) => (
+-              <TouchableOpacity key={g.id} style={styles.optionRow} onPress={() => selectGroup(g)} activeOpacity={0.7}>
+-                <View style={[styles.optionColor, { backgroundColor: g.color }]} />
+-                <Text style={styles.optionText}>{g.name}</Text>
+-                {selectedGroup?.id === g.id && <Check color={Colors.accent} size={16} strokeWidth={2.5} />}
+-              </TouchableOpacity>
+-            ))}
+-            {muscleGroups.length === 0 && <Text style={styles.noData}>Chưa có nhóm cơ nào</Text>}
+-          </ScrollView>
+-        </View>
+-      </Modal>
+-
+-      {/* ── Exercise picker modal ── */}
+-      <Modal
+-        visible={showExPicker}
+-        transparent
+-        animationType="slide"
+-        onRequestClose={() => setShowExPicker(false)}
+-      >
+-        <Pressable style={styles.overlay} onPress={() => setShowExPicker(false)} />
+-        <View style={styles.sheet}>
+-          <View style={styles.sheetHandle} />
+-          <Text style={styles.sheetTitle}>Bài tập</Text>
+-          <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+-            {exercises.map((ex) => (
+-              <TouchableOpacity
+-                key={ex.id}
+-                style={styles.optionRow}
+-                onPress={() => { setSelectedExercise(ex); setShowExPicker(false); }}
+-                activeOpacity={0.7}
+-              >
+-                {ex.image_uri ? (
+-                  <Image source={{ uri: ex.image_uri }} style={styles.exThumb} resizeMode="cover" />
+-                ) : (
+-                  <View style={styles.exThumbPlaceholder}>
+-                    <Dumbbell color={Colors.textMuted} size={18} strokeWidth={1.5} />
+-                  </View>
+-                )}
+-                <Text style={styles.optionText}>{ex.name}</Text>
+-                {selectedExercise?.id === ex.id && <Check color={Colors.accent} size={16} strokeWidth={2.5} />}
+-              </TouchableOpacity>
+-            ))}
+-            {exercises.length === 0 && <Text style={styles.noData}>Nhóm cơ này chưa có bài tập</Text>}
+-          </ScrollView>
+-        </View>
+-      </Modal>
+     </View>
+   );
+ }
+@@ -739,14 +81,6 @@ const styles = StyleSheet.create({
+     paddingHorizontal: 20,
+     paddingBottom: 20,
+   },
+-  eyebrow: {
+-    fontSize: 11,
+-    fontWeight: '600',
+-    color: Colors.textMuted,
+-    textTransform: 'uppercase',
+-    letterSpacing: 1,
+-    marginBottom: 4,
+-  },
+   title: {
+     fontSize: 32,
+     fontWeight: '800',
+@@ -770,395 +104,17 @@ const styles = StyleSheet.create({
+     color: Colors.textSecondary,
+   },
+ 
+-  /* Form card */
+-  card: {
+-    marginHorizontal: 16,
+-    backgroundColor: Colors.surface,
+-    borderRadius: 20,
+-    padding: 18,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    marginBottom: 28,
+-  },
+-  label: {
+-    fontSize: 10,
+-    fontWeight: '700',
+-    color: Colors.textMuted,
+-    textTransform: 'uppercase',
+-    letterSpacing: 1,
+-    marginBottom: 8,
+-  },
+-
+-  /* Pickers */
+-  picker: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    justifyContent: 'space-between',
+-    backgroundColor: Colors.bg,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    borderRadius: 12,
+-    paddingHorizontal: 14,
+-    paddingVertical: 13,
+-    marginBottom: 18,
+-  },
+-  pickerFilled: {
+-    borderColor: Colors.accent + '60',
+-    backgroundColor: Colors.accent + '08',
+-  },
+-  pickerDisabled: { opacity: 0.35 },
+-  pickerSelected: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+-  pickerDot: { width: 9, height: 9, borderRadius: 5 },
+-  pickerText: { fontSize: 15, color: Colors.text, fontWeight: '600' },
+-  pickerPlaceholder: { fontSize: 14, color: Colors.textMuted },
+-
+-  /* Sets */
+-  setsControl: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    justifyContent: 'space-between',
+-    marginBottom: 18,
+-    paddingHorizontal: 4,
+-  },
+-  setsBtn: {
+-    width: 44,
+-    height: 44,
+-    borderRadius: 22,
+-    backgroundColor: Colors.bg,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-  },
+-  setsDisplay: {
+-    alignItems: 'center',
+-  },
+-  setsNum: {
+-    fontSize: 38,
+-    fontWeight: '800',
+-    color: Colors.text,
+-    letterSpacing: -1,
+-    lineHeight: 42,
+-  },
+-  setsUnit: {
+-    fontSize: 11,
+-    fontWeight: '600',
+-    color: Colors.textMuted,
+-    textTransform: 'uppercase',
+-    letterSpacing: 0.8,
+-  },
+-
+-  /* Inputs */
+-  optRow: { flexDirection: 'row', gap: 12, marginBottom: 4 },
+-  optField: { flex: 1 },
+-  inputWrapper: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    backgroundColor: Colors.bg,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    borderRadius: 12,
+-    paddingHorizontal: 14,
+-    marginBottom: 18,
+-  },
+-  input: {
+-    flex: 1,
+-    paddingVertical: 12,
+-    color: Colors.text,
+-    fontSize: 15,
+-    fontWeight: '500',
+-  },
+-  inputUnit: {
+-    fontSize: 12,
+-    color: Colors.textMuted,
+-    fontWeight: '600',
+-  },
+-  noteInput: {
+-    backgroundColor: Colors.bg,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    borderRadius: 12,
+-    paddingHorizontal: 14,
+-    paddingVertical: 12,
+-    textAlignVertical: 'top',
+-    minHeight: 80,
+-    marginBottom: 18,
+-    color: Colors.text,
+-    fontSize: 14,
+-  },
+-
+-  /* Error */
+-  errorBanner: {
+-    backgroundColor: Colors.error + '15',
+-    borderRadius: 10,
+-    paddingHorizontal: 12,
+-    paddingVertical: 10,
+-    marginBottom: 14,
+-    borderWidth: 1,
+-    borderColor: Colors.error + '30',
+-  },
+-  errorText: {
+-    color: Colors.error,
+-    fontSize: 13,
+-    fontWeight: '500',
+-  },
+-
+-  /* Log button */
+-  logBtn: {
+-    backgroundColor: Colors.accent,
+-    borderRadius: 14,
+-    paddingVertical: 16,
+-    alignItems: 'center',
+-    flexDirection: 'row',
+-    justifyContent: 'center',
+-    gap: 10,
+-  },
+-  logBtnSaved: { backgroundColor: Colors.success },
+-  logBtnSaving: { opacity: 0.7 },
+-  logBtnText: { fontSize: 15, fontWeight: '700', color: '#000', letterSpacing: 0.2 },
+-  logBtnTextSave: { fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+-
+-
+-  /* Section header */
+-  sectionHeader: {
+-    paddingHorizontal: 20,
+-    marginBottom: 12,
+-  },
+-  sectionTitle: {
+-    fontSize: 11,
+-    fontWeight: '700',
+-    color: Colors.textMuted,
+-    textTransform: 'uppercase',
+-    letterSpacing: 1,
+-  },
+-
+-  /* Search */
+-  searchBar: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    backgroundColor: Colors.surface,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    borderRadius: 12,
+-    marginHorizontal: 16,
+-    paddingHorizontal: 12,
+-    paddingVertical: 10,
+-    gap: 8,
+-    marginBottom: 12,
+-  },
+-  searchInput: { flex: 1, color: Colors.text, fontSize: 14 },
+-
+-  /* Filter chips — horizontal scroll */
+-  filterRow: {
+-    paddingHorizontal: 16,
+-    flexDirection: 'row',
+-    flexWrap: 'wrap',  
+-    gap: 6,
+-    paddingBottom: 14,
+-  },
+-  filterChip: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    gap: 5,
+-    paddingHorizontal: 10,
+-    paddingVertical: 7,
+-    borderRadius: 20,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    backgroundColor: Colors.surface,
+-  },
+-  filterChipActive: {
+-    borderColor: Colors.accent,
+-    backgroundColor: Colors.accent + '12',
+-  },
+-  filterDot: {
+-    width: 6,
+-    height: 6,
+-    borderRadius: 3,
+-  },
+-  filterChipText: {
+-    fontSize: 12,
+-    fontWeight: '600',
+-    color: Colors.textSecondary,
+-  },
+-  filterChipTextActive: { color: Colors.accent },
+-  filterCount: {
+-    fontSize: 11,
+-    fontWeight: '700',
+-    color: Colors.textMuted,
+-  },
+-  noResults: {
+-    textAlign: 'center',
+-    color: Colors.textMuted,
+-    fontSize: 13,
+-    paddingVertical: 24,
+-  },
+-
+-  /* Log list */
+-  logList: {
+-    paddingHorizontal: 16,
+-    gap: 8,
+-  },
+-  logRow: {
+-    flexDirection: 'row',
+-    backgroundColor: Colors.surface,
+-    borderRadius: 14,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    overflow: 'hidden',
+-    marginBottom: 8,
+-  },
+-  logAccent: {
+-    width: 4,
+-    borderTopLeftRadius: 14,
+-    borderBottomLeftRadius: 14,
+-  },
+-  logBody: {
+-    flex: 1,
+-    padding: 14,
+-  },
+-  logTopRow: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    justifyContent: 'space-between',
+-    marginBottom: 8,
+-  },
+-  logExName: {
+-    fontSize: 14,
+-    fontWeight: '700',
+-    color: Colors.text,
+-    flex: 1,
+-    marginRight: 8,
+-  },
+-  logStats: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    gap: 8,
+-    flexWrap: 'wrap',
+-    marginBottom: 6,
+-  },
+-  logTag: {
+-    paddingHorizontal: 8,
+-    paddingVertical: 3,
+-    borderRadius: 6,
+-  },
+-  logTagText: {
+-    fontSize: 11,
+-    fontWeight: '700',
+-  },
+-  logStatText: {
+-    fontSize: 12,
+-    color: Colors.textSecondary,
+-    fontWeight: '500',
+-  },
+-  logNote: {
+-    fontSize: 12,
+-    color: Colors.textMuted,
+-    lineHeight: 17,
+-    marginBottom: 6,
+-    fontStyle: 'italic',
+-  },
+-  logTimeRow: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    gap: 4,
+-  },
+-  logTimeText: {
+-    fontSize: 11,
+-    color: Colors.textMuted,
+-  },
+-
+-  /* Load more */
+-  loadMoreBtn: {
+-    marginHorizontal: 16,
+-    marginTop: 4,
+-    marginBottom: 8,
+-    paddingVertical: 14,
+-    alignItems: 'center',
+-    backgroundColor: Colors.surface,
+-    borderRadius: 12,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-  },
+-  loadMoreText: {
+-    color: Colors.textSecondary,
+-    fontSize: 13,
+-    fontWeight: '600',
+-  },
+-
+-  /* Bottom sheet */
+-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+-  sheet: {
+-    backgroundColor: Colors.surface,
+-    borderTopLeftRadius: 24,
+-    borderTopRightRadius: 24,
+-    padding: 20,
+-    paddingBottom: 44,
+-    maxHeight: '75%',
+-  },
+-  sheetScroll: { flexGrow: 0 },
+-  sheetHandle: {
+-    width: 32,
+-    height: 4,
+-    backgroundColor: Colors.border,
+-    borderRadius: 2,
+-    alignSelf: 'center',
+-    marginBottom: 20,
+-  },
+-  sheetTitle: {
+-    fontSize: 20,
+-    fontWeight: '800',
+-    color: Colors.text,
+-    letterSpacing: -0.4,
+-    marginBottom: 16,
+-  },
+-  optionRow: {
+-    flexDirection: 'row',
+-    alignItems: 'center',
+-    paddingVertical: 14,
+-    borderBottomWidth: 1,
+-    borderBottomColor: Colors.border,
+-  },
+-  optionColor: {
+-    width: 10,
+-    height: 10,
+-    borderRadius: 5,
+-    marginRight: 14,
+-  },
+-  optionText: { flex: 1, fontSize: 15, color: Colors.text, fontWeight: '500' },
+-  exThumb: {
+-    width: 44,
+-    height: 44,
+-    borderRadius: 10,
+-    marginRight: 14,
+-    backgroundColor: Colors.surfaceElevated,
+-  },
+-  exThumbPlaceholder: {
+-    width: 44,
+-    height: 44,
+-    borderRadius: 10,
+-    marginRight: 14,
+-    backgroundColor: Colors.surfaceElevated,
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-  },
+-  noData: {
+-    color: Colors.textMuted,
+-    fontSize: 14,
+-    textAlign: 'center',
+-    paddingVertical: 24,
+-  },
+-
+   /* Mode toggle */
+   modeToggle: {
+     flexDirection: 'row',
+-    backgroundColor: Colors.bg,
++    backgroundColor: Colors.surface,
+     borderRadius: 12,
+     borderWidth: 1,
+     borderColor: Colors.border,
+     padding: 3,
+-    marginBottom: 20,
+     gap: 3,
++    marginHorizontal: 16,
++    marginBottom: 16,
+   },
+   modeBtn: {
+     flex: 1,
+@@ -1186,20 +142,4 @@ const styles = StyleSheet.create({
+   modeBtnTextCardioActive: {
+     color: '#fff',
+   },
+-  logBtnCardio: {
+-    backgroundColor: '#F97316',
+-  },
+-  cardioNameInput: {
+-    backgroundColor: Colors.bg,
+-    borderWidth: 1,
+-    borderColor: Colors.border,
+-    borderRadius: 12,
+-    paddingHorizontal: 14,
+-    paddingVertical: 12,
+-    marginBottom: 18,
+-    color: Colors.text,
+-    fontSize: 15,
+-    fontWeight: '500',
+-    flex: 0,
+-  },
+ });
+\ No newline at end of file
