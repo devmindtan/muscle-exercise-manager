@@ -918,6 +918,57 @@ export async function getRecentCardioLogs(limit = 100): Promise<LocalCardioLog[]
   );
 }
 
+export async function getPendingCardioLogs(): Promise<LocalCardioLog[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalCardioLog>(
+    `SELECT id, name, duration_minutes, note, logged_at, created_at, updated_at, deleted_at, sync_status, user_id
+     FROM cardio_logs
+     WHERE sync_status = 'pending'
+     ORDER BY updated_at ASC`
+  );
+}
+
+export async function markCardioLogSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE cardio_logs
+     SET sync_status = 'synced',
+         updated_at = datetime('now')
+     WHERE id = ?`,
+    [id]
+  );
+}
+
+export async function upsertCardioLog(log: LocalCardioLog): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO cardio_logs (id, name, duration_minutes, note, logged_at, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = COALESCE(excluded.name, name),
+       duration_minutes = COALESCE(excluded.duration_minutes, duration_minutes),
+       note = excluded.note,
+       logged_at = COALESCE(excluded.logged_at, logged_at),
+       created_at = COALESCE(excluded.created_at, created_at),
+       updated_at = COALESCE(excluded.updated_at, updated_at),
+       deleted_at = excluded.deleted_at,
+       sync_status = COALESCE(excluded.sync_status, sync_status),
+       user_id = COALESCE(excluded.user_id, user_id)`,
+    [
+      log.id,
+      log.name,
+      Math.max(1, Math.round(log.duration_minutes)),
+      log.note || null,
+      log.logged_at,
+      log.created_at,
+      log.updated_at,
+      log.deleted_at || null,
+      log.sync_status || 'synced',
+      log.user_id || null,
+    ]
+  );
+}
+
 export async function softDeleteCardioLog(id: string): Promise<void> {
   const database = await getDatabase();
   await database.runAsync(

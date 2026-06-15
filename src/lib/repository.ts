@@ -1490,21 +1490,32 @@ export async function insertCardioLog(data: {
   logged_at: string;
 }): Promise<void> {
   if (Platform.OS === 'web') {
-    const userId = await getWebUserIdOrThrow();
-    const now = new Date().toISOString();
-    const row = {
-      id: generateUUID(),
-      user_id: userId,
-      name: data.name,
-      duration_minutes: data.duration_minutes,
-      note: data.note,
-      logged_at: data.logged_at,
-      created_at: now,
-      updated_at: now,
-      deleted_at: null,
-    };
-    const { error } = await supabase.from('cardio_logs').insert(row as any);
-    if (error) throw error;
+    try {
+      const userId = await getWebUserIdOrThrow();
+      const now = new Date().toISOString();
+      const row = {
+        id: generateUUID(),
+        user_id: userId,
+        name: data.name,
+        duration_minutes: data.duration_minutes,
+        note: data.note,
+        logged_at: data.logged_at,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      };
+      const { error } = await supabase.from('cardio_logs').insert(row as any);
+      if (error) throw error;
+    } catch (err: any) {
+      const message = String(err?.message || err || 'Unknown error');
+      if (message.includes('relation') && message.includes('cardio_logs')) {
+        throw new Error('Web chưa có bảng cardio_logs. Hãy chạy Supabase migration rồi thử lại.');
+      }
+      if (message.toLowerCase().includes('row-level security')) {
+        throw new Error('Không có quyền ghi cardio log. Kiểm tra đăng nhập và RLS policy của cardio_logs.');
+      }
+      throw err;
+    }
     return;
   }
 
@@ -1513,17 +1524,25 @@ export async function insertCardioLog(data: {
 
 export async function getRecentCardioLogs(limit = 100): Promise<CardioLog[]> {
   if (Platform.OS === 'web') {
-    const userId = await getWebUserIdOrThrow();
-    const { data, error } = await supabase
-      .from('cardio_logs')
-      .select('id, name, duration_minutes, note, logged_at')
-      .eq('user_id', userId)
-      .is('deleted_at', null)
-      .order('logged_at', { ascending: false })
-      .limit(limit);
+    try {
+      const userId = await getWebUserIdOrThrow();
+      const { data, error } = await supabase
+        .from('cardio_logs')
+        .select('id, name, duration_minutes, note, logged_at')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('logged_at', { ascending: false })
+        .limit(limit);
 
-    if (error) throw error;
-    return (data || []) as CardioLog[];
+      if (error) throw error;
+      return (data || []) as CardioLog[];
+    } catch (err: any) {
+      const message = String(err?.message || err || 'Unknown error');
+      if (message.includes('relation') && message.includes('cardio_logs')) {
+        throw new Error('Web chưa có bảng cardio_logs. Hãy chạy Supabase migration rồi thử lại.');
+      }
+      throw err;
+    }
   }
 
   return LocalDB.getRecentCardioLogs(limit);

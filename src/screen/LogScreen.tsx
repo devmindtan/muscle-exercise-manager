@@ -48,7 +48,7 @@ const PAGE_SIZE = 10;
 
 export default function LogScreen() {
   const insets = useSafeAreaInsets();
-  const { lastSyncAt } = useSync();
+  const { lastSyncAt, sync } = useSync();
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
@@ -86,17 +86,30 @@ export default function LogScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    const [groups, logs, counts, cardio] = await Promise.all([
-      getMuscleGroups(),
-      getRecentLogsWithNames(),
-      getLogCountsByMuscleGroup(),
-      getRecentCardioLogs(),
-    ]);
-    setMuscleGroups(groups);
-    setRecentLogs(logs);
-    setLogCounts(counts);
-    setCardioLogs(cardio);
-    setVisibleCount(PAGE_SIZE);
+    try {
+      const [groups, logs, counts] = await Promise.all([
+        getMuscleGroups(),
+        getRecentLogsWithNames(),
+        getLogCountsByMuscleGroup(),
+      ]);
+      setMuscleGroups(groups);
+      setRecentLogs(logs);
+      setLogCounts(counts);
+
+      // Keep the screen usable even if cardio source fails on web (missing migration/RLS).
+      try {
+        const cardio = await getRecentCardioLogs();
+        setCardioLogs(cardio);
+      } catch (cardioErr) {
+        console.error('Failed to load cardio logs:', cardioErr);
+        setCardioLogs([]);
+      }
+
+      setVisibleCount(PAGE_SIZE);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Không thể tải dữ liệu';
+      setError(message);
+    }
   }, []);
 
   const loadExercises = useCallback(async (groupId: string) => {
@@ -150,7 +163,7 @@ export default function LogScreen() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       setNote('');
-      load();
+      await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Lỗi không xác định');
     } finally {
@@ -172,12 +185,13 @@ export default function LogScreen() {
         note: cardioNote.trim() || null,
         logged_at: new Date().toISOString(),
       });
+      await sync();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       setCardioName('');
       setCardioDuration('');
       setCardioNote('');
-      load();
+      await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Lỗi không xác định');
     } finally {
@@ -187,12 +201,12 @@ export default function LogScreen() {
 
   const deleteCardioLog = async (logId: string) => {
     await softDeleteCardioLog(logId);
-    load();
+    await load();
   };
 
   const deleteLog = async (logId: string) => {
     await softDeleteWorkoutLog(logId);
-    load();
+    await load();
   };
 
   const formatTime = (iso: string) => {

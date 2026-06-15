@@ -14,6 +14,7 @@ export interface SyncResult {
   bodyMeasurementsSynced: number;
   muscleGoalsSynced: number;
   weeklyPlansSynced: number;
+  cardioLogsSynced: number;
 }
 
 export async function syncData(deviceId: string): Promise<SyncResult> {
@@ -24,6 +25,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
   let bodyMeasurementsSynced = 0;
   let muscleGoalsSynced = 0;
   let weeklyPlansSynced = 0;
+  let cardioLogsSynced = 0;
 
   try {
     const {
@@ -43,6 +45,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         bodyMeasurementsSynced,
         muscleGoalsSynced,
         weeklyPlansSynced,
+        cardioLogsSynced,
       };
     }
 
@@ -290,6 +293,33 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     }
 
+    const pendingCardioLogs = await LocalDB.getPendingCardioLogs();
+    for (const cardio of pendingCardioLogs) {
+      try {
+        const { error } = await (supabase.from('cardio_logs').upsert({
+          id: cardio.id,
+          user_id: userId,
+          name: cardio.name,
+          duration_minutes: cardio.duration_minutes,
+          note: cardio.note,
+          logged_at: cardio.logged_at,
+          created_at: cardio.created_at,
+          updated_at: new Date().toISOString(),
+          deleted_at: cardio.deleted_at,
+          sync_status: 'synced',
+        }) as any);
+
+        if (error) {
+          errors.push(`Failed to sync cardio log ${cardio.id}: ${error.message}`);
+        } else {
+          await LocalDB.markCardioLogSynced(cardio.id);
+          cardioLogsSynced++;
+        }
+      } catch (e: any) {
+        errors.push(`Error syncing cardio log ${cardio.id}: ${e.message}`);
+      }
+    }
+
     // ─── 2. PULL: kéo dữ liệu về từ remote ─────────────────────────────────
     //
     // FIX: muscle_groups, exercises, muscle_goals luôn pull mỗi lần sync
@@ -471,6 +501,29 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       errors.push(`Error pulling weekly plans: ${e.message}`);
     }
 
+    // Cardio logs — luôn pull mỗi lần (cross-device realtime)
+    try {
+      const { data: remoteCardioLogs, error: cardioError } = await supabase
+        .from('cardio_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (cardioError) {
+        errors.push(`Failed to fetch cardio logs: ${cardioError.message}`);
+      } else if (remoteCardioLogs && Array.isArray(remoteCardioLogs)) {
+        for (const row of remoteCardioLogs) {
+          const cardioData = row as any;
+          await LocalDB.upsertCardioLog({
+            ...cardioData,
+            sync_status: 'synced',
+          });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling cardio logs: ${e.message}`);
+    }
+
     // Lưu thời gian sync
     await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
 
@@ -484,6 +537,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       bodyMeasurementsSynced,
       muscleGoalsSynced,
       weeklyPlansSynced,
+      cardioLogsSynced,
     };
   } catch (e: any) {
     errors.push(`Sync failed: ${e.message}`);
@@ -497,6 +551,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       bodyMeasurementsSynced,
       muscleGoalsSynced,
       weeklyPlansSynced,
+      cardioLogsSynced,
     };
   }
 }
