@@ -28,12 +28,8 @@ function GoalsTabComponent({
     const current = goal.current_value ?? 0;
     const target = goal.target_value;
     if (target <= 0) return 0;
-
     const isLean = goal.metric_key.startsWith('segmental_lean_');
-    if (isLean) {
-      return Math.min(Math.round((current / target) * 100), 100);
-    }
-
+    if (isLean) return Math.min(Math.round((current / target) * 100), 100);
     if (current <= 0) return 100;
     return Math.min(Math.round((target / current) * 100), 100);
   };
@@ -53,131 +49,146 @@ function GoalsTabComponent({
   const goodCount = prioritizedGoals.filter((g) => getGoalProgressPct(g) >= 60).length;
   const warnCount = prioritizedGoals.length - goodCount;
 
-  const renderGoalCard = (goal: MuscleGoal, completed = false) => {
+  const renderActiveGoalCard = (goal: MuscleGoal) => {
     const current = goal.current_value ?? 0;
     const isLean = goal.metric_key.startsWith('segmental_lean_');
-    const pct = completed ? 100 : getGoalProgressPct(goal);
+    const pct = getGoalProgressPct(goal);
     const gap = Math.abs(goal.target_value - current);
     const isGood = pct >= 60;
     const daysLeft = goal.target_date
-      ? Math.max(
-          0,
-          Math.ceil(
-            (new Date(goal.target_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-          ),
-        )
+      ? Math.max(0, Math.ceil((new Date(goal.target_date).getTime() - Date.now()) / 86400000))
       : null;
+    const isUrgent = daysLeft != null && daysLeft <= 7;
 
     return (
-      <View
-        key={goal.id}
-        style={[styles.goalCard, completed && styles.goalCardCompleted]}
-      >
-        <View style={styles.goalTop}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.goalName}>{getMetricLabel(goal.metric_key)}</Text>
-            {goal.target_date ? (
-              <Text style={styles.goalDate}>Đích: {formatDateFull(goal.target_date)}</Text>
-            ) : null}
-          </View>
-          <View style={styles.goalTopRight}>
-            {completed ? (
-              <View style={[styles.badge, styles.badgeCompleted]}>
-                <Text style={[styles.badgeText, styles.badgeCompletedText]}>Đạt</Text>
-              </View>
-            ) : (
-              <View style={[styles.badge, isGood ? styles.badgeGood : styles.badgeWarn]}>
-                <Text
-                  style={[
-                    styles.badgeText,
-                    isGood ? styles.badgeGoodText : styles.badgeWarnText,
-                  ]}
-                >
-                  {pct}%
-                </Text>
-              </View>
-            )}
-            {!completed && daysLeft != null && (
-              <Text style={styles.goalDate}>Còn {daysLeft} ngày</Text>
-            )}
+      <View key={goal.id} style={styles.activeCard}>
+        {/* Header */}
+        <View style={styles.cardHeader}>
+          <View style={styles.statusDot} />
+          <Text style={styles.activeCardTitle}>{getMetricLabel(goal.metric_key)}</Text>
+          <View style={[styles.pctBadge, isGood ? styles.pctBadgeGood : styles.pctBadgeWarn]}>
+            <Text style={[styles.pctBadgeText, isGood ? styles.pctGoodText : styles.pctWarnText]}>
+              {pct}%
+            </Text>
           </View>
         </View>
 
-        <View style={styles.goalTrack}>
-          <View
-            style={[
-              styles.goalFill,
-              completed
-                ? styles.goalFillCompleted
-                : !isGood
-                  ? styles.goalFillWarn
-                  : undefined,
-              { width: `${pct}%` },
-            ]}
-          />
+        {/* Progress bar */}
+        <View style={styles.progressRow}>
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                isGood ? styles.progressFillGood : styles.progressFillWarn,
+                { width: `${pct}%` },
+              ]}
+            />
+          </View>
+          <Text style={[styles.progressPctLabel, isGood ? styles.pctGoodText : styles.pctWarnText]}>
+            {pct}%
+          </Text>
         </View>
 
-        <View style={styles.goalNumsRow}>
-          <View>
-            <Text style={styles.goalNumLabel}>Hiện tại</Text>
-            <Text style={styles.goalNumVal}>
+        {/* Numbers */}
+        <View style={styles.numsRow}>
+          <View style={styles.numBox}>
+            <Text style={styles.numLabel}>Hiện tại</Text>
+            <Text style={styles.numVal}>
               {current} {goal.unit}
             </Text>
           </View>
 
-          {completed ? (
-            <View style={[styles.goalGapBox, styles.goalGapBoxCompleted]}>
-              <Text style={styles.goalGapLabel}>Kết quả</Text>
-              <Text style={[styles.goalGapVal, styles.deltaGood]}>Hoàn thành 🎉</Text>
-            </View>
-          ) : (
-            <View style={styles.goalGapBox}>
-              <Text style={styles.goalGapLabel}>
-                {isLean ? 'Còn thiếu' : 'Còn phải giảm'}
-              </Text>
-              <Text
-                style={[
-                  styles.goalGapVal,
-                  isLean ? styles.deltaGood : styles.deltaWarn,
-                ]}
-              >
-                {isLean ? '+' : '-'}
-                {gap.toFixed(2)} {goal.unit}
-              </Text>
-            </View>
-          )}
+          <View style={[styles.gapBox, isGood ? styles.gapBoxGood : styles.gapBoxWarn]}>
+            <Text style={styles.gapLabel}>{isLean ? 'Còn thiếu' : 'Còn phải giảm'}</Text>
+            <Text style={[styles.gapVal, isLean ? styles.pctGoodText : styles.pctWarnText]}>
+              {isLean ? '+' : '-'}
+              {gap.toFixed(2)} {goal.unit}
+            </Text>
+          </View>
 
-          <View style={styles.goalTargetWrap}>
-            <Text style={styles.goalNumLabel}>Mục tiêu</Text>
-            <Text
-              style={[
-                styles.goalNumVal,
-                completed
-                  ? styles.deltaGood
-                  : isGood
-                    ? styles.deltaGood
-                    : styles.deltaWarn,
-              ]}
-            >
+          <View style={styles.numBoxRight}>
+            <Text style={styles.numLabel}>Mục tiêu</Text>
+            <Text style={[styles.numVal, isGood ? styles.pctGoodText : styles.pctWarnText]}>
               {goal.target_value.toFixed(2)} {goal.unit}
             </Text>
           </View>
         </View>
 
-        <View style={styles.goalActionsRow}>
-          <TouchableOpacity
-            style={styles.goalActionBtn}
-            onPress={() => onEditGoal(goal)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.goalActionBtnText}>Sửa</Text>
+        {/* Deadline */}
+        {daysLeft != null && (
+          <View style={[styles.deadlineRow, isUrgent && styles.deadlineRowUrgent]}>
+            <Text style={[styles.deadlineIcon]}>{isUrgent ? '⚠️' : '📅'}</Text>
+            <Text style={[styles.deadlineText, isUrgent && styles.deadlineTextUrgent]}>
+              {goal.target_date ? formatDateFull(goal.target_date) : ''} — còn{' '}
+              <Text style={{ fontWeight: '700' }}>{daysLeft} ngày</Text>
+            </Text>
+          </View>
+        )}
+
+        {/* Actions */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onEditGoal(goal)} activeOpacity={0.8}>
+            <Text style={styles.actionBtnText}>Sửa</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.goalActionBtn, styles.goalActionBtnDanger]}
+            style={[styles.actionBtn, styles.actionBtnDanger]}
             onPress={() => onDeleteGoal(goal)}
             activeOpacity={0.8}
           >
-            <Text style={[styles.goalActionBtnText, styles.goalActionBtnDangerText]}>Xóa</Text>
+            <Text style={[styles.actionBtnText, styles.actionBtnDangerText]}>Xóa</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const renderCompletedGoalCard = (goal: MuscleGoal) => {
+    const current = goal.current_value ?? 0;
+
+    return (
+      <View key={goal.id} style={styles.completedCard}>
+        <View style={styles.completedCardInner}>
+          {/* Checkmark badge */}
+          <View style={styles.checkBadge}>
+            <Text style={styles.checkIcon}>✓</Text>
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.completedCardTitle}>{getMetricLabel(goal.metric_key)}</Text>
+            {goal.target_date && (
+              <Text style={styles.completedCardDate}>Đạt vào: {formatDateFull(goal.target_date)}</Text>
+            )}
+
+            <View style={styles.completedNumsRow}>
+              <Text style={styles.completedNum}>
+                {current} {goal.unit}
+              </Text>
+              <Text style={styles.completedArrow}>→</Text>
+              <Text style={styles.completedTarget}>
+                {goal.target_value.toFixed(2)} {goal.unit}
+              </Text>
+              <View style={styles.completedChip}>
+                <Text style={styles.completedChipText}>Đã đạt</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Full green progress bar */}
+        <View style={styles.completedTrack}>
+          <View style={styles.completedFill} />
+        </View>
+
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onEditGoal(goal)} activeOpacity={0.8}>
+            <Text style={styles.actionBtnText}>Sửa</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnDanger]}
+            onPress={() => onDeleteGoal(goal)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.actionBtnText, styles.actionBtnDangerText]}>Xóa</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -186,28 +197,24 @@ function GoalsTabComponent({
 
   return (
     <>
-      {/* ── Summary ── */}
+      {/* Summary */}
       {totalGoals > 0 && (
-        <View style={styles.goalSummaryRow}>
+        <View style={styles.summaryRow}>
           {[
             { label: 'Tổng goals', value: String(totalGoals), color: Colors.text },
-            { label: 'Đang tiến tốt', value: String(goodCount), color: Colors.success },
+            { label: 'Tiến tốt', value: String(goodCount), color: Colors.success },
             { label: 'Cần chú ý', value: String(warnCount), color: Colors.warning },
-            {
-              label: 'Đã đạt',
-              value: String(completedGoals.length),
-              color: Colors.success,
-            },
+            { label: 'Đã đạt', value: String(completedGoals.length), color: Colors.success },
           ].map((item) => (
-            <View key={item.label} style={styles.goalSummaryCard}>
-              <Text style={styles.goalSummaryLabel}>{item.label}</Text>
-              <Text style={[styles.goalSummaryVal, { color: item.color }]}>{item.value}</Text>
+            <View key={item.label} style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>{item.label}</Text>
+              <Text style={[styles.summaryVal, { color: item.color }]}>{item.value}</Text>
             </View>
           ))}
         </View>
       )}
 
-      {/* ── Filter chips ── */}
+      {/* Filter chips */}
       <View style={styles.chipRow}>
         {(['all', 'lean', 'fat', 'done'] as const).map((m) => (
           <TouchableOpacity
@@ -232,13 +239,13 @@ function GoalsTabComponent({
                   ? 'Lean (Cơ)'
                   : m === 'fat'
                     ? 'Fat (Mỡ)'
-                    : 'Đã đạt' + (completedGoals.length > 0 ? ` (${completedGoals.length})` : '')}
+                    : 'Đã đạt' +
+                      (completedGoals.length > 0 ? ` (${completedGoals.length})` : '')}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* ── Active goals ── */}
       {filteredActive.length === 0 && filteredCompleted.length === 0 ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyText}>
@@ -249,19 +256,33 @@ function GoalsTabComponent({
         </View>
       ) : (
         <>
-          {filteredActive.map((goal) => renderGoalCard(goal, false))}
+          {/* Active section */}
+          {filteredActive.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionDot, styles.sectionDotActive]} />
+                <Text style={styles.sectionTitle}>Đang thực hiện</Text>
+                <View style={styles.sectionBadge}>
+                  <Text style={styles.sectionBadgeText}>{filteredActive.length}</Text>
+                </View>
+              </View>
+              {filteredActive.map(renderActiveGoalCard)}
+            </>
+          )}
 
-          {/* ── Completed goals ── */}
+          {/* Completed section */}
           {filteredCompleted.length > 0 && (
             <>
-              <View style={styles.completedSectionHeader}>
-                <View style={styles.completedDivider} />
-                <Text style={styles.completedSectionTitle}>
-                  Đã đạt mục tiêu ({filteredCompleted.length})
-                </Text>
-                <View style={styles.completedDivider} />
+              <View style={[styles.sectionHeader, filteredActive.length > 0 && { marginTop: 18 }]}>
+                <View style={[styles.sectionDot, styles.sectionDotDone]} />
+                <Text style={[styles.sectionTitle, styles.sectionTitleDone]}>Đã đạt mục tiêu</Text>
+                <View style={[styles.sectionBadge, styles.sectionBadgeDone]}>
+                  <Text style={[styles.sectionBadgeText, styles.sectionBadgeTextDone]}>
+                    {filteredCompleted.length}
+                  </Text>
+                </View>
               </View>
-              {filteredCompleted.map((goal) => renderGoalCard(goal, true))}
+              {filteredCompleted.map(renderCompletedGoalCard)}
             </>
           )}
         </>
@@ -273,8 +294,9 @@ function GoalsTabComponent({
 export const GoalsTab = memo(GoalsTabComponent);
 
 const styles = StyleSheet.create({
-  goalSummaryRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
-  goalSummaryCard: {
+  // Summary
+  summaryRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  summaryCard: {
     flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: 12,
@@ -282,10 +304,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  goalSummaryLabel: { fontSize: 10, color: Colors.textMuted, marginBottom: 4 },
-  goalSummaryVal: { fontSize: 18, fontWeight: '700' },
+  summaryLabel: { fontSize: 10, color: Colors.textMuted, marginBottom: 4 },
+  summaryVal: { fontSize: 18, fontWeight: '700' },
 
-  chipRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  // Chips
+  chipRow: { flexDirection: 'row', gap: 6, marginBottom: 16 },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -300,7 +323,41 @@ const styles = StyleSheet.create({
   chipTextActive: { color: Colors.accent },
   chipTextActiveDone: { color: Colors.success },
 
-  goalCard: {
+  // Section headers
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  sectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sectionDotActive: { backgroundColor: Colors.accent },
+  sectionDotDone: { backgroundColor: Colors.success },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    flex: 1,
+  },
+  sectionTitleDone: { color: Colors.success },
+  sectionBadge: {
+    backgroundColor: Colors.accent + '25',
+    borderRadius: 99,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  sectionBadgeDone: { backgroundColor: Colors.success + '25' },
+  sectionBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.accent },
+  sectionBadgeTextDone: { color: Colors.success },
+
+  // Active goal card
+  activeCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
     padding: 14,
@@ -308,76 +365,105 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     marginBottom: 10,
   },
-  goalCardCompleted: {
-    opacity: 0.72,
-    borderColor: Colors.success + '55',
-    backgroundColor: Colors.success + '08',
-  },
-
-  goalTop: {
+  cardHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
-  goalTopRight: { alignItems: 'flex-end', gap: 4 },
-  goalName: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  goalDate: { fontSize: 11, color: Colors.textMuted, marginTop: 3 },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.accent,
+  },
+  activeCardTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  pctBadge: {
+    borderRadius: 99,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  pctBadgeGood: { backgroundColor: Colors.success + '25' },
+  pctBadgeWarn: { backgroundColor: Colors.warning + '25' },
+  pctBadgeText: { fontSize: 11, fontWeight: '700' },
+  pctGoodText: { color: Colors.success },
+  pctWarnText: { color: Colors.warning },
 
-  badge: { borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeText: { fontSize: 10, fontWeight: '700' },
-  badgeGood: { backgroundColor: Colors.success + '20' },
-  badgeGoodText: { color: Colors.success },
-  badgeWarn: { backgroundColor: Colors.warning + '20' },
-  badgeWarnText: { color: Colors.warning },
-  badgeCompleted: { backgroundColor: Colors.success + '25' },
-  badgeCompletedText: { color: Colors.success },
-
-  goalTrack: {
-    height: 5,
+  // Progress bar
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  progressTrack: {
+    flex: 1,
+    height: 8,
     backgroundColor: Colors.border,
     borderRadius: 999,
     overflow: 'hidden',
-    marginBottom: 10,
   },
-  goalFill: { height: '100%', backgroundColor: Colors.accent, borderRadius: 999 },
-  goalFillWarn: { backgroundColor: Colors.warning },
-  goalFillCompleted: { backgroundColor: Colors.success },
+  progressFill: { height: '100%', borderRadius: 999 },
+  progressFillGood: { backgroundColor: Colors.success },
+  progressFillWarn: { backgroundColor: Colors.warning },
+  progressPctLabel: { fontSize: 11, fontWeight: '700', minWidth: 32, textAlign: 'right' },
 
-  goalNumsRow: {
+  // Numbers row
+  numsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 10,
   },
-  goalTargetWrap: { alignItems: 'flex-end' },
-  goalNumLabel: {
+  numBox: {},
+  numBoxRight: { alignItems: 'flex-end' },
+  numLabel: {
     fontSize: 10,
     color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
-  goalNumVal: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  goalGapBox: {
-    backgroundColor: Colors.surfaceElevated,
+  numVal: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  gapBox: {
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     alignItems: 'center',
   },
-  goalGapBoxCompleted: {
-    backgroundColor: Colors.success + '15',
-  },
-  goalGapLabel: { fontSize: 10, color: Colors.textMuted, marginBottom: 2 },
-  goalGapVal: { fontSize: 13, fontWeight: '700' },
+  gapBoxGood: { backgroundColor: Colors.success + '15' },
+  gapBoxWarn: { backgroundColor: Colors.warning + '15' },
+  gapLabel: { fontSize: 10, color: Colors.textMuted, marginBottom: 2 },
+  gapVal: { fontSize: 13, fontWeight: '700' },
 
-  goalActionsRow: {
+  // Deadline
+  deadlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  deadlineRowUrgent: {
+    backgroundColor: Colors.error + '15',
+    borderWidth: 1,
+    borderColor: Colors.error + '40',
+  },
+  deadlineIcon: { fontSize: 12 },
+  deadlineText: { fontSize: 12, color: Colors.textMuted },
+  deadlineTextUrgent: { color: Colors.error },
+
+  // Actions
+  actionsRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 8,
-    marginTop: 10,
+    marginTop: 2,
   },
-  goalActionBtn: {
+  actionBtn: {
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 8,
@@ -385,36 +471,77 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: Colors.surfaceElevated,
   },
-  goalActionBtnDanger: {
+  actionBtnDanger: {
     borderColor: Colors.error + '66',
     backgroundColor: Colors.error + '15',
   },
-  goalActionBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-  goalActionBtnDangerText: { color: Colors.error },
+  actionBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  actionBtnDangerText: { color: Colors.error },
 
-  deltaGood: { color: Colors.success },
-  deltaWarn: { color: Colors.warning },
-
-  // Completed section divider
-  completedSectionHeader: {
+  // Completed card
+  completedCard: {
+    backgroundColor: Colors.success + '0D',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.success + '35',
+    marginBottom: 10,
+  },
+  completedCardInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
+  },
+  checkBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkIcon: { fontSize: 16, color: '#fff', fontWeight: '700' },
+  completedCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 3,
+  },
+  completedCardDate: { fontSize: 11, color: Colors.textMuted, marginBottom: 8 },
+  completedNumsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginVertical: 14,
+    gap: 6,
+    flexWrap: 'wrap',
   },
-  completedDivider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.success + '40',
+  completedNum: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  completedArrow: { fontSize: 12, color: Colors.textMuted },
+  completedTarget: { fontSize: 13, color: Colors.success, fontWeight: '700' },
+  completedChip: {
+    backgroundColor: Colors.success,
+    borderRadius: 99,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 4,
   },
-  completedSectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.success,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+  completedChipText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  completedTrack: {
+    height: 4,
+    backgroundColor: Colors.success + '30',
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  completedFill: {
+    height: '100%',
+    width: '100%',
+    backgroundColor: Colors.success,
+    borderRadius: 999,
   },
 
+  // Empty
   emptyBox: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
