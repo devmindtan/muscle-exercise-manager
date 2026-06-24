@@ -37,6 +37,15 @@ import { useSync } from '@/src/context/SyncContext';
 
 const PAGE_SIZE = 10;
 
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
 export default function StrengthTab() {
   const { lastSyncAt } = useSync();
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
@@ -61,8 +70,16 @@ export default function StrengthTab() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); }, []);
+
   const selectedExerciseRef = useRef(selectedExercise);
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
+
+  const muscleGroupMap = useMemo(
+    () => new Map(muscleGroups.map((g) => [g.id, g])),
+    [muscleGroups],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -129,7 +146,7 @@ export default function StrengthTab() {
         logged_at: new Date().toISOString(),
       });
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
       setNote('');
       await load();
     } catch (e: unknown) {
@@ -144,16 +161,6 @@ export default function StrengthTab() {
     await load();
   };
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleString('vi-VN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-    });
-  };
-
   const filteredLogs = useMemo(() => {
     let list = recentLogs;
     if (filterGroupId) list = list.filter((l) => l.muscleGroupId === filterGroupId);
@@ -163,11 +170,11 @@ export default function StrengthTab() {
       list = list.filter(
         (l) =>
           l.exerciseName?.toLowerCase().includes(q) ||
-          muscleGroups.find((g) => g.id === l.muscleGroupId)?.name.toLowerCase().includes(q),
+          muscleGroupMap.get(l.muscleGroupId)?.name.toLowerCase().includes(q),
       );
     }
     return list;
-  }, [recentLogs, filterGroupId, filterHasNotes, searchQuery, muscleGroups]);
+  }, [recentLogs, filterGroupId, filterHasNotes, searchQuery, muscleGroupMap]);
 
   const displayedLogs = filteredLogs.slice(0, visibleCount);
   const hasMore = visibleCount < filteredLogs.length;
@@ -392,8 +399,9 @@ export default function StrengthTab() {
 
           <View style={styles.logList}>
             {displayedLogs.map((log) => {
-              const groupColor = muscleGroups.find((g) => g.id === log.muscleGroupId)?.color || Colors.textMuted;
-              const groupName = muscleGroups.find((g) => g.id === log.muscleGroupId)?.name || '';
+              const group = muscleGroupMap.get(log.muscleGroupId);
+              const groupColor = group?.color || Colors.textMuted;
+              const groupName = group?.name || '';
               return (
                 <View key={log.id} style={styles.logRow}>
                   <View style={[styles.logAccent, { backgroundColor: groupColor }]} />

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,15 @@ import { CardioHistoryTabSection, groupCardioLogsByWeek, groupCardioLogsByMonth 
 const CARDIO_ACCENT = '#F97316';
 const PAGE_SIZE = 10;
 
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
 export default function CardioTab() {
   const { lastSyncAt, sync } = useSync();
   const [cardioLogs, setCardioLogs] = useState<CardioLog[]>([]);
@@ -45,6 +54,9 @@ export default function CardioTab() {
   const [error, setError] = useState('');
   const [selectedWeekKey, setSelectedWeekKey] = useState<string | null>(null);
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
+
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); }, []);
 
   const weeklyHistory = useMemo(() => groupCardioLogsByWeek(cardioLogs), [cardioLogs]);
   const monthlyHistory = useMemo(() => groupCardioLogsByMonth(cardioLogs), [cardioLogs]);
@@ -90,7 +102,7 @@ export default function CardioTab() {
       });
       await sync();
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
       setCardioName('');
       setCardioDuration('');
       setCardioNote('');
@@ -105,16 +117,6 @@ export default function CardioTab() {
   const deleteLog = async (logId: string) => {
     await softDeleteCardioLog(logId);
     await load();
-  };
-
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleString('vi-VN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-    });
   };
 
   const filteredLogs = useMemo(() => {

@@ -330,26 +330,30 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
-  const { start, end } = getWeekRange();
-  const weekLabel = `${new Date(start).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} – ${new Date(end).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`;
+  const weekLabel = useMemo(() => {
+    const { start, end } = getWeekRange();
+    return `${new Date(start).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} – ${new Date(end).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`;
+  }, [weekKey]);
 
-  const toggleCategory = (cat: string) => {
-    const updated = new Set(selectedCategories);
-    if (updated.has(cat)) {
-      updated.delete(cat);
-    } else {
-      updated.add(cat);
-    }
-    setSelectedCategories(updated);
-  };
+  const toggleCategory = useCallback((cat: string) => {
+    setSelectedCategories((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(cat)) {
+        updated.delete(cat);
+      } else {
+        updated.add(cat);
+      }
+      return updated;
+    });
+  }, []);
 
-  const categoryFilteredStats =
-    selectedCategories.size === 0
-      ? stats
-      : stats.filter((s) => {
-          const category = (s.category || 'Khác') as string;
-          return selectedCategories.has(category);
-        });
+  const categoryFilteredStats = useMemo(
+    () =>
+      selectedCategories.size === 0
+        ? stats
+        : stats.filter((s) => selectedCategories.has((s.category || 'Khác') as string)),
+    [stats, selectedCategories],
+  );
 
   const progressCounts = useMemo(
     () => ({
@@ -360,9 +364,15 @@ export default function DashboardScreen() {
     [categoryFilteredStats],
   );
 
-  const filteredStats = categoryFilteredStats.filter((s) => getProgressState(s) === progressTab);
+  const filteredStats = useMemo(
+    () => categoryFilteredStats.filter((s) => getProgressState(s) === progressTab),
+    [categoryFilteredStats, progressTab],
+  );
   const hasStatsForCurrentTab = filteredStats.length > 0;
-  const displayedStats = hasStatsForCurrentTab ? filteredStats : categoryFilteredStats;
+  const displayedStats = useMemo(
+    () => (hasStatsForCurrentTab ? filteredStats : categoryFilteredStats),
+    [hasStatsForCurrentTab, filteredStats, categoryFilteredStats],
+  );
 
   // Monthly volume: number only, unit in hint
   const monthlyVolumeNumber =

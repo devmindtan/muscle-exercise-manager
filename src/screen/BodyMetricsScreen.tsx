@@ -288,6 +288,7 @@ export default function BodyMetricsScreen() {
   const [loading, setLoading] = useState(true);
   const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
   const [goals, setGoals] = useState<MuscleGoal[]>([]);
+  const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
   const [selectedMetric, setSelectedMetric] = useState<string>('skeletal_muscle_mass');
   const [showInBodyModal, setShowInBodyModal] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
@@ -304,12 +305,14 @@ export default function BodyMetricsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [measurementRows, goalRows] = await Promise.all([
+      const [measurementRows, goalRows, groupRows] = await Promise.all([
         getBodyMeasurements(undefined, 200),
         getMuscleGoals(),
+        getMuscleGroups(),
       ]);
       setMeasurements(measurementRows as BodyMeasurement[]);
       setGoals(goalRows as MuscleGoal[]);
+      setMuscleGroups(groupRows as MuscleGroup[]);
     } finally {
       setLoading(false);
     }
@@ -348,8 +351,12 @@ export default function BodyMetricsScreen() {
   const historyByMetric = useMemo(() => {
     const map = new Map<string, BodyMeasurement[]>();
     for (const m of measurements) {
-      const cur = map.get(m.metric_key) ?? [];
-      map.set(m.metric_key, [...cur, m]);
+      const cur = map.get(m.metric_key);
+      if (cur) {
+        cur.push(m);
+      } else {
+        map.set(m.metric_key, [m]);
+      }
     }
     return map;
   }, [measurements]);
@@ -600,8 +607,7 @@ export default function BodyMetricsScreen() {
   const saveGoal = async () => {
     const targetValue = Number(goalForm.targetValue);
     const currentValue = latestMetrics.get(goalForm.metricKey)?.value ?? null;
-    const groups = (await getMuscleGroups()) as MuscleGroup[];
-    const fallbackGroupId = groups[0]?.id;
+    const fallbackGroupId = muscleGroups[0]?.id;
 
     if (!fallbackGroupId) {
       setError('Cần ít nhất 1 nhóm cơ trước khi tạo goal.');
