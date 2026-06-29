@@ -454,25 +454,28 @@ export default function NutritionDayView() {
           <View style={styles.summaryCard}>
             <Text style={styles.sectionLabel}>ĐÃ NẠP HÔM NAY</Text>
             <View style={styles.caloriesMain}>
-              <View style={{ flex: 1, gap: 4 }}>
+              <View style={{ flex: 1 }}>
                 <View style={styles.caloriesValRow}>
                   <Text style={styles.caloriesVal}>{fmtNum(calConsumed)}</Text>
                   <Text style={styles.caloriesUnit}> kcal</Text>
                 </View>
-                {calorieGoal > 0 && (
-                  <Text style={styles.caloriesGoalText}>Mục tiêu {fmtNum(calorieGoal)} kcal</Text>
-                )}
+                <Text style={styles.caloriesGoalText}>
+                  {calorieGoal > 0
+                    ? `/ ${fmtNum(calorieGoal)} kcal mục tiêu`
+                    : 'Chưa đặt mục tiêu'}
+                </Text>
               </View>
               {calorieGoal > 0 && (
-                <View style={styles.caloriesGaugeSide}>
-                  <Text style={styles.remainingVal}>{fmtNum(calRemaining)}</Text>
-                  <Text style={styles.remainingLabel}>còn lại</Text>
-                  <CircleGauge value={calConsumed} total={calorieGoal} />
-                </View>
+                <CircleGauge value={calConsumed} total={calorieGoal} />
               )}
             </View>
             {calorieGoal > 0 && (
-              <MacroBar value={calConsumed} target={calorieGoal} color={NUTRITION_ACCENT} />
+              <>
+                <MacroBar value={calConsumed} target={calorieGoal} color={NUTRITION_ACCENT} />
+                <Text style={styles.remainingText}>
+                  {fmtNum(calRemaining)} kcal còn lại
+                </Text>
+              </>
             )}
           </View>
         ) : (
@@ -670,14 +673,12 @@ const styles = StyleSheet.create({
     borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
     padding: 12, gap: 8,
   },
-  caloriesMain: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  caloriesMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   caloriesValRow: { flexDirection: 'row', alignItems: 'flex-end' },
   caloriesVal: { fontSize: 28, fontWeight: '800', color: Colors.text, lineHeight: 32 },
   caloriesUnit: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary, marginBottom: 3 },
-  caloriesGoalText: { fontSize: 10, color: Colors.textMuted },
-  caloriesGaugeSide: { alignItems: 'center', gap: 1 },
-  remainingVal: { fontSize: 14, fontWeight: '700', color: NUTRITION_ACCENT },
-  remainingLabel: { fontSize: 9, color: Colors.textMuted },
+  caloriesGoalText: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  remainingText: { fontSize: 10, color: Colors.textMuted, textAlign: 'right' },
 
   configHint: {
     marginHorizontal: 16, marginBottom: 12,
