@@ -80,9 +80,6 @@ export default function TabLayout() {
         name="metrics"
         options={{
           title: 'Chỉ số',
-          tabBarIconStyle: {
-            paddingRight: 120,
-          },
           tabBarIcon: ({ color, size }) => (
             <Activity color={color} size={size} strokeWidth={1.8} />
           ),
