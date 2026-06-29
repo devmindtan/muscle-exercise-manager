@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import {
   Animated,
   Dimensions,
@@ -22,33 +22,30 @@ const TABS: { key: Tab; label: string }[] = [
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function TrainingTab() {
-  const [activeTab, setActiveTab] = useState<Tab>('muscles');
   const insets = useSafeAreaInsets();
 
-  const indicatorAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  // Chỉ cần 1 biến Animated để điều khiển cả indicator và slide trang
+  const animValue = useRef(new Animated.Value(0)).current; 
+  // Dùng ref để lưu tab hiện tại thay vì state nhằm tránh re-render giật lag khi bấm
+  const currentTabRef = useRef<Tab>('muscles'); 
 
   const switchTab = (tab: Tab) => {
-    if (tab === activeTab) return;
+    if (tab === currentTabRef.current) return;
+    
+    currentTabRef.current = tab;
     const toIndex = TABS.findIndex((t) => t.key === tab);
-    Animated.parallel([
-      Animated.spring(indicatorAnim, {
-        toValue: toIndex,
-        useNativeDriver: false,
-        tension: 300,
-        friction: 30,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: toIndex,
-        useNativeDriver: true,
-        tension: 300,
-        friction: 30,
-      }),
-    ]).start();
-    setActiveTab(tab);
+
+    // Chạy hiệu ứng mượt mà đồng thời cho cả chữ và trang
+    Animated.spring(animValue, {
+      toValue: toIndex,
+      useNativeDriver: false, // Tắt native driver vì animate màu sắc layout chưa hỗ trợ hoàn toàn
+      tension: 260,
+      friction: 26,
+    }).start();
   };
 
-  const translateX = slideAnim.interpolate({
+  // Interpolate cho vị trí trượt trang
+  const translateX = animValue.interpolate({
     inputRange: [0, 1],
     outputRange: [0, -SCREEN_WIDTH],
   });
@@ -58,18 +55,33 @@ export default function TrainingTab() {
       {/* Compact pill switcher */}
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.pillWrap}>
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.key;
+          {TABS.map((tab, index) => {
+            // Tính toán màu nền động cho từng nút dựa trên animValue
+            const backgroundColor = animValue.interpolate({
+              inputRange: [index - 1, index, index + 1],
+              outputRange: ['transparent', Colors.accent, 'transparent'],
+              extrapolate: 'clamp',
+            });
+
+            // Tính toán màu chữ động
+            const textColor = animValue.interpolate({
+              inputRange: [index - 1, index, index + 1],
+              outputRange: [Colors.textMuted, Colors.bg, Colors.textMuted],
+              extrapolate: 'clamp',
+            });
+
             return (
               <TouchableOpacity
                 key={tab.key}
-                style={[styles.pillBtn, isActive && styles.pillBtnActive]}
                 onPress={() => switchTab(tab.key)}
-                activeOpacity={0.75}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
-                  {tab.label}
-                </Text>
+                {/* Đổi thành Animated.View và Animated.Text để nhận giá trị nội suy */}
+                <Animated.View style={[styles.pillBtn, { backgroundColor }]}>
+                  <Animated.Text style={[styles.pillText, { color: textColor }]}>
+                    {tab.label}
+                  </Animated.Text>
+                </Animated.View>
               </TouchableOpacity>
             );
           })}
@@ -115,17 +127,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 17,
   },
-  pillBtnActive: {
-    backgroundColor: Colors.accent,
-  },
   pillText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textMuted,
-  },
-  pillTextActive: {
-    color: Colors.bg,
-    fontWeight: '700',
+    fontWeight: '700', // Để đậm cố định, tránh đổi weight gây giật text khi dịch chuyển
   },
   slidingContainer: {
     flex: 1,

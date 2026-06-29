@@ -454,28 +454,30 @@ export default function NutritionDayView() {
           <View style={styles.summaryCard}>
             <Text style={styles.sectionLabel}>ĐÃ NẠP HÔM NAY</Text>
             <View style={styles.caloriesMain}>
+              {/* LEFT: số calo đã nạp */}
               <View style={{ flex: 1 }}>
                 <View style={styles.caloriesValRow}>
                   <Text style={styles.caloriesVal}>{fmtNum(calConsumed)}</Text>
                   <Text style={styles.caloriesUnit}> kcal</Text>
                 </View>
-                <Text style={styles.caloriesGoalText}>
-                  {calorieGoal > 0
-                    ? `/ ${fmtNum(calorieGoal)} kcal mục tiêu`
-                    : 'Chưa đặt mục tiêu'}
-                </Text>
+                {calorieGoal > 0 && (
+                  <Text style={styles.caloriesGoalText}>Mục tiêu {fmtNum(calorieGoal)} kcal</Text>
+                )}
               </View>
+
+              {/* RIGHT: số còn lại + vòng tròn xếp ngang */}
               {calorieGoal > 0 && (
-                <CircleGauge value={calConsumed} total={calorieGoal} />
+                <View style={styles.caloriesGaugeSide}>
+                  <View style={styles.remainingBlock}>
+                    <Text style={styles.remainingVal}>{fmtNum(calRemaining)}</Text>
+                    <Text style={styles.remainingLabel}>còn lại</Text>
+                  </View>
+                  <CircleGauge value={calConsumed} total={calorieGoal} />
+                </View>
               )}
             </View>
             {calorieGoal > 0 && (
-              <>
-                <MacroBar value={calConsumed} target={calorieGoal} color={NUTRITION_ACCENT} />
-                <Text style={styles.remainingText}>
-                  {fmtNum(calRemaining)} kcal còn lại
-                </Text>
-              </>
+              <MacroBar value={calConsumed} target={calorieGoal} color={NUTRITION_ACCENT} />
             )}
           </View>
         ) : (
@@ -489,7 +491,6 @@ export default function NutritionDayView() {
           <View style={styles.nutrientsSection}>
             <Text style={styles.sectionLabel}>CHẤT DINH DƯỠNG</Text>
 
-            {/* Primary macros: protein / carb / fat — hàng ngang 3 cột */}
             {primaryConfigs.length > 0 && (
               <View style={styles.primaryRow}>
                 {primaryConfigs.map((c) => {
@@ -510,7 +511,6 @@ export default function NutritionDayView() {
               </View>
             )}
 
-            {/* Secondary nutrients: nhỏ hơn, rải đều */}
             {secondaryConfigs.length > 0 && (
               <View style={styles.secondaryRow}>
                 {secondaryConfigs.map((c) => {
@@ -671,14 +671,40 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginBottom: 12,
     backgroundColor: Colors.surface,
     borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
-    padding: 12, gap: 8,
+    padding: 14, gap: 10,
   },
-  caloriesMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  caloriesValRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  caloriesVal: { fontSize: 28, fontWeight: '800', color: Colors.text, lineHeight: 32 },
-  caloriesUnit: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary, marginBottom: 3 },
-  caloriesGoalText: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
-  remainingText: { fontSize: 10, color: Colors.textMuted, textAlign: 'right' },
+  caloriesMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  caloriesValRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 4,
+  },
+  caloriesVal: {
+    fontSize: 36, fontWeight: '800', color: Colors.text, lineHeight: 40,
+  },
+  caloriesUnit: {
+    fontSize: 13, fontWeight: '500', color: Colors.textSecondary, marginBottom: 5,
+  },
+  caloriesGoalText: {
+    fontSize: 11, color: Colors.textMuted,
+  },
+  caloriesGaugeSide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  remainingBlock: {
+    alignItems: 'center',
+  },
+  remainingVal: {
+    fontSize: 20, fontWeight: '800', color: NUTRITION_ACCENT, lineHeight: 24,
+  },
+  remainingLabel: {
+    fontSize: 10, color: Colors.textMuted, marginTop: 2,
+  },
 
   configHint: {
     marginHorizontal: 16, marginBottom: 12,
@@ -691,7 +717,6 @@ const styles = StyleSheet.create({
   // ── Nutrients section ──
   nutrientsSection: { marginHorizontal: 16, marginBottom: 12 },
 
-  // Primary row: protein / carb / fat
   primaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   primaryCard: {
     flex: 1,
@@ -704,7 +729,6 @@ const styles = StyleSheet.create({
   primaryName: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary, marginTop: 2 },
   primaryTarget: { fontSize: 9, color: Colors.textMuted, marginTop: 1 },
 
-  // Secondary chips: các chất còn lại
   secondaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   secondaryChip: {
     flexBasis: '22%', flexGrow: 1,

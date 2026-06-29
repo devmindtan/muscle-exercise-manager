@@ -41,7 +41,7 @@ export default function TabLayout() {
         freezeOnBlur: true,
         tabBarStyle: [
           styles.tabBar,
-          { height: tabBarHeight, paddingBottom: insets.bottom + 4 },
+          { height: tabBarHeight, paddingBottom: insets.bottom + 4, paddingHorizontal: 0 },
         ],
         tabBarActiveTintColor: Colors.accent,
         tabBarInactiveTintColor: Colors.textMuted,
@@ -53,8 +53,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Tuần này',
-          tabBarIcon: ({ color }) => (
-            <LayoutDashboard color={color} size={20} strokeWidth={1.5} />
+          tabBarIcon: ({ color, size }) => (
+            <LayoutDashboard color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
@@ -62,8 +62,8 @@ export default function TabLayout() {
         name="muscles"
         options={{
           title: 'Tập luyện',
-          tabBarIcon: ({ color }) => (
-            <Dumbbell color={color} size={20} strokeWidth={1.5} />
+          tabBarIcon: ({ color, size }) => (
+            <Dumbbell color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
@@ -71,8 +71,8 @@ export default function TabLayout() {
         name="nutrition"
         options={{
           title: 'Dinh dưỡng',
-          tabBarIcon: ({ color }) => (
-            <UtensilsCrossed color={color} size={20} strokeWidth={1.5} />
+          tabBarIcon: ({ color, size }) => (
+            <UtensilsCrossed color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
@@ -80,8 +80,11 @@ export default function TabLayout() {
         name="metrics"
         options={{
           title: 'Chỉ số',
-          tabBarIcon: ({ color }) => (
-            <Activity color={color} size={20} strokeWidth={1.5} />
+          tabBarIconStyle: {
+            paddingRight: 120,
+          },
+          tabBarIcon: ({ color, size }) => (
+            <Activity color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
@@ -89,8 +92,11 @@ export default function TabLayout() {
         name="log"
         options={{
           title: 'Ghi lại',
-          tabBarIcon: ({ color }) => (
-            <ClipboardList color={color} size={20} strokeWidth={1.5} />
+          tabBarItemStyle: {
+            transform: [{ translateX: -8 }], // Số âm di chuyển sang trái, số dương sang phải
+          },
+          tabBarIcon: ({ color, size }) => (
+            <ClipboardList color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
@@ -103,6 +109,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     elevation: 0,
     paddingTop: 6,
+    paddingLeft: 10
   },
   tabBarBg: {
     flex: 1,
@@ -111,7 +118,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '500',
   },
   authGate: {
