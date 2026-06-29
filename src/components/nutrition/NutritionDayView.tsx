@@ -36,9 +36,11 @@ const FULL_DAY_NAMES = ['CHỦ NHẬT', 'THỨ HAI', 'THỨ BA', 'THỨ TƯ', 'T
 const NUTRIENT_COLORS: Record<string, string> = {
   protein: '#60A5FA',
   carbs: '#FBBF24',
+  carb: '#FBBF24',
   fat: '#F97316',
   fiber: '#34D399',
 };
+const PRIMARY_KEYS = new Set(['protein', 'carb', 'carbs', 'fat']);
 
 type MealType = 'morning' | 'noon' | 'evening' | 'snack';
 
@@ -345,6 +347,14 @@ export default function NutritionDayView() {
 
   const caloriesConfig = useMemo(() => enabledConfigs.find((c) => c.key === 'calories'), [enabledConfigs]);
   const otherConfigs = useMemo(() => enabledConfigs.filter((c) => c.key !== 'calories'), [enabledConfigs]);
+  const primaryConfigs = useMemo(
+    () => otherConfigs.filter((c) => PRIMARY_KEYS.has(c.key)),
+    [otherConfigs],
+  );
+  const secondaryConfigs = useMemo(
+    () => otherConfigs.filter((c) => !PRIMARY_KEYS.has(c.key)),
+    [otherConfigs],
+  );
   const calorieGoal = goalMap.calories || 0;
   const calConsumed = totals.calories || 0;
   const calRemaining = Math.max(0, calorieGoal - calConsumed);
@@ -471,32 +481,52 @@ export default function NutritionDayView() {
           </TouchableOpacity>
         )}
 
-        {/* ── Nutrients grid ── */}
+        {/* ── Nutrients ── */}
         {otherConfigs.length > 0 && (
           <View style={styles.nutrientsSection}>
             <Text style={styles.sectionLabel}>CHẤT DINH DƯỠNG</Text>
-            <View style={styles.nutrientsGrid}>
-              {otherConfigs.map((c) => {
-                const val = totals[c.key] || 0;
-                const target = goalMap[c.key];
-                const color = NUTRIENT_COLORS[c.key] || NUTRITION_ACCENT;
-                return (
-                  <View key={c.key} style={styles.nutrientCard}>
-                    <View style={styles.nutrientTopRow}>
-                      <Text style={[styles.nutrientVal, { color }]}>{val}</Text>
-                      <Text style={styles.nutrientUnit}>{c.unit}</Text>
+
+            {/* Primary macros: protein / carb / fat — hàng ngang 3 cột */}
+            {primaryConfigs.length > 0 && (
+              <View style={styles.primaryRow}>
+                {primaryConfigs.map((c) => {
+                  const val = totals[c.key] || 0;
+                  const target = goalMap[c.key];
+                  const color = NUTRIENT_COLORS[c.key] || NUTRITION_ACCENT;
+                  return (
+                    <View key={c.key} style={styles.primaryCard}>
+                      <Text style={[styles.primaryVal, { color }]}>{val}</Text>
+                      <Text style={styles.primaryUnit}>{c.unit}</Text>
+                      <Text style={styles.primaryName}>{c.label}</Text>
+                      {target ? (
+                        <Text style={styles.primaryTarget}>/ {target}{c.unit}</Text>
+                      ) : null}
                     </View>
-                    <Text style={styles.nutrientName}>{c.label}</Text>
-                    {target ? (
-                      <>
-                        <MacroBar value={val} target={target} color={color} />
-                        <Text style={styles.nutrientTarget}>/ {target}{c.unit}</Text>
-                      </>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Secondary nutrients: nhỏ hơn, rải đều */}
+            {secondaryConfigs.length > 0 && (
+              <View style={styles.secondaryRow}>
+                {secondaryConfigs.map((c) => {
+                  const val = totals[c.key] || 0;
+                  const target = goalMap[c.key];
+                  const color = NUTRIENT_COLORS[c.key] || Colors.textSecondary;
+                  return (
+                    <View key={c.key} style={styles.secondaryChip}>
+                      <Text style={[styles.secondaryVal, { color }]}>{val}</Text>
+                      <Text style={styles.secondaryUnit}>{c.unit}</Text>
+                      <Text style={styles.secondaryName}>{c.label}</Text>
+                      {target ? (
+                        <Text style={styles.secondaryTarget}>/{target}</Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
 
@@ -659,23 +689,32 @@ const styles = StyleSheet.create({
 
   // ── Nutrients section ──
   nutrientsSection: { marginHorizontal: 16, marginBottom: 12 },
-  nutrientsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  nutrientCard: {
-    flexBasis: '47%',
-    flexGrow: 1,
+
+  // Primary row: protein / carb / fat
+  primaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  primaryCard: {
+    flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
-    padding: 12, gap: 2,
+    padding: 12, alignItems: 'center', gap: 1,
   },
-  nutrientTopRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 3 },
-  nutrientVal: { fontSize: 22, fontWeight: '800' },
-  nutrientUnit: { fontSize: 10, color: Colors.textMuted, marginBottom: 3 },
-  nutrientName: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600', marginBottom: 6 },
-  nutrientTarget: { fontSize: 9, color: Colors.textMuted, marginTop: 2 },
+  primaryVal: { fontSize: 22, fontWeight: '800' },
+  primaryUnit: { fontSize: 10, color: Colors.textMuted },
+  primaryName: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary, marginTop: 2 },
+  primaryTarget: { fontSize: 9, color: Colors.textMuted, marginTop: 1 },
+
+  // Secondary chips: các chất còn lại
+  secondaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  secondaryChip: {
+    flexBasis: '22%', flexGrow: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.border,
+    paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center', gap: 1,
+  },
+  secondaryVal: { fontSize: 14, fontWeight: '700' },
+  secondaryUnit: { fontSize: 9, color: Colors.textMuted },
+  secondaryName: { fontSize: 9, fontWeight: '600', color: Colors.textMuted, marginTop: 1 },
+  secondaryTarget: { fontSize: 8, color: Colors.textMuted },
 
   // ── Meals section ──
   mealsSection: { marginHorizontal: 16 },
