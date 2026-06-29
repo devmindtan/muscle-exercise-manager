@@ -11,7 +11,7 @@ import {
   Platform,
   Pressable,
 } from 'react-native';
-import { X, Search, Zap, RefreshCw, PenLine, Plus, Trash2 } from 'lucide-react-native';
+import { X, Search, Zap, RefreshCw, PenLine, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react-native';
 import {
   getNutritionFoods,
   getNutrientConfigs,
@@ -62,7 +62,13 @@ interface Props {
   onSaved: () => void;
 }
 
-type ExtraRow = { key: string; label: string; value: string };
+type ExtraRow = {
+  key: string;
+  label: string;
+  unit: string;
+  value: string;
+  isCustom: boolean; // false = locked label from config; true = free-text
+};
 
 export default function AddFoodLogModal({
   visible, defaultMeal = 'snack', defaultDate, onClose, onSaved,
@@ -85,6 +91,7 @@ export default function AddFoodLogModal({
   const [quickNutrients, setQuickNutrients] = useState<Record<string, string>>({});
   const [quickExtra, setQuickExtra] = useState<ExtraRow[]>([]);
   const [calAutoMode, setCalAutoMode] = useState(true);
+  const [showNutrientPicker, setShowNutrientPicker] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -128,6 +135,7 @@ export default function AddFoodLogModal({
     setQuickName('');
     setQuickExtra([]);
     setCalAutoMode(true);
+    setShowNutrientPicker(false);
     setSaving(false);
     setError('');
     onClose();
@@ -191,8 +199,20 @@ export default function AddFoodLogModal({
     setQuickNutrients((prev) => ({ ...prev, [key]: value }));
   };
 
-  const addExtraRow = () => {
-    setQuickExtra((prev) => [...prev, { key: '', label: '', value: '' }]);
+  const pickNutrientConfig = (cfg: NutrientConfigItem) => {
+    setQuickExtra((prev) => [
+      ...prev,
+      { key: cfg.key, label: cfg.label, unit: cfg.unit, value: '', isCustom: false },
+    ]);
+    setShowNutrientPicker(false);
+  };
+
+  const pickCustomNutrient = () => {
+    setQuickExtra((prev) => [
+      ...prev,
+      { key: '', label: '', unit: '', value: '', isCustom: true },
+    ]);
+    setShowNutrientPicker(false);
   };
 
   const updateExtra = (idx: number, patch: Partial<ExtraRow>) => {
@@ -540,19 +560,29 @@ export default function AddFoodLogModal({
               </>
             )}
 
-            {/* ── Extra ad-hoc nutrients ── */}
+            {/* ── Extra nutrients ── */}
             {quickExtra.length > 0 && (
               <>
                 <Text style={styles.fieldLabel}>Bổ sung thêm</Text>
                 {quickExtra.map((row, idx) => (
                   <View key={idx} style={styles.extraRow}>
-                    <TextInput
-                      style={[styles.nutrientInput, styles.extraNameInput]}
-                      placeholder="Tên (VD: Omega-3)"
-                      placeholderTextColor={Colors.textMuted}
-                      value={row.label}
-                      onChangeText={(t) => updateExtra(idx, { label: t })}
-                    />
+                    {row.isCustom ? (
+                      <TextInput
+                        style={[styles.nutrientInput, styles.extraNameInput]}
+                        placeholder="Tên (VD: Omega-3)"
+                        placeholderTextColor={Colors.textMuted}
+                        value={row.label}
+                        onChangeText={(t) => updateExtra(idx, {
+                          label: t,
+                          key: t.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+                        })}
+                      />
+                    ) : (
+                      <View style={styles.extraLabelBox}>
+                        <Text style={styles.extraLabelFixed}>{row.label}</Text>
+                        {row.unit ? <Text style={styles.extraUnitFixed}>{row.unit}</Text> : null}
+                      </View>
+                    )}
                     <TextInput
                       style={[styles.nutrientInput, styles.extraValInput]}
                       keyboardType="decimal-pad"
@@ -569,10 +599,55 @@ export default function AddFoodLogModal({
               </>
             )}
 
-            <TouchableOpacity style={styles.addExtraBtn} onPress={addExtraRow}>
+            {/* Picker toggle */}
+            <TouchableOpacity
+              style={styles.addExtraBtn}
+              onPress={() => setShowNutrientPicker((v) => !v)}
+            >
               <Plus color={Colors.textMuted} size={14} strokeWidth={2.5} />
-              <Text style={styles.addExtraBtnText}>Thêm chất dinh dưỡng khác</Text>
+              <Text style={styles.addExtraBtnText}>Thêm chất dinh dưỡng</Text>
+              {showNutrientPicker
+                ? <ChevronUp color={Colors.textMuted} size={13} />
+                : <ChevronDown color={Colors.textMuted} size={13} />}
             </TouchableOpacity>
+
+            {/* Inline picker */}
+            {showNutrientPicker && (
+              <View style={styles.pickerBox}>
+                {configs.map((c) => {
+                  const shownInForm = enabledConfigs.some((e) => e.key === c.key);
+                  const alreadyExtra = quickExtra.some((e) => e.key === c.key);
+                  const taken = shownInForm || alreadyExtra;
+                  return (
+                    <TouchableOpacity
+                      key={c.key}
+                      style={[styles.pickerRow, taken && styles.pickerRowTaken]}
+                      onPress={() => !taken && pickNutrientConfig(c)}
+                      activeOpacity={taken ? 1 : 0.7}
+                    >
+                      <View style={styles.pickerRowLeft}>
+                        <Text style={[styles.pickerRowLabel, taken && styles.pickerRowLabelTaken]}>
+                          {c.label}
+                        </Text>
+                        <Text style={styles.pickerRowUnit}>{c.unit}</Text>
+                      </View>
+                      {taken ? (
+                        <Text style={styles.pickerRowBadge}>✓ Đã có</Text>
+                      ) : (
+                        <Plus color={NUTRITION_ACCENT} size={14} strokeWidth={2.5} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  style={[styles.pickerRow, styles.pickerRowCustom]}
+                  onPress={pickCustomNutrient}
+                >
+                  <PenLine color={Colors.textSecondary} size={13} strokeWidth={2} />
+                  <Text style={styles.pickerCustomText}>Tự nhập tên khác...</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* ── Meal ── */}
             <Text style={styles.fieldLabel}>Bữa ăn</Text>
@@ -757,6 +832,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   extraNameInput: { flex: 1, width: undefined, textAlign: 'left', fontSize: 13 },
+  extraLabelBox: { flex: 1, gap: 2 },
+  extraLabelFixed: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  extraUnitFixed: { fontSize: 10, color: Colors.textMuted },
   extraValInput: { width: 72 },
   addExtraBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -764,6 +842,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addExtraBtnText: { fontSize: 13, color: Colors.textMuted, fontWeight: '500' },
+
+  // ── Inline nutrient picker ──
+  pickerBox: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
+    marginBottom: 8, overflow: 'hidden',
+  },
+  pickerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  pickerRowTaken: { opacity: 0.4 },
+  pickerRowLeft: { flex: 1, gap: 2 },
+  pickerRowLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  pickerRowLabelTaken: { color: Colors.textSecondary },
+  pickerRowUnit: { fontSize: 11, color: Colors.textMuted },
+  pickerRowBadge: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  pickerRowCustom: { gap: 8, borderBottomWidth: 0, backgroundColor: Colors.surface },
+  pickerCustomText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
 
   previewBox: {
     backgroundColor: Colors.surfaceElevated,

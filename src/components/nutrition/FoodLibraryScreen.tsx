@@ -39,14 +39,22 @@ function computeAutoCalories(nutrients: Record<string, string>): number | null {
   ).toFixed(1));
 }
 
+type ExtraRow = {
+  key: string;
+  label: string;
+  unit: string;
+  value: string;
+  isCustom: boolean; // false = picked from config (label locked); true = free-text
+};
+
 type FoodForm = {
   name: string;
   brand: string;
   serving_size: string;
   serving_unit: string;
   note: string;
-  nutrients: Record<string, string>; // keyed nutrients from configs
-  extra: Array<{ key: string; label: string; value: string }>; // ad-hoc key-value rows
+  nutrients: Record<string, string>;
+  extra: ExtraRow[];
 };
 
 const BLANK_FORM: FoodForm = {
@@ -71,6 +79,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   const [formError, setFormError] = useState('');
   const [showDisabledNutrients, setShowDisabledNutrients] = useState(false);
   const [calAutoMode, setCalAutoMode] = useState(true);
+  const [showNutrientPicker, setShowNutrientPicker] = useState(false);
   const [hiddenNutrientKeys, setHiddenNutrientKeys] = useState<Set<string>>(new Set());
 
   const hideNutrientField = (key: string) =>
@@ -115,6 +124,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setShowDisabledNutrients(false);
     setCalAutoMode(true);
     setHiddenNutrientKeys(new Set());
+    setShowNutrientPicker(false);
     setShowForm(true);
   };
 
@@ -125,11 +135,11 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
         ? String(food.nutrients_json[c.key])
         : '';
     }
-    // Extra rows: food nutrient keys not covered by any config
-    const extra: FoodForm['extra'] = [];
+    // Extra rows: food nutrient keys not covered by any config (truly custom)
+    const extra: ExtraRow[] = [];
     for (const [key, val] of Object.entries(food.nutrients_json)) {
       if (!configKeySet.has(key)) {
-        extra.push({ key, label: key, value: String(val) });
+        extra.push({ key, label: key, unit: '', value: String(val), isCustom: true });
       }
     }
     setForm({
@@ -146,21 +156,33 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setShowDisabledNutrients(false);
     const hasStoredCal = food.nutrients_json.calories != null;
     setCalAutoMode(!hasStoredCal);
-    // Pre-hide enabled config keys that have no value in this food
     const preHidden = new Set<string>(
       configs
         .filter((c) => c.is_enabled && food.nutrients_json[c.key] == null)
         .map((c) => c.key)
     );
     setHiddenNutrientKeys(preHidden);
+    setShowNutrientPicker(false);
     setShowForm(true);
   };
 
-  const addExtraRow = () => {
-    setForm((f) => ({ ...f, extra: [...f.extra, { key: '', label: '', value: '' }] }));
+  const pickNutrientConfig = (cfg: NutrientConfigItem) => {
+    setForm((f) => ({
+      ...f,
+      extra: [...f.extra, { key: cfg.key, label: cfg.label, unit: cfg.unit, value: '', isCustom: false }],
+    }));
+    setShowNutrientPicker(false);
   };
 
-  const updateExtra = (idx: number, patch: Partial<{ key: string; label: string; value: string }>) => {
+  const pickCustomNutrient = () => {
+    setForm((f) => ({
+      ...f,
+      extra: [...f.extra, { key: '', label: '', unit: '', value: '', isCustom: true }],
+    }));
+    setShowNutrientPicker(false);
+  };
+
+  const updateExtra = (idx: number, patch: Partial<ExtraRow>) => {
     setForm((f) => {
       const extra = [...f.extra];
       extra[idx] = { ...extra[idx], ...patch };
@@ -514,16 +536,27 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
 
             {/* Ad-hoc extra nutrients */}
             <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Chất dinh dưỡng khác</Text>
+
             {form.extra.map((row, idx) => (
               <View key={idx} style={styles.extraRow}>
                 <View style={styles.extraRowLeft}>
-                  <TextInput
-                    style={[styles.nutrientInput, styles.extraKeyInput]}
-                    placeholder="Tên (VD: Omega-3)"
-                    placeholderTextColor={Colors.textMuted}
-                    value={row.label}
-                    onChangeText={(t) => updateExtra(idx, { label: t, key: t.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') })}
-                  />
+                  {row.isCustom ? (
+                    <TextInput
+                      style={[styles.nutrientInput, styles.extraKeyInput]}
+                      placeholder="Tên (VD: Omega-3)"
+                      placeholderTextColor={Colors.textMuted}
+                      value={row.label}
+                      onChangeText={(t) => updateExtra(idx, {
+                        label: t,
+                        key: t.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+                      })}
+                    />
+                  ) : (
+                    <View>
+                      <Text style={styles.extraLabelFixed}>{row.label}</Text>
+                      {row.unit ? <Text style={styles.extraUnitFixed}>{row.unit}</Text> : null}
+                    </View>
+                  )}
                 </View>
                 <TextInput
                   style={[styles.nutrientInput, { width: 80 }]}
@@ -538,10 +571,57 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                 </TouchableOpacity>
               </View>
             ))}
-            <TouchableOpacity style={styles.addExtraBtn} onPress={addExtraRow}>
+
+            {/* Picker toggle button */}
+            <TouchableOpacity
+              style={styles.addExtraBtn}
+              onPress={() => setShowNutrientPicker((v) => !v)}
+            >
               <Plus color={NUTRITION_ACCENT} size={15} strokeWidth={2.5} />
-              <Text style={styles.addExtraBtnText}>Thêm chất khác</Text>
+              <Text style={styles.addExtraBtnText}>Thêm chất dinh dưỡng</Text>
+              {showNutrientPicker
+                ? <ChevronUp color={NUTRITION_ACCENT} size={13} />
+                : <ChevronDown color={NUTRITION_ACCENT} size={13} />}
             </TouchableOpacity>
+
+            {/* Inline nutrient picker */}
+            {showNutrientPicker && (
+              <View style={styles.pickerBox}>
+                {configs.map((c) => {
+                  const visibleInMain =
+                    enabledConfigs.some((e) => e.key === c.key) && !hiddenNutrientKeys.has(c.key);
+                  const alreadyExtra = form.extra.some((e) => e.key === c.key);
+                  const taken = visibleInMain || alreadyExtra;
+                  return (
+                    <TouchableOpacity
+                      key={c.key}
+                      style={[styles.pickerRow, taken && styles.pickerRowTaken]}
+                      onPress={() => !taken && pickNutrientConfig(c)}
+                      activeOpacity={taken ? 1 : 0.7}
+                    >
+                      <View style={styles.pickerRowLeft}>
+                        <Text style={[styles.pickerRowLabel, taken && styles.pickerRowLabelTaken]}>
+                          {c.label}
+                        </Text>
+                        <Text style={styles.pickerRowUnit}>{c.unit}</Text>
+                      </View>
+                      {taken ? (
+                        <Text style={styles.pickerRowBadge}>✓ Đã có</Text>
+                      ) : (
+                        <Plus color={NUTRITION_ACCENT} size={14} strokeWidth={2.5} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  style={[styles.pickerRow, styles.pickerRowCustom]}
+                  onPress={pickCustomNutrient}
+                >
+                  <PenLine color={Colors.textSecondary} size={14} strokeWidth={2} />
+                  <Text style={styles.pickerCustomText}>Tự nhập tên khác...</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <Text style={styles.label}>Ghi chú (tuỳ chọn)</Text>
             <TextInput
@@ -733,6 +813,8 @@ const styles = StyleSheet.create({
   },
   extraRowLeft: { flex: 1 },
   extraKeyInput: { width: '100%', textAlign: 'left', fontSize: 13 },
+  extraLabelFixed: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  extraUnitFixed: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
   removeExtraBtn: { padding: 6 },
   addExtraBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -743,6 +825,29 @@ const styles = StyleSheet.create({
     borderColor: NUTRITION_ACCENT + '30', borderStyle: 'dashed',
   },
   addExtraBtnText: { fontSize: 13, fontWeight: '700', color: NUTRITION_ACCENT },
+
+  // Inline nutrient picker
+  pickerBox: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
+    marginBottom: 8, overflow: 'hidden',
+  },
+  pickerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  pickerRowTaken: { opacity: 0.4 },
+  pickerRowLeft: { flex: 1, gap: 2 },
+  pickerRowLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  pickerRowLabelTaken: { color: Colors.textSecondary },
+  pickerRowUnit: { fontSize: 11, color: Colors.textMuted },
+  pickerRowBadge: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  pickerRowCustom: {
+    gap: 8, borderBottomWidth: 0,
+    backgroundColor: Colors.surface,
+  },
+  pickerCustomText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
 
   errorBanner: {
     backgroundColor: Colors.error + '15',
