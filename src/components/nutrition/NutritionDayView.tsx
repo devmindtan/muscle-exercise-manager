@@ -8,7 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { ChevronLeft, ChevronRight, Plus, Settings, BookOpen, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Plus, Settings, BookOpen, Trash2, Calculator } from 'lucide-react-native';
 import {
   getNutrientConfigs,
   getNutritionLogsForDate,
@@ -22,6 +22,7 @@ import { Colors } from '@/src/constants/colors';
 import AddFoodLogModal from './AddFoodLogModal';
 import NutrientConfigScreen from './NutrientConfigScreen';
 import FoodLibraryScreen from './FoodLibraryScreen';
+import TDEECalculatorScreen from './TDEECalculatorScreen';
 
 const NUTRITION_ACCENT = '#4ADE80';
 
@@ -92,6 +93,7 @@ export default function NutritionDayView() {
   const [addLogMeal, setAddLogMeal] = useState<MealType>('snack');
   const [showConfig, setShowConfig] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showTdee, setShowTdee] = useState(false);
 
   const load = useCallback(async (targetDate?: string) => {
     try {
@@ -196,6 +198,9 @@ export default function NutritionDayView() {
             </TouchableOpacity>
           </View>
           <View style={styles.actionBtns}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowTdee(true)}>
+              <Calculator color={Colors.textSecondary} size={18} strokeWidth={1.8} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLibrary(true)}>
               <BookOpen color={Colors.textSecondary} size={18} strokeWidth={1.8} />
             </TouchableOpacity>
@@ -347,6 +352,11 @@ export default function NutritionDayView() {
       <FoodLibraryScreen
         visible={showLibrary}
         onClose={() => setShowLibrary(false)}
+      />
+      <TDEECalculatorScreen
+        visible={showTdee}
+        onClose={() => setShowTdee(false)}
+        onApplied={reload}
       />
     </>
   );

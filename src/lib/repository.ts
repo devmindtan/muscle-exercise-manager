@@ -1937,3 +1937,118 @@ export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<voi
   }
   await LocalDB.deleteNutritionGoalByKey(nutrientKey);
 }
+
+// ─── TDEE settings ────────────────────────────────────────────────────────────
+
+export interface TdeeSettingsItem {
+  id: string;
+  bmr_method: 'katch_mccardl' | 'mifflin' | 'custom';
+  custom_bmr: number | null;
+  bmr_pct: number;
+  neat_pct: number;
+  tef_pct: number;
+  eat_pct: number;
+  protein_multiplier: number;
+  goal_type: 'cut' | 'maintain' | 'bulk';
+}
+
+export const DEFAULT_TDEE_SETTINGS: Omit<TdeeSettingsItem, 'id'> = {
+  bmr_method: 'katch_mccardl',
+  custom_bmr: null,
+  bmr_pct: 65,
+  neat_pct: 15,
+  tef_pct: 10,
+  eat_pct: 10,
+  protein_multiplier: 1.8,
+  goal_type: 'maintain',
+};
+
+export async function getTdeeSettings(): Promise<TdeeSettingsItem> {
+  if (Platform.OS === 'web') {
+    try {
+      const userId = await getWebUserIdOrThrow();
+      const { data } = await (supabase as any)
+        .from('nutrition_tdee_settings')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      if (data && data.length > 0) {
+        const r = data[0];
+        return {
+          id: r.id, bmr_method: r.bmr_method, custom_bmr: r.custom_bmr,
+          bmr_pct: r.bmr_pct, neat_pct: r.neat_pct, tef_pct: r.tef_pct,
+          eat_pct: r.eat_pct, protein_multiplier: r.protein_multiplier,
+          goal_type: r.goal_type,
+        };
+      }
+    } catch {}
+    return { id: generateUUID(), ...DEFAULT_TDEE_SETTINGS };
+  }
+
+  const row = await LocalDB.getTdeeSettings();
+  if (row) {
+    return {
+      id: row.id, bmr_method: row.bmr_method as TdeeSettingsItem['bmr_method'],
+      custom_bmr: row.custom_bmr, bmr_pct: row.bmr_pct, neat_pct: row.neat_pct,
+      tef_pct: row.tef_pct, eat_pct: row.eat_pct,
+      protein_multiplier: row.protein_multiplier,
+      goal_type: row.goal_type as TdeeSettingsItem['goal_type'],
+    };
+  }
+  return { id: generateUUID(), ...DEFAULT_TDEE_SETTINGS };
+}
+
+export async function saveTdeeSettings(s: TdeeSettingsItem): Promise<void> {
+  const now = new Date().toISOString();
+  if (Platform.OS === 'web') {
+    try {
+      const userId = await getWebUserIdOrThrow();
+      await (supabase as any).from('nutrition_tdee_settings').upsert({
+        ...s, user_id: userId, created_at: now, updated_at: now,
+      } as any);
+    } catch {}
+    return;
+  }
+  await LocalDB.upsertTdeeSettings({
+    ...s, created_at: now, updated_at: now, user_id: null,
+  });
+}
+
+// ─── Latest InBody snapshot (weight, SMM, body_fat_mass) ──────────────────────
+
+export interface InBodySnapshot {
+  weight: number | null;
+  skeletal_muscle_mass: number | null;
+  body_fat_mass: number | null;
+  lbm: number | null; // lean body mass = weight - body_fat_mass
+  measured_at: string | null;
+}
+
+export async function getLatestInBodySnapshot(): Promise<InBodySnapshot> {
+  const keys = ['weight', 'skeletal_muscle_mass', 'body_fat_mass'];
+  const result: Record<string, number> = {};
+  let measured_at: string | null = null;
+
+  for (const key of keys) {
+    const rows = await getBodyMeasurements(key, 1);
+    if (rows.length > 0) {
+      result[key] = rows[0].value;
+      if (!measured_at || rows[0].measured_at > measured_at) {
+        measured_at = rows[0].measured_at;
+      }
+    }
+  }
+
+  const weight = result.weight ?? null;
+  const body_fat_mass = result.body_fat_mass ?? null;
+  const lbm = weight !== null && body_fat_mass !== null ? weight - body_fat_mass : null;
+
+  return {
+    weight,
+    skeletal_muscle_mass: result.skeletal_muscle_mass ?? null,
+    body_fat_mass,
+    lbm,
+    measured_at,
+  };
+}

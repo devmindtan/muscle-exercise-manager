@@ -102,6 +102,21 @@ export type LocalNutritionGoal = {
   user_id: string | null;
 };
 
+export type LocalTdeeSettings = {
+  id: string;
+  bmr_method: string;
+  custom_bmr: number | null;
+  bmr_pct: number;
+  neat_pct: number;
+  tef_pct: number;
+  eat_pct: number;
+  protein_multiplier: number;
+  goal_type: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string | null;
+};
+
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -296,6 +311,20 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       deleted_at TEXT,
       sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS nutrition_tdee_settings (
+      id TEXT PRIMARY KEY,
+      bmr_method TEXT NOT NULL DEFAULT 'katch_mccardl',
+      custom_bmr REAL,
+      bmr_pct REAL NOT NULL DEFAULT 65,
+      neat_pct REAL NOT NULL DEFAULT 15,
+      tef_pct REAL NOT NULL DEFAULT 10,
+      eat_pct REAL NOT NULL DEFAULT 10,
+      protein_multiplier REAL NOT NULL DEFAULT 1.8,
+      goal_type TEXT NOT NULL DEFAULT 'maintain',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       user_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_nutrition_logs_logged_at ON nutrition_logs(logged_at);
@@ -1324,6 +1353,36 @@ export async function saveImageUriToExercise(id: string, imageUri: string) {
   await database.runAsync(
     `UPDATE exercises SET image_uri = ?, dirty = 1 WHERE id = ?`,
     [imageUri, id]
+  );
+}
+
+export async function getTdeeSettings(): Promise<LocalTdeeSettings | null> {
+  const database = await getDatabase();
+  return database.getFirstAsync<LocalTdeeSettings>(
+    `SELECT * FROM nutrition_tdee_settings ORDER BY updated_at DESC LIMIT 1`
+  );
+}
+
+export async function upsertTdeeSettings(s: LocalTdeeSettings): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO nutrition_tdee_settings (id, bmr_method, custom_bmr, bmr_pct, neat_pct, tef_pct, eat_pct, protein_multiplier, goal_type, created_at, updated_at, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       bmr_method = excluded.bmr_method,
+       custom_bmr = excluded.custom_bmr,
+       bmr_pct = excluded.bmr_pct,
+       neat_pct = excluded.neat_pct,
+       tef_pct = excluded.tef_pct,
+       eat_pct = excluded.eat_pct,
+       protein_multiplier = excluded.protein_multiplier,
+       goal_type = excluded.goal_type,
+       updated_at = excluded.updated_at,
+       user_id = excluded.user_id`,
+    [
+      s.id, s.bmr_method, s.custom_bmr, s.bmr_pct, s.neat_pct, s.tef_pct, s.eat_pct,
+      s.protein_multiplier, s.goal_type, s.created_at, s.updated_at, s.user_id,
+    ]
   );
 }
 

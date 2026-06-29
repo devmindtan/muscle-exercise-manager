@@ -167,3 +167,39 @@ CREATE POLICY "Users can manage their own nutrition goals"
   FOR ALL TO authenticated
   USING  ((select auth.uid()) = user_id)
   WITH CHECK ((select auth.uid()) = user_id);
+
+-- ------------------------------------------------------------
+-- 5. nutrition_tdee_settings
+--    Cấu hình TDEE & protein của người dùng (1 row/user).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.nutrition_tdee_settings (
+  id                  text        PRIMARY KEY,
+  bmr_method          text        NOT NULL DEFAULT 'katch_mccardl', -- 'katch_mccardl' | 'custom'
+  custom_bmr          numeric,
+  bmr_pct             numeric     NOT NULL DEFAULT 65,
+  neat_pct            numeric     NOT NULL DEFAULT 15,
+  tef_pct             numeric     NOT NULL DEFAULT 10,
+  eat_pct             numeric     NOT NULL DEFAULT 10,
+  protein_multiplier  numeric     NOT NULL DEFAULT 1.8,
+  goal_type           text        NOT NULL DEFAULT 'maintain',  -- 'cut' | 'maintain' | 'bulk'
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  user_id             uuid        REFERENCES auth.users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_nutrition_tdee_settings_user_id
+  ON public.nutrition_tdee_settings(user_id);
+
+ALTER TABLE public.nutrition_tdee_settings ENABLE ROW LEVEL SECURITY;
+
+DROP TRIGGER IF EXISTS trg_nutrition_tdee_settings_updated_at ON public.nutrition_tdee_settings;
+CREATE TRIGGER trg_nutrition_tdee_settings_updated_at
+  BEFORE UPDATE ON public.nutrition_tdee_settings
+  FOR EACH ROW EXECUTE FUNCTION _set_updated_at();
+
+DROP POLICY IF EXISTS "Users can manage their own tdee settings" ON public.nutrition_tdee_settings;
+CREATE POLICY "Users can manage their own tdee settings"
+  ON public.nutrition_tdee_settings
+  FOR ALL TO authenticated
+  USING  ((select auth.uid()) = user_id)
+  WITH CHECK ((select auth.uid()) = user_id);
