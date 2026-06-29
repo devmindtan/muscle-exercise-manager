@@ -223,6 +223,8 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
       const n = parseFloat(row.value);
       if (!isNaN(n) && n >= 0) nutrients_json[row.key.trim()] = n;
     }
+    // Calories is mandatory — default to 0 if still missing
+    if (!('calories' in nutrients_json)) nutrients_json.calories = 0;
 
     setSaving(true);
     setFormError('');
@@ -317,10 +319,13 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                     {food.serving_size}{food.serving_unit} / khẩu phần
                   </Text>
                   <View style={styles.macroRow}>
-                    {enabledConfigs.filter((c) => food.nutrients_json[c.key] != null).slice(0, 4).map((c) => (
+                    {enabledConfigs
+                      .filter((c) => c.key === 'calories' || food.nutrients_json[c.key] != null)
+                      .slice(0, 4)
+                      .map((c) => (
                       <View key={c.key} style={styles.macroChip}>
                         <Text style={styles.macroChipText}>
-                          {food.nutrients_json[c.key]}{c.unit}
+                          {food.nutrients_json[c.key] ?? 0}{c.unit}
                           {c.key !== 'calories' ? ` ${c.label.toLowerCase()}` : ''}
                         </Text>
                       </View>

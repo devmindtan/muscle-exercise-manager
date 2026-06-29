@@ -16,9 +16,13 @@ import {
   getNutritionLogsForDateRange,
   getNutritionGoals,
   deleteNutritionLog,
+  getTdeeSettings,
+  getLatestInBodySnapshot,
   type NutrientConfigItem,
   type NutritionLogItem,
   type NutritionGoalItem,
+  type TdeeSettingsItem,
+  type InBodySnapshot,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import AddFoodLogModal from './AddFoodLogModal';
@@ -206,6 +210,8 @@ export default function NutritionDayView() {
   const [goals, setGoals] = useState<NutritionGoalItem[]>([]);
   const [logs, setLogs] = useState<NutritionLogItem[]>([]);
   const [weekLogs, setWeekLogs] = useState<NutritionLogItem[]>([]);
+  const [tdeeSettings, setTdeeSettings] = useState<TdeeSettingsItem | null>(null);
+  const [inBodySnapshot, setInBodySnapshot] = useState<InBodySnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -221,16 +227,20 @@ export default function NutritionDayView() {
     try {
       const d = targetDate || date;
       const week = getWeekDates(d);
-      const [cfgs, gls, lgs, wls] = await Promise.all([
+      const [cfgs, gls, lgs, wls, tdeeCfg, snap] = await Promise.all([
         getNutrientConfigs(),
         getNutritionGoals(),
         getNutritionLogsForDate(d),
         getNutritionLogsForDateRange(week[0], week[6]),
+        getTdeeSettings(),
+        getLatestInBodySnapshot(),
       ]);
       setConfigs(cfgs);
       setGoals(gls);
       setLogs(lgs);
       setWeekLogs(wls);
+      setTdeeSettings(tdeeCfg);
+      setInBodySnapshot(snap);
     } finally {
       setLoading(false);
     }
@@ -275,8 +285,17 @@ export default function NutritionDayView() {
   const goalMap = useMemo(() => {
     const m: Record<string, number> = {};
     for (const g of goals) m[g.nutrient_key] = g.target_value;
+    // Dynamic TDEE: nếu đang dùng Katch-McArdle, tự tính lại từ InBody mới nhất
+    if (tdeeSettings?.bmr_method === 'katch_mccardl' && inBodySnapshot?.lbm != null) {
+      const bmr = Math.round(370 + 21.6 * inBodySnapshot.lbm);
+      const tdee = Math.round(bmr / (tdeeSettings.bmr_pct / 100));
+      if (m.calories !== undefined) m.calories = tdee;
+      if (m.protein !== undefined) {
+        m.protein = Math.round(inBodySnapshot.lbm * tdeeSettings.protein_multiplier);
+      }
+    }
     return m;
-  }, [goals]);
+  }, [goals, tdeeSettings, inBodySnapshot]);
 
   // Week summary: calories per day + has logs
   const weekDays: WeekDay[] = useMemo(() => weekDates.map((d) => {

@@ -252,6 +252,9 @@ export default function AddFoodLogModal({
       if (!isNaN(n) && n >= 0) nutrients_json[row.key.trim()] = n;
     }
 
+    // Calories is mandatory — default to 0 if still missing
+    if (!('calories' in nutrients_json)) nutrients_json.calories = 0;
+
     setSaving(true);
     setError('');
     try {
@@ -345,9 +348,9 @@ export default function AddFoodLogModal({
                     </View>
                     <View style={styles.foodRowMacros}>
                       {enabledConfigs.slice(0, 3).map((c) =>
-                        food.nutrients_json[c.key] != null ? (
+                        (c.key === 'calories' || food.nutrients_json[c.key] != null) ? (
                           <Text key={c.key} style={styles.foodRowMacroText}>
-                            {food.nutrients_json[c.key]}{c.unit}
+                            {food.nutrients_json[c.key] ?? 0}{c.unit}
                           </Text>
                         ) : null
                       )}
