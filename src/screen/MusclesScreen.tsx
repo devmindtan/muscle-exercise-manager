@@ -14,7 +14,6 @@ import {
   Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Plus, ChevronRight, X, Search } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,11 +24,6 @@ import {
   type WeekStat,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
-import NutritionDayView from '@/src/components/nutrition/NutritionDayView';
-
-type ScreenMode = 'muscles' | 'nutrition';
-const NUTRITION_ACCENT = '#4ADE80';
-
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
 function getWeekRange() {
@@ -102,8 +96,6 @@ function ProgressRing({
 }
 
 export default function MusclesScreen() {
-  const insets = useSafeAreaInsets();
-  const [mode, setMode] = useState<ScreenMode>('muscles');
   const [stats, setStats] = useState<WeekStat[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -231,7 +223,7 @@ export default function MusclesScreen() {
     [stats],
   );
 
-  if (loading && mode === 'muscles') {
+  if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
         <Text style={styles.loadingText}>Đang tải nhóm cơ...</Text>
@@ -241,37 +233,6 @@ export default function MusclesScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── Mode toggle (always visible) ── */}
-      <View style={[styles.modeToggleWrap, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.modeToggle}>
-          <TouchableOpacity
-            style={[styles.modeBtn, mode === 'muscles' && styles.modeBtnActive]}
-            onPress={() => setMode('muscles')}
-          >
-            <Text style={[styles.modeBtnText, mode === 'muscles' && styles.modeBtnTextActive]}>
-              Nhóm cơ
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeBtn, mode === 'nutrition' && styles.modeBtnActiveNutrition]}
-            onPress={() => setMode('nutrition')}
-          >
-            <Text style={[styles.modeBtnText, mode === 'nutrition' && styles.modeBtnTextActiveNutrition]}>
-              Thực phẩm
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ── Nutrition mode ── */}
-      {mode === 'nutrition' && (
-        <View style={styles.nutritionContainer}>
-          <NutritionDayView />
-        </View>
-      )}
-
-      {/* ── Muscles mode ── */}
-      {mode === 'muscles' && (
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -447,7 +408,6 @@ export default function MusclesScreen() {
           })
         )}
       </ScrollView>
-      )}
       <Modal
         visible={showAdd}
         transparent
@@ -579,43 +539,8 @@ const styles = StyleSheet.create({
   loadingText: { color: Colors.textMuted, fontSize: 15 },
   content: { paddingBottom: 40 },
 
-  // Mode toggle
-  modeToggleWrap: {
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  modeToggle: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 4,
-    gap: 4,
-  },
-  modeBtn: {
-    flex: 1, paddingVertical: 9, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modeBtnActive: {
-    backgroundColor: Colors.accent + '1f',
-    borderWidth: 1,
-    borderColor: Colors.accent,
-  },
-  modeBtnActiveNutrition: {
-    backgroundColor: NUTRITION_ACCENT + '1f',
-    borderWidth: 1,
-    borderColor: NUTRITION_ACCENT,
-  },
-  modeBtnText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
-  modeBtnTextActive: { color: Colors.accent },
-  modeBtnTextActiveNutrition: { color: NUTRITION_ACCENT },
-
-  // Nutrition container
-  nutritionContainer: { flex: 1 },
-
   // Header
-  header: { paddingHorizontal: 20, paddingBottom: 4, gap: 12 },
+  header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4, gap: 12 },
   headerTop: {
     flexDirection: 'row',
     alignItems: 'center',

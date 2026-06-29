@@ -94,10 +94,6 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="plan"
-        options={{ href: null }}
-      />
     </Tabs>
   );
 }
