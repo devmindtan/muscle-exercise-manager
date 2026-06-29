@@ -46,6 +46,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors.accent,
         tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: styles.tabLabel,
+        tabBarItemStyle: styles.tabItem,
         tabBarBackground: () => <View style={styles.tabBarBg} />,
       }}
     >
@@ -111,8 +112,13 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   authGate: {
     flex: 1,

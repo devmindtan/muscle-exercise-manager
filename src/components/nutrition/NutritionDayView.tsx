@@ -209,8 +209,8 @@ function WeekChart({
 }
 
 function CircleGauge({ value, total }: { value: number; total: number }) {
-  const SIZE = 64;
-  const R = 25;
+  const SIZE = 52;
+  const R = 20;
   const circ = 2 * Math.PI * R;
   const pct = total > 0 ? Math.min(value / total, 1) : 0;
   const over = pct >= 1;
@@ -668,16 +668,16 @@ const styles = StyleSheet.create({
     marginHorizontal: 16, marginBottom: 12,
     backgroundColor: Colors.surface,
     borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
-    padding: 16, gap: 12,
+    padding: 12, gap: 8,
   },
-  caloriesMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  caloriesMain: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   caloriesValRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  caloriesVal: { fontSize: 36, fontWeight: '800', color: Colors.text, lineHeight: 42 },
-  caloriesUnit: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 5 },
-  caloriesGoalText: { fontSize: 11, color: Colors.textMuted },
-  caloriesGaugeSide: { alignItems: 'center', gap: 2 },
-  remainingVal: { fontSize: 18, fontWeight: '700', color: NUTRITION_ACCENT },
-  remainingLabel: { fontSize: 10, color: Colors.textMuted },
+  caloriesVal: { fontSize: 28, fontWeight: '800', color: Colors.text, lineHeight: 32 },
+  caloriesUnit: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary, marginBottom: 3 },
+  caloriesGoalText: { fontSize: 10, color: Colors.textMuted },
+  caloriesGaugeSide: { alignItems: 'center', gap: 1 },
+  remainingVal: { fontSize: 14, fontWeight: '700', color: NUTRITION_ACCENT },
+  remainingLabel: { fontSize: 9, color: Colors.textMuted },
 
   configHint: {
     marginHorizontal: 16, marginBottom: 12,
