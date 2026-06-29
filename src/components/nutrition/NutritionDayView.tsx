@@ -285,14 +285,12 @@ export default function NutritionDayView() {
   const goalMap = useMemo(() => {
     const m: Record<string, number> = {};
     for (const g of goals) m[g.nutrient_key] = g.target_value;
-    // Dynamic TDEE: nếu đang dùng Katch-McArdle, tự tính lại từ InBody mới nhất
-    if (tdeeSettings?.bmr_method === 'katch_mccardl' && inBodySnapshot?.lbm != null) {
+    // Dynamic TDEE: nếu user đã cấu hình + dùng Katch-McArdle + có InBody → luôn tính lại
+    if (tdeeSettings?.id && tdeeSettings.bmr_method === 'katch_mccardl' && inBodySnapshot?.lbm != null) {
       const bmr = Math.round(370 + 21.6 * inBodySnapshot.lbm);
       const tdee = Math.round(bmr / (tdeeSettings.bmr_pct / 100));
-      if (m.calories !== undefined) m.calories = tdee;
-      if (m.protein !== undefined) {
-        m.protein = Math.round(inBodySnapshot.lbm * tdeeSettings.protein_multiplier);
-      }
+      m.calories = tdee;
+      m.protein = Math.round(inBodySnapshot.lbm * tdeeSettings.protein_multiplier);
     }
     return m;
   }, [goals, tdeeSettings, inBodySnapshot]);

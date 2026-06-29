@@ -107,6 +107,12 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
 
   const enabledConfigs = useMemo(() => configs.filter((c) => c.is_enabled), [configs]);
   const configKeySet = useMemo(() => new Set(configs.map((c) => c.key)), [configs]);
+  // Calories là bắt buộc — luôn lấy từ toàn bộ configs, không phụ thuộc enabled
+  const caloriesConfigForm = useMemo(
+    () => configs.find((c) => c.key === 'calories')
+      ?? { key: 'calories', label: 'Calo', unit: 'kcal', is_enabled: true, display_order: 0 },
+    [configs],
+  );
 
   const filtered = useMemo(() => {
     if (!search.trim()) return foods;
@@ -419,68 +425,60 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
               )}
             </View>
 
+            {/* Calories — luôn hiển thị, không phụ thuộc enabled/disabled */}
+            <View style={styles.calCard}>
+              <View style={styles.calCardRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.nutrientName}>Calo ({caloriesConfigForm.unit})</Text>
+                  {calAutoMode && (
+                    <Text style={styles.calAutoHint}>đạm×4 + carb×4 + béo×9</Text>
+                  )}
+                </View>
+                <View style={styles.calRight}>
+                  {calAutoMode ? (
+                    <Text style={styles.calAutoVal}>
+                      {autoCalories !== null ? autoCalories : '—'}
+                    </Text>
+                  ) : (
+                    <TextInput
+                      style={styles.nutrientInput}
+                      keyboardType="decimal-pad"
+                      placeholder="—"
+                      placeholderTextColor={Colors.textMuted}
+                      value={form.nutrients['calories'] || ''}
+                      onChangeText={(t) =>
+                        setForm((f) => ({ ...f, nutrients: { ...f.nutrients, calories: t } }))
+                      }
+                    />
+                  )}
+                  <TouchableOpacity
+                    style={styles.calToggleBtn}
+                    onPress={() => {
+                      setCalAutoMode((v) => {
+                        if (!v) {
+                          setForm((f) => ({ ...f, nutrients: { ...f.nutrients, calories: '' } }));
+                        }
+                        return !v;
+                      });
+                    }}
+                  >
+                    {calAutoMode ? (
+                      <RefreshCw color={NUTRITION_ACCENT} size={12} strokeWidth={2.5} />
+                    ) : (
+                      <PenLine color={Colors.textSecondary} size={12} strokeWidth={2.5} />
+                    )}
+                    <Text style={[styles.calToggleText, calAutoMode && styles.calToggleTextActive]}>
+                      {calAutoMode ? 'Tự tính' : 'Tay'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            {/* Các chất dinh dưỡng khác (bỏ qua calories) */}
             {enabledConfigs.map((c) => {
+              if (c.key === 'calories') return null;
               if (hiddenNutrientKeys.has(c.key)) return null;
-
-              if (c.key === 'calories') {
-                return (
-                  <View key={c.key} style={styles.calCard}>
-                    <View style={styles.calCardRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.nutrientName}>Calo ({c.unit})</Text>
-                        {calAutoMode && (
-                          <Text style={styles.calAutoHint}>đạm×4 + carb×4 + béo×9</Text>
-                        )}
-                      </View>
-                      <View style={styles.calRight}>
-                        {calAutoMode ? (
-                          <Text style={styles.calAutoVal}>
-                            {autoCalories !== null ? autoCalories : '—'}
-                          </Text>
-                        ) : (
-                          <TextInput
-                            style={styles.nutrientInput}
-                            keyboardType="decimal-pad"
-                            placeholder="—"
-                            placeholderTextColor={Colors.textMuted}
-                            value={form.nutrients[c.key] || ''}
-                            onChangeText={(t) =>
-                              setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
-                            }
-                          />
-                        )}
-                        <TouchableOpacity
-                          style={styles.calToggleBtn}
-                          onPress={() => {
-                            setCalAutoMode((v) => {
-                              if (!v) {
-                                setForm((f) => ({ ...f, nutrients: { ...f.nutrients, calories: '' } }));
-                              }
-                              return !v;
-                            });
-                          }}
-                        >
-                          {calAutoMode ? (
-                            <RefreshCw color={NUTRITION_ACCENT} size={12} strokeWidth={2.5} />
-                          ) : (
-                            <PenLine color={Colors.textSecondary} size={12} strokeWidth={2.5} />
-                          )}
-                          <Text style={[styles.calToggleText, calAutoMode && styles.calToggleTextActive]}>
-                            {calAutoMode ? 'Tự tính' : 'Tay'}
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => hideNutrientField(c.key)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <X color={Colors.textMuted} size={14} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                );
-              }
-
               return (
                 <View key={c.key} style={styles.nutrientRow}>
                   <View style={styles.nutrientRowLeft}>

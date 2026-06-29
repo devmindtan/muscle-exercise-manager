@@ -277,7 +277,9 @@ export default function AddFoodLogModal({
   };
 
   // Separate calories config from other macros for special rendering
-  const caloriesConfig = enabledConfigs.find((c) => c.key === 'calories');
+  // Calories là bắt buộc — lấy từ toàn bộ configs (không phụ thuộc enabled/disabled)
+  const caloriesConfig = configs.find((c) => c.key === 'calories')
+    ?? { key: 'calories', label: 'Calo', unit: 'kcal', is_enabled: true, display_order: 0 };
   const otherConfigs = enabledConfigs.filter((c) => c.key !== 'calories');
   // Put protein/carb/fat first for easier access
   const primaryConfigs = otherConfigs.filter((c) => MACRO_KEYS.has(c.key));
