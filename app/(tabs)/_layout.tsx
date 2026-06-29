@@ -46,7 +46,6 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors.accent,
         tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarItemStyle: styles.tabItem,
         tabBarBackground: () => <View style={styles.tabBarBg} />,
       }}
     >
@@ -54,8 +53,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Tuần này',
-          tabBarIcon: ({ color, size }) => (
-            <LayoutDashboard color={color} size={size} strokeWidth={1.8} />
+          tabBarIcon: ({ color }) => (
+            <LayoutDashboard color={color} size={20} strokeWidth={1.5} />
           ),
         }}
       />
@@ -63,8 +62,8 @@ export default function TabLayout() {
         name="muscles"
         options={{
           title: 'Tập luyện',
-          tabBarIcon: ({ color, size }) => (
-            <Dumbbell color={color} size={size} strokeWidth={1.8} />
+          tabBarIcon: ({ color }) => (
+            <Dumbbell color={color} size={20} strokeWidth={1.5} />
           ),
         }}
       />
@@ -72,8 +71,8 @@ export default function TabLayout() {
         name="nutrition"
         options={{
           title: 'Dinh dưỡng',
-          tabBarIcon: ({ color, size }) => (
-            <UtensilsCrossed color={color} size={size} strokeWidth={1.8} />
+          tabBarIcon: ({ color }) => (
+            <UtensilsCrossed color={color} size={20} strokeWidth={1.5} />
           ),
         }}
       />
@@ -81,8 +80,8 @@ export default function TabLayout() {
         name="metrics"
         options={{
           title: 'Chỉ số',
-          tabBarIcon: ({ color, size }) => (
-            <Activity color={color} size={size} strokeWidth={1.8} />
+          tabBarIcon: ({ color }) => (
+            <Activity color={color} size={20} strokeWidth={1.5} />
           ),
         }}
       />
@@ -90,8 +89,8 @@ export default function TabLayout() {
         name="log"
         options={{
           title: 'Ghi lại',
-          tabBarIcon: ({ color, size }) => (
-            <ClipboardList color={color} size={size} strokeWidth={1.8} />
+          tabBarIcon: ({ color }) => (
+            <ClipboardList color={color} size={20} strokeWidth={1.5} />
           ),
         }}
       />
@@ -114,11 +113,6 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 10,
     fontWeight: '500',
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   authGate: {
     flex: 1,
