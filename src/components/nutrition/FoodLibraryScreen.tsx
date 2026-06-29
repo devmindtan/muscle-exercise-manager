@@ -422,7 +422,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                   <View key={c.key} style={styles.calCard}>
                     <View style={styles.calCardRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.nutrientName}>{c.unit}</Text>
+                        <Text style={styles.nutrientName}>Calo ({c.unit})</Text>
                         {calAutoMode && (
                           <Text style={styles.calAutoHint}>đạm×4 + carb×4 + béo×9</Text>
                         )}

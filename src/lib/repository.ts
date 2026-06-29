@@ -2073,6 +2073,97 @@ export async function saveTdeeSettings(s: TdeeSettingsItem): Promise<void> {
   });
 }
 
+// ─── Sync all local nutrition data → Supabase ────────────────────────────────
+
+export type NutritionSyncResult = {
+  ok: boolean;
+  synced: number;
+  errors: string[];
+};
+
+export async function syncNutritionToCloud(): Promise<NutritionSyncResult> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user?.id) {
+    return { ok: false, synced: 0, errors: ['Chưa đăng nhập Supabase'] };
+  }
+  const userId = session.user.id;
+  let synced = 0;
+  const errors: string[] = [];
+
+  const push = async (table: string, row: Record<string, unknown>) => {
+    try {
+      const { error } = await (supabase as any)
+        .from(table)
+        .upsert({ ...row, user_id: userId }, { onConflict: 'id' });
+      if (error) throw error;
+      synced++;
+    } catch (e: unknown) {
+      errors.push(`${table}: ${(e as Error).message ?? String(e)}`);
+    }
+  };
+
+  // 1. Nutrient configs
+  const configs = await LocalDB.getNutrientConfigs();
+  for (const c of configs) {
+    await push('nutrition_nutrient_configs', {
+      id: c.id, key: c.key, label: c.label, unit: c.unit,
+      is_enabled: c.is_enabled === 1, display_order: c.display_order,
+      created_at: c.created_at, updated_at: c.updated_at,
+      deleted_at: c.deleted_at ?? null, sync_status: 'synced',
+    });
+  }
+
+  // 2. Foods
+  const foods = await LocalDB.getNutritionFoods();
+  for (const f of foods) {
+    await push('nutrition_foods', {
+      id: f.id, name: f.name, brand: f.brand ?? null,
+      serving_size: f.serving_size, serving_unit: f.serving_unit,
+      nutrients_json: JSON.parse(f.nutrients_json || '{}'),
+      note: f.note ?? null, created_at: f.created_at, updated_at: f.updated_at,
+      deleted_at: f.deleted_at ?? null, sync_status: 'synced',
+    });
+  }
+
+  // 3. Logs — all time
+  const logs = await LocalDB.getNutritionLogsForDateRange('2020-01-01', '2099-12-31');
+  for (const l of logs) {
+    await push('nutrition_logs', {
+      id: l.id, food_id: l.food_id ?? null, food_name: l.food_name,
+      quantity: l.quantity,
+      nutrients_json: JSON.parse(l.nutrients_json || '{}'),
+      meal_type: l.meal_type, note: l.note ?? null,
+      logged_at: l.logged_at, created_at: l.created_at, updated_at: l.updated_at,
+      deleted_at: l.deleted_at ?? null, sync_status: 'synced',
+    });
+  }
+
+  // 4. Goals
+  const goals = await LocalDB.getNutritionGoals();
+  for (const g of goals) {
+    await push('nutrition_goals', {
+      id: g.id, nutrient_key: g.nutrient_key,
+      target_value: g.target_value, unit: g.unit,
+      created_at: g.created_at, updated_at: g.updated_at,
+      deleted_at: g.deleted_at ?? null, sync_status: 'synced',
+    });
+  }
+
+  // 5. TDEE settings
+  const tdee = await LocalDB.getTdeeSettings();
+  if (tdee) {
+    await push('nutrition_tdee_settings', {
+      id: tdee.id, bmr_method: tdee.bmr_method, custom_bmr: tdee.custom_bmr ?? null,
+      bmr_pct: tdee.bmr_pct, neat_pct: tdee.neat_pct,
+      tef_pct: tdee.tef_pct, eat_pct: tdee.eat_pct,
+      protein_multiplier: tdee.protein_multiplier, goal_type: tdee.goal_type,
+      created_at: tdee.created_at, updated_at: tdee.updated_at,
+    });
+  }
+
+  return { ok: errors.length === 0, synced, errors };
+}
+
 // ─── Latest InBody snapshot (weight, SMM, body_fat_mass) ──────────────────────
 
 export interface InBodySnapshot {

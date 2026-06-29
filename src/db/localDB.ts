@@ -1405,6 +1405,106 @@ export async function upsertTdeeSettings(s: LocalTdeeSettings): Promise<void> {
   );
 }
 
+// ── Nutrition sync helpers ────────────────────────────────────────────────────
+
+export async function getPendingNutrientConfigs(): Promise<LocalNutrientConfig[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutrientConfig>(
+    `SELECT * FROM nutrition_nutrient_configs WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markNutrientConfigSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_nutrient_configs SET sync_status = 'synced' WHERE id = ?`, [id]
+  );
+}
+
+export async function getPendingNutritionFoods(): Promise<LocalNutritionFood[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutritionFood>(
+    `SELECT * FROM nutrition_foods WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markNutritionFoodSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_foods SET sync_status = 'synced' WHERE id = ?`, [id]
+  );
+}
+
+export async function getPendingNutritionLogs(): Promise<LocalNutritionLog[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutritionLog>(
+    `SELECT * FROM nutrition_logs WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markNutritionLogSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_logs SET sync_status = 'synced' WHERE id = ?`, [id]
+  );
+}
+
+export async function upsertNutritionLog(log: LocalNutritionLog): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO nutrition_logs
+       (id, food_id, food_name, quantity, nutrients_json, meal_type, note, logged_at, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       food_id = excluded.food_id,
+       food_name = excluded.food_name,
+       quantity = excluded.quantity,
+       nutrients_json = excluded.nutrients_json,
+       meal_type = excluded.meal_type,
+       note = excluded.note,
+       logged_at = excluded.logged_at,
+       updated_at = excluded.updated_at,
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      log.id, log.food_id ?? null, log.food_name, log.quantity, log.nutrients_json,
+      log.meal_type, log.note ?? null, log.logged_at, log.created_at, log.updated_at,
+      log.deleted_at ?? null, log.sync_status, log.user_id ?? null,
+    ]
+  );
+}
+
+export async function getPendingNutritionGoals(): Promise<LocalNutritionGoal[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutritionGoal>(
+    `SELECT * FROM nutrition_goals WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markNutritionGoalSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_goals SET sync_status = 'synced' WHERE id = ?`, [id]
+  );
+}
+
+export async function getPendingTdeeSettings(): Promise<LocalTdeeSettings | null> {
+  const database = await getDatabase();
+  return database.getFirstAsync<LocalTdeeSettings>(
+    `SELECT * FROM nutrition_tdee_settings WHERE user_id IS NULL OR user_id = '' ORDER BY updated_at DESC LIMIT 1`
+  );
+}
+
+export async function markTdeeSettingsSynced(id: string, userId: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_tdee_settings SET user_id = ? WHERE id = ?`, [userId, id]
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function getMonthlyVolume(startDate: string, endDate: string): Promise<number> {
   const database = await getDatabase();
   const result = await database.getFirstAsync<{ total: number }>(

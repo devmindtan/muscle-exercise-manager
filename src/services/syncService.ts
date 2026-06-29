@@ -15,6 +15,7 @@ export interface SyncResult {
   muscleGoalsSynced: number;
   weeklyPlansSynced: number;
   cardioLogsSynced: number;
+  nutritionSynced: number;
 }
 
 export async function syncData(deviceId: string): Promise<SyncResult> {
@@ -26,6 +27,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
   let muscleGoalsSynced = 0;
   let weeklyPlansSynced = 0;
   let cardioLogsSynced = 0;
+  let nutritionSynced = 0;
 
   try {
     const {
@@ -46,6 +48,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         muscleGoalsSynced,
         weeklyPlansSynced,
         cardioLogsSynced,
+        nutritionSynced,
       };
     }
 
@@ -524,6 +527,176 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       errors.push(`Error pulling cardio logs: ${e.message}`);
     }
 
+    // ─── NUTRITION PUSH ──────────────────────────────────────────────────────
+
+    // Nutrient configs
+    const pendingConfigs = await LocalDB.getPendingNutrientConfigs();
+    for (const c of pendingConfigs) {
+      try {
+        const { error } = await (supabase as any).from('nutrition_nutrient_configs').upsert({
+          id: c.id, user_id: userId, key: c.key, label: c.label, unit: c.unit,
+          is_enabled: c.is_enabled === 1, display_order: c.display_order,
+          created_at: c.created_at, updated_at: c.updated_at,
+          deleted_at: c.deleted_at ?? null, sync_status: 'synced',
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markNutrientConfigSynced(c.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync nutrient config ${c.key}: ${e.message}`);
+      }
+    }
+
+    // Foods
+    const pendingFoods = await LocalDB.getPendingNutritionFoods();
+    for (const f of pendingFoods) {
+      try {
+        const { error } = await (supabase as any).from('nutrition_foods').upsert({
+          id: f.id, user_id: userId, name: f.name, brand: f.brand ?? null,
+          serving_size: f.serving_size, serving_unit: f.serving_unit,
+          nutrients_json: JSON.parse(f.nutrients_json || '{}'),
+          note: f.note ?? null, created_at: f.created_at, updated_at: f.updated_at,
+          deleted_at: f.deleted_at ?? null, sync_status: 'synced',
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markNutritionFoodSynced(f.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync food ${f.id}: ${e.message}`);
+      }
+    }
+
+    // Logs
+    const pendingLogs = await LocalDB.getPendingNutritionLogs();
+    for (const l of pendingLogs) {
+      try {
+        const { error } = await (supabase as any).from('nutrition_logs').upsert({
+          id: l.id, user_id: userId, food_id: l.food_id ?? null, food_name: l.food_name,
+          quantity: l.quantity, nutrients_json: JSON.parse(l.nutrients_json || '{}'),
+          meal_type: l.meal_type, note: l.note ?? null, logged_at: l.logged_at,
+          created_at: l.created_at, updated_at: l.updated_at,
+          deleted_at: l.deleted_at ?? null, sync_status: 'synced',
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markNutritionLogSynced(l.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync nutrition log ${l.id}: ${e.message}`);
+      }
+    }
+
+    // Goals
+    const pendingGoals = await LocalDB.getPendingNutritionGoals();
+    for (const g of pendingGoals) {
+      try {
+        const { error } = await (supabase as any).from('nutrition_goals').upsert({
+          id: g.id, user_id: userId, nutrient_key: g.nutrient_key,
+          target_value: g.target_value, unit: g.unit,
+          created_at: g.created_at, updated_at: g.updated_at,
+          deleted_at: g.deleted_at ?? null, sync_status: 'synced',
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markNutritionGoalSynced(g.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync nutrition goal ${g.id}: ${e.message}`);
+      }
+    }
+
+    // TDEE settings (no sync_status column — detect unsynced by user_id IS NULL)
+    const pendingTdee = await LocalDB.getPendingTdeeSettings();
+    if (pendingTdee) {
+      try {
+        const { error } = await (supabase as any).from('nutrition_tdee_settings').upsert({
+          id: pendingTdee.id, user_id: userId,
+          bmr_method: pendingTdee.bmr_method, custom_bmr: pendingTdee.custom_bmr ?? null,
+          bmr_pct: pendingTdee.bmr_pct, neat_pct: pendingTdee.neat_pct,
+          tef_pct: pendingTdee.tef_pct, eat_pct: pendingTdee.eat_pct,
+          protein_multiplier: pendingTdee.protein_multiplier, goal_type: pendingTdee.goal_type,
+          created_at: pendingTdee.created_at, updated_at: pendingTdee.updated_at,
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markTdeeSettingsSynced(pendingTdee.id, userId);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync TDEE settings: ${e.message}`);
+      }
+    }
+
+    // ─── NUTRITION PULL ──────────────────────────────────────────────────────
+
+    // Configs, goals, TDEE — always pull (small tables, cross-device)
+    try {
+      const { data: remoteConfigs, error } = await (supabase as any)
+        .from('nutrition_nutrient_configs').select('*').eq('user_id', userId);
+      if (error) throw error;
+      for (const r of (remoteConfigs ?? [])) {
+        await LocalDB.upsertNutrientConfig({
+          ...r, is_enabled: r.is_enabled ? 1 : 0, sync_status: 'synced',
+        });
+      }
+    } catch (e: any) {
+      errors.push(`Failed to pull nutrient configs: ${e.message}`);
+    }
+
+    try {
+      const { data: remoteGoals, error } = await (supabase as any)
+        .from('nutrition_goals').select('*').eq('user_id', userId);
+      if (error) throw error;
+      for (const r of (remoteGoals ?? [])) {
+        await LocalDB.upsertNutritionGoal({ ...r, sync_status: 'synced' });
+      }
+    } catch (e: any) {
+      errors.push(`Failed to pull nutrition goals: ${e.message}`);
+    }
+
+    try {
+      const { data: remoteTdee, error } = await (supabase as any)
+        .from('nutrition_tdee_settings').select('*').eq('user_id', userId).maybeSingle();
+      if (error) throw error;
+      if (remoteTdee) {
+        await LocalDB.upsertTdeeSettings({ ...remoteTdee });
+      }
+    } catch (e: any) {
+      errors.push(`Failed to pull TDEE settings: ${e.message}`);
+    }
+
+    // Foods & logs — always pull (user needs their library & history cross-device)
+    try {
+      const { data: remoteFoods, error } = await (supabase as any)
+        .from('nutrition_foods').select('*').eq('user_id', userId);
+      if (error) throw error;
+      for (const r of (remoteFoods ?? [])) {
+        await LocalDB.upsertNutritionFood({
+          ...r,
+          nutrients_json: typeof r.nutrients_json === 'string'
+            ? r.nutrients_json
+            : JSON.stringify(r.nutrients_json ?? {}),
+          sync_status: 'synced',
+        });
+      }
+    } catch (e: any) {
+      errors.push(`Failed to pull nutrition foods: ${e.message}`);
+    }
+
+    try {
+      const { data: remoteLogs, error } = await (supabase as any)
+        .from('nutrition_logs').select('*').eq('user_id', userId)
+        .order('logged_at', { ascending: false }).limit(500);
+      if (error) throw error;
+      for (const r of (remoteLogs ?? [])) {
+        await LocalDB.upsertNutritionLog({
+          ...r,
+          nutrients_json: typeof r.nutrients_json === 'string'
+            ? r.nutrients_json
+            : JSON.stringify(r.nutrients_json ?? {}),
+          sync_status: 'synced',
+        });
+      }
+    } catch (e: any) {
+      errors.push(`Failed to pull nutrition logs: ${e.message}`);
+    }
+
     // Lưu thời gian sync
     await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
 
@@ -538,6 +711,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       muscleGoalsSynced,
       weeklyPlansSynced,
       cardioLogsSynced,
+      nutritionSynced,
     };
   } catch (e: any) {
     errors.push(`Sync failed: ${e.message}`);
@@ -552,6 +726,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       muscleGoalsSynced,
       weeklyPlansSynced,
       cardioLogsSynced,
+      nutritionSynced,
     };
   }
 }
