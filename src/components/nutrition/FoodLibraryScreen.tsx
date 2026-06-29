@@ -71,6 +71,12 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   const [formError, setFormError] = useState('');
   const [showDisabledNutrients, setShowDisabledNutrients] = useState(false);
   const [calAutoMode, setCalAutoMode] = useState(true);
+  const [hiddenNutrientKeys, setHiddenNutrientKeys] = useState<Set<string>>(new Set());
+
+  const hideNutrientField = (key: string) =>
+    setHiddenNutrientKeys((prev) => new Set([...prev, key]));
+
+  const resetHiddenFields = () => setHiddenNutrientKeys(new Set());
 
   // Auto-computed calories from form.nutrients.protein/carb/fat
   const autoCalories = useMemo(
@@ -108,6 +114,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setFormError('');
     setShowDisabledNutrients(false);
     setCalAutoMode(true);
+    setHiddenNutrientKeys(new Set());
     setShowForm(true);
   };
 
@@ -137,9 +144,15 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setEditingFood(food);
     setFormError('');
     setShowDisabledNutrients(false);
-    // If food already has calories stored and protein/carb/fat exist, default to manual
     const hasStoredCal = food.nutrients_json.calories != null;
     setCalAutoMode(!hasStoredCal);
+    // Pre-hide enabled config keys that have no value in this food
+    const preHidden = new Set<string>(
+      configs
+        .filter((c) => c.is_enabled && food.nutrients_json[c.key] == null)
+        .map((c) => c.key)
+    );
+    setHiddenNutrientKeys(preHidden);
     setShowForm(true);
   };
 
@@ -169,9 +182,10 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     if (isNaN(servingSize) || servingSize <= 0) { setFormError('Khẩu phần phải lớn hơn 0'); return; }
 
     const nutrients_json: Record<string, number> = {};
-    // Nutrients from config fields (skip calories if auto mode)
+    // Nutrients from config fields (skip calories if auto mode, skip hidden fields)
     for (const [key, val] of Object.entries(form.nutrients)) {
       if (key === 'calories' && calAutoMode) continue;
+      if (hiddenNutrientKeys.has(key)) continue;
       const n = parseFloat(val);
       if (!isNaN(n) && n >= 0) nutrients_json[key] = n;
     }
@@ -364,15 +378,25 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>Dinh dưỡng đang theo dõi / khẩu phần</Text>
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionLabel}>Dinh dưỡng đang theo dõi / khẩu phần</Text>
+              {hiddenNutrientKeys.size > 0 && (
+                <TouchableOpacity onPress={resetHiddenFields}>
+                  <Text style={styles.showHiddenText}>
+                    Hiện lại ({hiddenNutrientKeys.size})
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
             {enabledConfigs.map((c) => {
+              if (hiddenNutrientKeys.has(c.key)) return null;
+
               if (c.key === 'calories') {
-                // Special calories row with auto/manual toggle
                 return (
                   <View key={c.key} style={styles.calCard}>
                     <View style={styles.calCardRow}>
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <Text style={styles.nutrientName}>{c.label}</Text>
                         {calAutoMode && (
                           <Text style={styles.calAutoHint}>đạm×4 + carb×4 + béo×9</Text>
@@ -400,7 +424,6 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                           onPress={() => {
                             setCalAutoMode((v) => {
                               if (!v) {
-                                // switching to auto: clear manual
                                 setForm((f) => ({ ...f, nutrients: { ...f.nutrients, calories: '' } }));
                               }
                               return !v;
@@ -416,11 +439,18 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                             {calAutoMode ? 'Tự tính' : 'Tay'}
                           </Text>
                         </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => hideNutrientField(c.key)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <X color={Colors.textMuted} size={14} />
+                        </TouchableOpacity>
                       </View>
                     </View>
                   </View>
                 );
               }
+
               return (
                 <View key={c.key} style={styles.nutrientRow}>
                   <View style={styles.nutrientRowLeft}>
@@ -437,6 +467,13 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                       setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
                     }
                   />
+                  <TouchableOpacity
+                    onPress={() => hideNutrientField(c.key)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.removeNutrientBtn}
+                  >
+                    <X color={Colors.textMuted} size={14} />
+                  </TouchableOpacity>
                 </View>
               );
             })}
@@ -636,16 +673,21 @@ const styles = StyleSheet.create({
   twoCol: { flexDirection: 'row', gap: 12 },
   colField: { flex: 1 },
 
+  sectionRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 12, marginTop: 4,
+  },
   sectionLabel: {
     fontSize: 10, fontWeight: '700', color: Colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 1,
-    marginBottom: 12, marginTop: 4,
   },
+  showHiddenText: { fontSize: 12, fontWeight: '600', color: NUTRITION_ACCENT },
   nutrientRow: {
     flexDirection: 'row', alignItems: 'center',
     borderBottomWidth: 1, borderBottomColor: Colors.border,
-    paddingVertical: 10, gap: 12,
+    paddingVertical: 10, gap: 8,
   },
+  removeNutrientBtn: { padding: 4 },
   nutrientRowDimmed: { opacity: 0.55 },
   nutrientRowLeft: { flex: 1 },
   nutrientName: { fontSize: 14, fontWeight: '600', color: Colors.text },

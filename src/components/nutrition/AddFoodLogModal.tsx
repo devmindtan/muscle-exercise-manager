@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between', marginBottom: 16,
   },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
-  quickSubtitle: { fontSize: 12, color: Colors.textMuted, marginTop: -10, marginBottom: 14 },
+  quickSubtitle: { fontSize: 12, color: Colors.textMuted, marginTop: 2, marginBottom: 14 },
   backText: { fontSize: 14, color: NUTRITION_ACCENT, fontWeight: '600' },
 
   searchRow: {
