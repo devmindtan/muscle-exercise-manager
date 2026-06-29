@@ -474,7 +474,7 @@ export default function AddFoodLogModal({
               <View style={styles.calCard}>
                 <View style={styles.calCardTop}>
                   <View>
-                    <Text style={styles.calCardLabel}>Calo</Text>
+                    <Text style={styles.calCardLabel}>{caloriesConfig.unit}</Text>
                     {calAutoMode && (
                       <Text style={styles.calAutoFormula}>= đạm×4 + carb×4 + chất béo×9</Text>
                     )}
