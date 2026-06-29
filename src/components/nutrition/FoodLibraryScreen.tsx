@@ -320,7 +320,8 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                     {enabledConfigs.filter((c) => food.nutrients_json[c.key] != null).slice(0, 4).map((c) => (
                       <View key={c.key} style={styles.macroChip}>
                         <Text style={styles.macroChipText}>
-                          {food.nutrients_json[c.key]}{c.unit} {c.label.toLowerCase()}
+                          {food.nutrients_json[c.key]}{c.unit}
+                          {c.key !== 'calories' ? ` ${c.label.toLowerCase()}` : ''}
                         </Text>
                       </View>
                     ))}
