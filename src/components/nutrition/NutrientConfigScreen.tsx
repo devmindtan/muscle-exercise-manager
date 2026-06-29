@@ -29,12 +29,6 @@ import { Colors } from '@/src/constants/colors';
 
 const NUTRITION_ACCENT = '#4ADE80';
 
-// Default (seeded) nutrient keys — these cannot be deleted
-const DEFAULT_KEYS = new Set([
-  'calories', 'protein', 'carb', 'fat', 'fiber',
-  'sugar', 'sodium', 'saturated_fat', 'cholesterol',
-]);
-
 interface GoalEditState {
   config: NutrientConfigItem;
   goal: NutritionGoalItem | null;
@@ -210,7 +204,6 @@ export default function NutrientConfigScreen({ visible, onClose }: Props) {
             <Text style={styles.sectionLabel}>Đang theo dõi ({enabledConfigs.length})</Text>
             {enabledConfigs.map((cfg) => {
               const goal = goals.find((g) => g.nutrient_key === cfg.key);
-              const isDefault = DEFAULT_KEYS.has(cfg.key);
               return (
                 <View key={cfg.id} style={styles.row}>
                   <View style={styles.rowLeft}>
@@ -230,15 +223,13 @@ export default function NutrientConfigScreen({ visible, onClose }: Props) {
                     thumbColor={cfg.is_enabled ? NUTRITION_ACCENT : Colors.textMuted}
                     disabled={saving === cfg.id}
                   />
-                  {!isDefault && (
-                    <TouchableOpacity
-                      style={styles.deleteIconBtn}
-                      onPress={() => handleDelete(cfg)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Trash2 color={Colors.error} size={14} />
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity
+                    style={styles.deleteIconBtn}
+                    onPress={() => handleDelete(cfg)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 color={Colors.error} size={14} />
+                  </TouchableOpacity>
                 </View>
               );
             })}
@@ -248,33 +239,28 @@ export default function NutrientConfigScreen({ visible, onClose }: Props) {
                 <Text style={[styles.sectionLabel, { marginTop: 24 }]}>
                   Không theo dõi ({disabledConfigs.length})
                 </Text>
-                {disabledConfigs.map((cfg) => {
-                  const isDefault = DEFAULT_KEYS.has(cfg.key);
-                  return (
-                    <View key={cfg.id} style={[styles.row, styles.rowDisabled]}>
-                      <View style={styles.rowLeft}>
-                        <Text style={[styles.nutrientLabel, styles.disabledText]}>{cfg.label}</Text>
-                        <Text style={[styles.nutrientUnit, styles.disabledText]}>{cfg.unit}</Text>
-                      </View>
-                      <Switch
-                        value={false}
-                        onValueChange={() => toggleEnabled(cfg)}
-                        trackColor={{ false: Colors.border, true: NUTRITION_ACCENT + '60' }}
-                        thumbColor={Colors.textMuted}
-                        disabled={saving === cfg.id}
-                      />
-                      {!isDefault && (
-                        <TouchableOpacity
-                          style={styles.deleteIconBtn}
-                          onPress={() => handleDelete(cfg)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Trash2 color={Colors.error} size={14} />
-                        </TouchableOpacity>
-                      )}
+                {disabledConfigs.map((cfg) => (
+                  <View key={cfg.id} style={[styles.row, styles.rowDisabled]}>
+                    <View style={styles.rowLeft}>
+                      <Text style={[styles.nutrientLabel, styles.disabledText]}>{cfg.label}</Text>
+                      <Text style={[styles.nutrientUnit, styles.disabledText]}>{cfg.unit}</Text>
                     </View>
-                  );
-                })}
+                    <Switch
+                      value={false}
+                      onValueChange={() => toggleEnabled(cfg)}
+                      trackColor={{ false: Colors.border, true: NUTRITION_ACCENT + '60' }}
+                      thumbColor={Colors.textMuted}
+                      disabled={saving === cfg.id}
+                    />
+                    <TouchableOpacity
+                      style={styles.deleteIconBtn}
+                      onPress={() => handleDelete(cfg)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Trash2 color={Colors.error} size={14} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </>
             )}
 

@@ -723,15 +723,16 @@ const styles = StyleSheet.create({
   macroCell: {
     flex: 1, backgroundColor: Colors.surfaceElevated,
     borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
-    padding: 12, alignItems: 'center', gap: 6,
+    padding: 12, gap: 6,
   },
-  macroCellLabel: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
+  macroCellLabel: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, textAlign: 'center' },
   macroCellInput: {
     fontSize: 22, fontWeight: '800', color: Colors.text,
-    textAlign: 'center', width: '100%', borderBottomWidth: 1, borderBottomColor: Colors.border,
+    textAlign: 'center', alignSelf: 'stretch',
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
     paddingVertical: 4,
   },
-  macroCellUnit: { fontSize: 10, color: Colors.textMuted },
+  macroCellUnit: { fontSize: 10, color: Colors.textMuted, textAlign: 'center' },
 
   // ── Other nutrients ──
   nutrientRow: {
