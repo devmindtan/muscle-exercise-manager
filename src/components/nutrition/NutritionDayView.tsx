@@ -471,23 +471,21 @@ export default function NutritionDayView() {
           </TouchableOpacity>
         )}
 
-        {/* ── Nutrients horizontal scroll ── */}
+        {/* ── Nutrients grid ── */}
         {otherConfigs.length > 0 && (
           <View style={styles.nutrientsSection}>
-            <Text style={[styles.sectionLabel, { paddingHorizontal: 16 }]}>CHẤT DINH DƯỠNG</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.nutrientsScroll}
-            >
+            <Text style={styles.sectionLabel}>CHẤT DINH DƯỠNG</Text>
+            <View style={styles.nutrientsGrid}>
               {otherConfigs.map((c) => {
                 const val = totals[c.key] || 0;
                 const target = goalMap[c.key];
                 const color = NUTRIENT_COLORS[c.key] || NUTRITION_ACCENT;
                 return (
                   <View key={c.key} style={styles.nutrientCard}>
-                    <Text style={[styles.nutrientVal, { color }]}>{val}</Text>
-                    <Text style={styles.nutrientUnit}>{c.unit}</Text>
+                    <View style={styles.nutrientTopRow}>
+                      <Text style={[styles.nutrientVal, { color }]}>{val}</Text>
+                      <Text style={styles.nutrientUnit}>{c.unit}</Text>
+                    </View>
                     <Text style={styles.nutrientName}>{c.label}</Text>
                     {target ? (
                       <>
@@ -498,7 +496,7 @@ export default function NutritionDayView() {
                   </View>
                 );
               })}
-            </ScrollView>
+            </View>
           </View>
         )}
 
@@ -660,16 +658,22 @@ const styles = StyleSheet.create({
   configHintText: { fontSize: 13, color: NUTRITION_ACCENT, fontWeight: '600' },
 
   // ── Nutrients section ──
-  nutrientsSection: { marginBottom: 12 },
-  nutrientsScroll: { paddingHorizontal: 16, gap: 10 },
+  nutrientsSection: { marginHorizontal: 16, marginBottom: 12 },
+  nutrientsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
   nutrientCard: {
-    width: 88,
+    flexBasis: '47%',
+    flexGrow: 1,
     backgroundColor: Colors.surface,
     borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
     padding: 12, gap: 2,
   },
+  nutrientTopRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 3 },
   nutrientVal: { fontSize: 22, fontWeight: '800' },
-  nutrientUnit: { fontSize: 10, color: Colors.textMuted },
+  nutrientUnit: { fontSize: 10, color: Colors.textMuted, marginBottom: 3 },
   nutrientName: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600', marginBottom: 6 },
   nutrientTarget: { fontSize: 9, color: Colors.textMuted, marginTop: 2 },
 

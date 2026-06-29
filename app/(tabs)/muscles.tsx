@@ -55,9 +55,8 @@ export default function TrainingTab() {
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
-      {/* Header: title + pill segment switcher */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={styles.headerTitle}>Tập luyện</Text>
+      {/* Compact pill switcher */}
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.pillWrap}>
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -96,19 +95,12 @@ export default function TrainingTab() {
 
 const styles = StyleSheet.create({
   header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 10,
+    paddingBottom: 8,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: Colors.text,
   },
   pillWrap: {
     flexDirection: 'row',
