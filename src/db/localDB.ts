@@ -1267,6 +1267,25 @@ export async function getNutritionLogsForDate(dateStr: string): Promise<LocalNut
   );
 }
 
+export async function getNutritionLogsForDateRange(startDate: string, endDate: string): Promise<LocalNutritionLog[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutritionLog>(
+    `SELECT * FROM nutrition_logs
+     WHERE deleted_at IS NULL
+       AND logged_at >= ? AND logged_at <= ?
+     ORDER BY logged_at ASC`,
+    [`${startDate} 00:00:00`, `${endDate} 23:59:59`]
+  );
+}
+
+export async function deleteNutrientConfig(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `DELETE FROM nutrition_nutrient_configs WHERE id = ?`,
+    [id]
+  );
+}
+
 export async function insertNutritionLog(data: {
   id: string;
   food_id: string | null;

@@ -11,7 +11,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { X, Plus, Search, ChevronRight, Trash2 } from 'lucide-react-native';
+import { X, Plus, Search, ChevronRight, Trash2, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getNutritionFoods,
@@ -32,12 +32,13 @@ type FoodForm = {
   serving_size: string;
   serving_unit: string;
   note: string;
-  nutrients: Record<string, string>;
+  nutrients: Record<string, string>; // keyed nutrients from configs
+  extra: Array<{ key: string; label: string; value: string }>; // ad-hoc key-value rows
 };
 
 const BLANK_FORM: FoodForm = {
   name: '', brand: '', serving_size: '100', serving_unit: 'g', note: '',
-  nutrients: {},
+  nutrients: {}, extra: [],
 };
 
 interface Props {
@@ -55,6 +56,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   const [form, setForm] = useState<FoodForm>(BLANK_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [showDisabledNutrients, setShowDisabledNutrients] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -68,7 +70,9 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
 
   useFocusEffect(useCallback(() => { if (visible) load(); }, [visible, load]));
 
-  const allConfigs = configs;
+  const enabledConfigs = useMemo(() => configs.filter((c) => c.is_enabled), [configs]);
+  const disabledConfigs = useMemo(() => configs.filter((c) => !c.is_enabled), [configs]);
+  const configKeySet = useMemo(() => new Set(configs.map((c) => c.key)), [configs]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return foods;
@@ -77,13 +81,12 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   }, [foods, search]);
 
   const openAdd = () => {
-    const defaultNutrients: Record<string, string> = {};
-    for (const c of configs) {
-      defaultNutrients[c.key] = '';
-    }
-    setForm({ ...BLANK_FORM, nutrients: defaultNutrients });
+    const nutrients: Record<string, string> = {};
+    for (const c of configs) nutrients[c.key] = '';
+    setForm({ ...BLANK_FORM, nutrients, extra: [] });
     setEditingFood(null);
     setFormError('');
+    setShowDisabledNutrients(false);
     setShowForm(true);
   };
 
@@ -94,6 +97,13 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
         ? String(food.nutrients_json[c.key])
         : '';
     }
+    // Extra rows: food nutrient keys not covered by any config
+    const extra: FoodForm['extra'] = [];
+    for (const [key, val] of Object.entries(food.nutrients_json)) {
+      if (!configKeySet.has(key)) {
+        extra.push({ key, label: key, value: String(val) });
+      }
+    }
     setForm({
       name: food.name,
       brand: food.brand || '',
@@ -101,10 +111,32 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
       serving_unit: food.serving_unit,
       note: food.note || '',
       nutrients,
+      extra,
     });
     setEditingFood(food);
     setFormError('');
+    setShowDisabledNutrients(false);
     setShowForm(true);
+  };
+
+  const addExtraRow = () => {
+    setForm((f) => ({ ...f, extra: [...f.extra, { key: '', label: '', value: '' }] }));
+  };
+
+  const updateExtra = (idx: number, patch: Partial<{ key: string; label: string; value: string }>) => {
+    setForm((f) => {
+      const extra = [...f.extra];
+      extra[idx] = { ...extra[idx], ...patch };
+      // Auto-fill key from label if key is empty
+      if (patch.label && !extra[idx].key) {
+        extra[idx].key = patch.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      }
+      return { ...f, extra };
+    });
+  };
+
+  const removeExtra = (idx: number) => {
+    setForm((f) => ({ ...f, extra: f.extra.filter((_, i) => i !== idx) }));
   };
 
   const saveFood = async () => {
@@ -113,9 +145,16 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     if (isNaN(servingSize) || servingSize <= 0) { setFormError('Khẩu phần phải lớn hơn 0'); return; }
 
     const nutrients_json: Record<string, number> = {};
+    // Nutrients from config fields
     for (const [key, val] of Object.entries(form.nutrients)) {
       const n = parseFloat(val);
       if (!isNaN(n) && n >= 0) nutrients_json[key] = n;
+    }
+    // Extra ad-hoc nutrients
+    for (const row of form.extra) {
+      if (!row.key.trim()) continue;
+      const n = parseFloat(row.value);
+      if (!isNaN(n) && n >= 0) nutrients_json[row.key.trim()] = n;
     }
 
     setSaving(true);
@@ -211,7 +250,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                     {food.serving_size}{food.serving_unit} / khẩu phần
                   </Text>
                   <View style={styles.macroRow}>
-                    {allConfigs.filter((c) => c.is_enabled && food.nutrients_json[c.key] != null).slice(0, 4).map((c) => (
+                    {enabledConfigs.filter((c) => food.nutrients_json[c.key] != null).slice(0, 4).map((c) => (
                       <View key={c.key} style={styles.macroChip}>
                         <Text style={styles.macroChipText}>
                           {food.nutrients_json[c.key]}{c.unit} {c.label.toLowerCase()}
@@ -296,9 +335,9 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>Dinh dưỡng / khẩu phần</Text>
+            <Text style={styles.sectionLabel}>Dinh dưỡng đang theo dõi / khẩu phần</Text>
 
-            {configs.map((c) => (
+            {enabledConfigs.map((c) => (
               <View key={c.key} style={styles.nutrientRow}>
                 <View style={styles.nutrientRowLeft}>
                   <Text style={styles.nutrientName}>{c.label}</Text>
@@ -316,6 +355,71 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                 />
               </View>
             ))}
+
+            {/* Toggle để hiện chất không theo dõi */}
+            {disabledConfigs.length > 0 && (
+              <TouchableOpacity
+                style={styles.toggleDisabledBtn}
+                onPress={() => setShowDisabledNutrients((v) => !v)}
+              >
+                {showDisabledNutrients
+                  ? <ChevronUp color={Colors.textMuted} size={14} />
+                  : <ChevronDown color={Colors.textMuted} size={14} />}
+                <Text style={styles.toggleDisabledText}>
+                  {showDisabledNutrients ? 'Ẩn' : 'Hiện'} chất không theo dõi ({disabledConfigs.length})
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {showDisabledNutrients && disabledConfigs.map((c) => (
+              <View key={c.key} style={[styles.nutrientRow, styles.nutrientRowDimmed]}>
+                <View style={styles.nutrientRowLeft}>
+                  <Text style={[styles.nutrientName, styles.dimmedText]}>{c.label}</Text>
+                  <Text style={styles.nutrientUnit}>{c.unit}</Text>
+                </View>
+                <TextInput
+                  style={styles.nutrientInput}
+                  keyboardType="decimal-pad"
+                  placeholder="—"
+                  placeholderTextColor={Colors.textMuted}
+                  value={form.nutrients[c.key] || ''}
+                  onChangeText={(t) =>
+                    setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
+                  }
+                />
+              </View>
+            ))}
+
+            {/* Ad-hoc extra nutrients */}
+            <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Chất dinh dưỡng khác</Text>
+            {form.extra.map((row, idx) => (
+              <View key={idx} style={styles.extraRow}>
+                <View style={styles.extraRowLeft}>
+                  <TextInput
+                    style={[styles.nutrientInput, styles.extraKeyInput]}
+                    placeholder="Tên (VD: Omega-3)"
+                    placeholderTextColor={Colors.textMuted}
+                    value={row.label}
+                    onChangeText={(t) => updateExtra(idx, { label: t, key: t.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') })}
+                  />
+                </View>
+                <TextInput
+                  style={[styles.nutrientInput, { width: 80 }]}
+                  keyboardType="decimal-pad"
+                  placeholder="—"
+                  placeholderTextColor={Colors.textMuted}
+                  value={row.value}
+                  onChangeText={(t) => updateExtra(idx, { value: t })}
+                />
+                <TouchableOpacity onPress={() => removeExtra(idx)} style={styles.removeExtraBtn}>
+                  <Trash2 color={Colors.error} size={14} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.addExtraBtn} onPress={addExtraRow}>
+              <Plus color={NUTRITION_ACCENT} size={15} strokeWidth={2.5} />
+              <Text style={styles.addExtraBtnText}>Thêm chất khác</Text>
+            </TouchableOpacity>
 
             <Text style={styles.label}>Ghi chú (tuỳ chọn)</Text>
             <TextInput
@@ -457,8 +561,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
     paddingVertical: 10, gap: 12,
   },
+  nutrientRowDimmed: { opacity: 0.55 },
   nutrientRowLeft: { flex: 1 },
   nutrientName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  dimmedText: { color: Colors.textSecondary },
   nutrientUnit: { fontSize: 11, color: Colors.textMuted },
   nutrientInput: {
     width: 80, textAlign: 'right',
@@ -467,6 +573,30 @@ const styles = StyleSheet.create({
     borderRadius: 8, padding: 8,
     color: Colors.text, fontSize: 15, fontWeight: '600',
   },
+
+  toggleDisabledBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 10,
+  },
+  toggleDisabledText: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
+
+  // Extra (ad-hoc) nutrient rows
+  extraRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  extraRowLeft: { flex: 1 },
+  extraKeyInput: { width: '100%', textAlign: 'left', fontSize: 13 },
+  removeExtraBtn: { padding: 6 },
+  addExtraBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 12, justifyContent: 'center',
+    marginTop: 4, marginBottom: 4,
+    backgroundColor: NUTRITION_ACCENT + '12',
+    borderRadius: 10, borderWidth: 1,
+    borderColor: NUTRITION_ACCENT + '30', borderStyle: 'dashed',
+  },
+  addExtraBtnText: { fontSize: 13, fontWeight: '700', color: NUTRITION_ACCENT },
 
   errorBanner: {
     backgroundColor: Colors.error + '15',

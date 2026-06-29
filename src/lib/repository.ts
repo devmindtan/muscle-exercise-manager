@@ -3,8 +3,7 @@ import { uploadImage, deleteImage } from '@/src/services/imageUpload';
 import { Platform } from 'react-native';
 import { supabase } from '@/src/lib/supabase';
 
-// Simple UUID v4 generator
-function generateUUID(): string {
+export function generateUUID(): string {
   const chars = '0123456789abcdef';
   let uuid = '';
   for (let i = 0; i < 36; i++) {
@@ -1924,6 +1923,65 @@ export async function saveNutritionGoal(data: {
     unit: data.unit, created_at: now, updated_at: now,
     deleted_at: null, sync_status: 'pending', user_id: null,
   });
+}
+
+export async function createNutrientConfig(data: {
+  label: string; key: string; unit: string;
+}): Promise<NutrientConfigItem> {
+  const existing = await getNutrientConfigs();
+  const id = generateUUID();
+  const maxOrder = existing.reduce((m, c) => Math.max(m, c.display_order), 0);
+  const newConfig: NutrientConfigItem = {
+    id, key: data.key, label: data.label, unit: data.unit,
+    is_enabled: true, display_order: maxOrder + 1,
+  };
+  await saveNutrientConfig(newConfig);
+  return newConfig;
+}
+
+export async function deleteNutrientConfig(id: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    try {
+      const userId = await getWebUserIdOrThrow();
+      await (supabase as any).from('nutrition_nutrient_configs')
+        .delete().eq('id', id).eq('user_id', userId);
+    } catch {}
+    return;
+  }
+  await LocalDB.deleteNutrientConfig(id);
+}
+
+export async function getNutritionLogsForDateRange(
+  startDate: string, endDate: string
+): Promise<NutritionLogItem[]> {
+  if (Platform.OS === 'web') {
+    try {
+      const userId = await getWebUserIdOrThrow();
+      const { data, error } = await (supabase as any)
+        .from('nutrition_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .gte('logged_at', `${startDate} 00:00:00`)
+        .lte('logged_at', `${endDate} 23:59:59`)
+        .order('logged_at', { ascending: true });
+      if (error) throw error;
+      return (data || []).map((r: any) => ({
+        id: r.id, food_id: r.food_id, food_name: r.food_name,
+        quantity: r.quantity,
+        nutrients_json: typeof r.nutrients_json === 'string' ? JSON.parse(r.nutrients_json) : (r.nutrients_json || {}),
+        meal_type: r.meal_type, note: r.note, logged_at: r.logged_at,
+      }));
+    } catch { return []; }
+  }
+  const rows = await LocalDB.getNutritionLogsForDateRange(startDate, endDate);
+  return rows.map((r) => ({
+    id: r.id, food_id: r.food_id, food_name: r.food_name,
+    quantity: r.quantity,
+    nutrients_json: JSON.parse(r.nutrients_json || '{}'),
+    meal_type: r.meal_type as NutritionLogItem['meal_type'],
+    note: r.note, logged_at: r.logged_at,
+  }));
 }
 
 export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<void> {
