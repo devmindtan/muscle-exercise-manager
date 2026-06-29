@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Dumbbell, ClipboardList, Activity, CalendarRange } from 'lucide-react-native';
+import { LayoutDashboard, Dumbbell, ClipboardList, Activity, UtensilsCrossed } from 'lucide-react-native';
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/colors';
@@ -13,7 +13,7 @@ export default function TabLayout() {
 
   if (Platform.OS === 'web' && !isAuthenticated) {
     return (
-      <View style={[styles.authGate, { paddingTop: insets.top + 32 }]}> 
+      <View style={[styles.authGate, { paddingTop: insets.top + 32 }]}>
         <View style={styles.authCard}>
           <Text style={styles.authTitle}>Đăng nhập để dùng bản web</Text>
           <Text style={styles.authDescription}>
@@ -61,9 +61,18 @@ export default function TabLayout() {
       <Tabs.Screen
         name="muscles"
         options={{
-          title: 'Nhóm cơ',
+          title: 'Tập luyện',
           tabBarIcon: ({ color, size }) => (
             <Dumbbell color={color} size={size} strokeWidth={1.8} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="nutrition"
+        options={{
+          title: 'Dinh dưỡng',
+          tabBarIcon: ({ color, size }) => (
+            <UtensilsCrossed color={color} size={size} strokeWidth={1.8} />
           ),
         }}
       />
@@ -77,15 +86,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="plan"
-        options={{
-          title: 'Kế hoạch',
-          tabBarIcon: ({ color, size }) => (
-            <CalendarRange color={color} size={size} strokeWidth={1.8} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="log"
         options={{
           title: 'Ghi lại',
@@ -93,6 +93,10 @@ export default function TabLayout() {
             <ClipboardList color={color} size={size} strokeWidth={1.8} />
           ),
         }}
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{ href: null }}
       />
     </Tabs>
   );
