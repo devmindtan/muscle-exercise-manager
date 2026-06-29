@@ -77,9 +77,9 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   const [form, setForm] = useState<FoodForm>(BLANK_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  const [showDisabledNutrients, setShowDisabledNutrients] = useState(false);
   const [calAutoMode, setCalAutoMode] = useState(true);
   const [showNutrientPicker, setShowNutrientPicker] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
   const [hiddenNutrientKeys, setHiddenNutrientKeys] = useState<Set<string>>(new Set());
 
   const hideNutrientField = (key: string) =>
@@ -106,7 +106,6 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   useFocusEffect(useCallback(() => { if (visible) load(); }, [visible, load]));
 
   const enabledConfigs = useMemo(() => configs.filter((c) => c.is_enabled), [configs]);
-  const disabledConfigs = useMemo(() => configs.filter((c) => !c.is_enabled), [configs]);
   const configKeySet = useMemo(() => new Set(configs.map((c) => c.key)), [configs]);
 
   const filtered = useMemo(() => {
@@ -121,10 +120,10 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setForm({ ...BLANK_FORM, nutrients, extra: [] });
     setEditingFood(null);
     setFormError('');
-    setShowDisabledNutrients(false);
     setCalAutoMode(true);
     setHiddenNutrientKeys(new Set());
     setShowNutrientPicker(false);
+    setPickerSearch('');
     setShowForm(true);
   };
 
@@ -153,7 +152,6 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     });
     setEditingFood(food);
     setFormError('');
-    setShowDisabledNutrients(false);
     const hasStoredCal = food.nutrients_json.calories != null;
     setCalAutoMode(!hasStoredCal);
     const preHidden = new Set<string>(
@@ -163,6 +161,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     );
     setHiddenNutrientKeys(preHidden);
     setShowNutrientPicker(false);
+    setPickerSearch('');
     setShowForm(true);
   };
 
@@ -175,10 +174,13 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   };
 
   const pickCustomNutrient = () => {
+    const label = pickerSearch.trim();
+    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     setForm((f) => ({
       ...f,
-      extra: [...f.extra, { key: '', label: '', unit: '', value: '', isCustom: true }],
+      extra: [...f.extra, { key, label, unit: '', value: '', isCustom: true }],
     }));
+    setPickerSearch('');
     setShowNutrientPicker(false);
   };
 
@@ -500,40 +502,6 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
               );
             })}
 
-            {/* Toggle để hiện chất không theo dõi */}
-            {disabledConfigs.length > 0 && (
-              <TouchableOpacity
-                style={styles.toggleDisabledBtn}
-                onPress={() => setShowDisabledNutrients((v) => !v)}
-              >
-                {showDisabledNutrients
-                  ? <ChevronUp color={Colors.textMuted} size={14} />
-                  : <ChevronDown color={Colors.textMuted} size={14} />}
-                <Text style={styles.toggleDisabledText}>
-                  {showDisabledNutrients ? 'Ẩn' : 'Hiện'} chất không theo dõi ({disabledConfigs.length})
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {showDisabledNutrients && disabledConfigs.map((c) => (
-              <View key={c.key} style={[styles.nutrientRow, styles.nutrientRowDimmed]}>
-                <View style={styles.nutrientRowLeft}>
-                  <Text style={[styles.nutrientName, styles.dimmedText]}>{c.label}</Text>
-                  <Text style={styles.nutrientUnit}>{c.unit}</Text>
-                </View>
-                <TextInput
-                  style={styles.nutrientInput}
-                  keyboardType="decimal-pad"
-                  placeholder="—"
-                  placeholderTextColor={Colors.textMuted}
-                  value={form.nutrients[c.key] || ''}
-                  onChangeText={(t) =>
-                    setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
-                  }
-                />
-              </View>
-            ))}
-
             {/* Ad-hoc extra nutrients */}
             <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Chất dinh dưỡng khác</Text>
 
@@ -575,7 +543,12 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
             {/* Picker toggle button */}
             <TouchableOpacity
               style={styles.addExtraBtn}
-              onPress={() => setShowNutrientPicker((v) => !v)}
+              onPress={() => {
+                setShowNutrientPicker((v) => {
+                  if (v) setPickerSearch('');
+                  return !v;
+                });
+              }}
             >
               <Plus color={NUTRITION_ACCENT} size={15} strokeWidth={2.5} />
               <Text style={styles.addExtraBtnText}>Thêm chất dinh dưỡng</Text>
@@ -587,38 +560,80 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
             {/* Inline nutrient picker */}
             {showNutrientPicker && (
               <View style={styles.pickerBox}>
-                {configs.map((c) => {
-                  const visibleInMain =
-                    enabledConfigs.some((e) => e.key === c.key) && !hiddenNutrientKeys.has(c.key);
-                  const alreadyExtra = form.extra.some((e) => e.key === c.key);
-                  const taken = visibleInMain || alreadyExtra;
-                  return (
-                    <TouchableOpacity
-                      key={c.key}
-                      style={[styles.pickerRow, taken && styles.pickerRowTaken]}
-                      onPress={() => !taken && pickNutrientConfig(c)}
-                      activeOpacity={taken ? 1 : 0.7}
-                    >
-                      <View style={styles.pickerRowLeft}>
-                        <Text style={[styles.pickerRowLabel, taken && styles.pickerRowLabelTaken]}>
-                          {c.label}
-                        </Text>
-                        <Text style={styles.pickerRowUnit}>{c.unit}</Text>
-                      </View>
-                      {taken ? (
-                        <Text style={styles.pickerRowBadge}>✓ Đã có</Text>
-                      ) : (
-                        <Plus color={NUTRITION_ACCENT} size={14} strokeWidth={2.5} />
-                      )}
+                {/* Search bar */}
+                <View style={styles.pickerSearchRow}>
+                  <Search color={Colors.textMuted} size={13} />
+                  <TextInput
+                    style={styles.pickerSearchInput}
+                    placeholder="Tìm chất dinh dưỡng..."
+                    placeholderTextColor={Colors.textMuted}
+                    value={pickerSearch}
+                    onChangeText={setPickerSearch}
+                    autoCorrect={false}
+                  />
+                  {pickerSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => setPickerSearch('')}>
+                      <X color={Colors.textMuted} size={12} />
                     </TouchableOpacity>
-                  );
-                })}
+                  )}
+                </View>
+
+                {/* Config list */}
+                {configs
+                  .filter((c) =>
+                    !pickerSearch.trim() ||
+                    c.label.toLowerCase().includes(pickerSearch.trim().toLowerCase())
+                  )
+                  .map((c) => {
+                    const visibleInMain =
+                      enabledConfigs.some((e) => e.key === c.key) && !hiddenNutrientKeys.has(c.key);
+                    const alreadyExtra = form.extra.some((e) => e.key === c.key);
+                    const taken = visibleInMain || alreadyExtra;
+                    return (
+                      <TouchableOpacity
+                        key={c.key}
+                        style={[styles.pickerRow, taken && styles.pickerRowTaken]}
+                        onPress={() => !taken && pickNutrientConfig(c)}
+                        activeOpacity={taken ? 1 : 0.7}
+                      >
+                        <View style={styles.pickerRowLeft}>
+                          <Text style={[styles.pickerRowLabel, taken && styles.pickerRowLabelTaken]}>
+                            {c.label}
+                          </Text>
+                          <Text style={styles.pickerRowUnit}>{c.unit}</Text>
+                        </View>
+                        {taken ? (
+                          <Text style={styles.pickerRowBadge}>✓ Đã có</Text>
+                        ) : (
+                          <Plus color={NUTRITION_ACCENT} size={14} strokeWidth={2.5} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                {/* No results */}
+                {pickerSearch.trim() &&
+                  !configs.some((c) =>
+                    c.label.toLowerCase().includes(pickerSearch.trim().toLowerCase())
+                  ) && (
+                  <View style={styles.pickerEmpty}>
+                    <Text style={styles.pickerEmptyText}>
+                      Không tìm thấy "{pickerSearch.trim()}"
+                    </Text>
+                  </View>
+                )}
+
+                {/* Custom entry */}
                 <TouchableOpacity
                   style={[styles.pickerRow, styles.pickerRowCustom]}
                   onPress={pickCustomNutrient}
                 >
                   <PenLine color={Colors.textSecondary} size={14} strokeWidth={2} />
-                  <Text style={styles.pickerCustomText}>Tự nhập tên khác...</Text>
+                  <Text style={styles.pickerCustomText}>
+                    {pickerSearch.trim()
+                      ? `Thêm "${pickerSearch.trim()}" mới...`
+                      : 'Tự nhập tên khác...'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -800,12 +815,6 @@ const styles = StyleSheet.create({
   calToggleText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
   calToggleTextActive: { color: NUTRITION_ACCENT },
 
-  toggleDisabledBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 10,
-  },
-  toggleDisabledText: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
-
   // Extra (ad-hoc) nutrient rows
   extraRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -827,6 +836,20 @@ const styles = StyleSheet.create({
   addExtraBtnText: { fontSize: 13, fontWeight: '700', color: NUTRITION_ACCENT },
 
   // Inline nutrient picker
+  pickerSearchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    backgroundColor: Colors.bg,
+  },
+  pickerSearchInput: {
+    flex: 1, fontSize: 14, color: Colors.text,
+  },
+  pickerEmpty: {
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  pickerEmptyText: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic' },
   pickerBox: {
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
