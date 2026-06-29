@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Plus, Settings, BookOpen, Trash2, Calculator } from 'lucide-react-native';
-import Svg, { Rect, Line, Text as SvgText, G } from 'react-native-svg';
+import Svg, { Rect, Line, G, Circle } from 'react-native-svg';
 import {
   getNutrientConfigs,
   getNutritionLogsForDate,
@@ -32,6 +32,13 @@ import TDEECalculatorScreen from './TDEECalculatorScreen';
 
 const NUTRITION_ACCENT = '#4ADE80';
 const DAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const FULL_DAY_NAMES = ['CHỦ NHẬT', 'THỨ HAI', 'THỨ BA', 'THỨ TƯ', 'THỨ NĂM', 'THỨ SÁU', 'THỨ BẢY'];
+const NUTRIENT_COLORS: Record<string, string> = {
+  protein: '#60A5FA',
+  carbs: '#FBBF24',
+  fat: '#F97316',
+  fiber: '#34D399',
+};
 
 type MealType = 'morning' | 'noon' | 'evening' | 'snack';
 
@@ -40,7 +47,7 @@ const MEAL_LABELS: Record<MealType, string> = {
 };
 const MEAL_ORDER: MealType[] = ['morning', 'noon', 'evening', 'snack'];
 
-// ── Date utils ───────────────────────────────────────────────────────────────
+// ── Date utils ────────────────────────────────────────────────────────────────
 
 function todayStr(): string {
   const d = new Date();
@@ -55,7 +62,7 @@ function offsetDate(dateStr: string, days: number): string {
 
 function getWeekDates(dateStr: string): string[] {
   const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay(); // 0=Sun
+  const day = d.getDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
   const monday = new Date(d);
   monday.setDate(d.getDate() + mondayOffset);
@@ -73,6 +80,10 @@ function formatDateLabel(dateStr: string): string {
   if (dateStr === yesterday) return 'Hôm qua';
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function fmtNum(n: number): string {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 function sumNutrients(logs: NutritionLogItem[]): Record<string, number> {
@@ -146,9 +157,7 @@ function WeekStrip({
 
 const weekStyles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between' },
-  cell: {
-    flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10,
-  },
+  cell: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
   cellSelected: { backgroundColor: NUTRITION_ACCENT + '22' },
   dayLabel: { fontSize: 10, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5 },
   dayLabelSelected: { color: NUTRITION_ACCENT },
@@ -170,7 +179,6 @@ function WeekChart({
   const BAR_MARGIN = 4;
   const barW = Math.floor((width - BAR_MARGIN * 14) / 7);
   const maxVal = Math.max(calorieGoal || 0, ...weekDays.map((d) => d.calories), 1);
-
   const goalY = calorieGoal > 0 ? CHART_H - (calorieGoal / maxVal) * CHART_H : -1;
 
   return (
@@ -183,24 +191,48 @@ function WeekChart({
           const fill = isSelected ? NUTRITION_ACCENT : wd.calories > 0 ? NUTRITION_ACCENT + '55' : Colors.border;
           return (
             <G key={wd.date} onPress={() => onSelect(wd.date)}>
-              <Rect
-                x={x} y={CHART_H - barH} width={barW} height={barH}
-                rx={3} fill={fill}
-              />
+              <Rect x={x} y={CHART_H - barH} width={barW} height={barH} rx={3} fill={fill} />
             </G>
           );
         })}
         {calorieGoal > 0 && goalY >= 0 && (
           <Line
             x1={0} y1={goalY} x2={width} y2={goalY}
-            stroke={Colors.warning} strokeWidth={1}
-            strokeDasharray="4,3"
+            stroke={Colors.warning} strokeWidth={1} strokeDasharray="4,3"
           />
         )}
       </Svg>
     </View>
   );
 }
+
+function CircleGauge({ value, total }: { value: number; total: number }) {
+  const SIZE = 64;
+  const R = 25;
+  const circ = 2 * Math.PI * R;
+  const pct = total > 0 ? Math.min(value / total, 1) : 0;
+  const over = pct >= 1;
+  return (
+    <View style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
+        <Circle cx={SIZE / 2} cy={SIZE / 2} r={R} stroke={Colors.border} strokeWidth={5} fill="none" />
+        <Circle
+          cx={SIZE / 2} cy={SIZE / 2} r={R}
+          stroke={over ? Colors.warning : NUTRITION_ACCENT}
+          strokeWidth={5} fill="none"
+          strokeDasharray={`${circ}`}
+          strokeDashoffset={`${circ * (1 - pct)}`}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
+        />
+      </Svg>
+      <Text style={gaugeStyles.pct}>{Math.round(pct * 100)}%</Text>
+    </View>
+  );
+}
+const gaugeStyles = StyleSheet.create({
+  pct: { fontSize: 12, fontWeight: '700', color: Colors.text },
+});
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -285,7 +317,6 @@ export default function NutritionDayView() {
   const goalMap = useMemo(() => {
     const m: Record<string, number> = {};
     for (const g of goals) m[g.nutrient_key] = g.target_value;
-    // Dynamic TDEE: nếu user đã cấu hình + dùng Katch-McArdle + có InBody → luôn tính lại
     if (tdeeSettings?.id && tdeeSettings.bmr_method === 'katch_mccardl' && inBodySnapshot?.lbm != null) {
       const bmr = Math.round(370 + 21.6 * inBodySnapshot.lbm);
       const tdee = Math.round(bmr / (tdeeSettings.bmr_pct / 100));
@@ -295,7 +326,6 @@ export default function NutritionDayView() {
     return m;
   }, [goals, tdeeSettings, inBodySnapshot]);
 
-  // Week summary: calories per day + has logs
   const weekDays: WeekDay[] = useMemo(() => weekDates.map((d) => {
     const dayLogs = weekLogs.filter((l) => l.logged_at.startsWith(d));
     const calories = dayLogs.reduce((s, l) => s + (l.nutrients_json.calories || 0), 0);
@@ -313,10 +343,15 @@ export default function NutritionDayView() {
     return map;
   }, [logs]);
 
-  const isToday = date === todayStr();
-  const caloriesConfig = enabledConfigs.find((c) => c.key === 'calories');
-  const otherConfigs = enabledConfigs.filter((c) => c.key !== 'calories');
+  const caloriesConfig = useMemo(() => enabledConfigs.find((c) => c.key === 'calories'), [enabledConfigs]);
+  const otherConfigs = useMemo(() => enabledConfigs.filter((c) => c.key !== 'calories'), [enabledConfigs]);
   const calorieGoal = goalMap.calories || 0;
+  const calConsumed = totals.calories || 0;
+  const calRemaining = Math.max(0, calorieGoal - calConsumed);
+
+  const dateObj = new Date(date + 'T00:00:00');
+  const dayName = FULL_DAY_NAMES[dateObj.getDay()];
+  const dayShortDate = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
 
   if (loading) {
     return (
@@ -328,6 +363,29 @@ export default function NutritionDayView() {
 
   return (
     <>
+      {/* ── Fixed header ── */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerDay}>{dayName} · {dayShortDate}</Text>
+          <Text style={styles.headerTitle}>{formatDateLabel(date)}</Text>
+        </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowTdee(true)}>
+            <Calculator color={Colors.textSecondary} size={16} strokeWidth={1.8} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLibrary(true)}>
+            <BookOpen color={Colors.textSecondary} size={16} strokeWidth={1.8} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowConfig(true)}>
+            <Settings color={Colors.textSecondary} size={16} strokeWidth={1.8} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addBtn} onPress={() => openAdd()}>
+            <Plus color={Colors.bg} size={18} strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Scrollable content ── */}
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -336,25 +394,6 @@ export default function NutritionDayView() {
       >
         {/* ── Week calendar card ── */}
         <View style={styles.calendarCard}>
-          {/* Month / year + action buttons */}
-          <View style={styles.calendarHeader}>
-            <Text style={styles.monthLabel}>
-              {new Date(date + 'T00:00:00').toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}
-            </Text>
-            <View style={styles.actionBtns}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => setShowTdee(true)}>
-                <Calculator color={Colors.textSecondary} size={16} strokeWidth={1.8} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => setShowLibrary(true)}>
-                <BookOpen color={Colors.textSecondary} size={16} strokeWidth={1.8} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => setShowConfig(true)}>
-                <Settings color={Colors.textSecondary} size={16} strokeWidth={1.8} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Week navigation */}
           <View style={styles.weekNavRow}>
             <TouchableOpacity
               style={styles.weekNavBtn}
@@ -376,7 +415,6 @@ export default function NutritionDayView() {
 
           <WeekStrip weekDays={weekDays} selectedDate={date} onSelect={changeDate} />
 
-          {/* Calorie chart */}
           {(caloriesConfig || weekDays.some((d) => d.calories > 0)) && (
             <View style={styles.chartWrap}>
               <WeekChart
@@ -392,8 +430,8 @@ export default function NutritionDayView() {
                 </View>
                 {calorieGoal > 0 && (
                   <View style={styles.legendItem}>
-                    <View style={[styles.legendDash, { borderColor: Colors.warning }]} />
-                    <Text style={styles.legendText}>Mục tiêu {calorieGoal} kcal</Text>
+                    <View style={styles.legendDash} />
+                    <Text style={styles.legendText}>Mục tiêu {fmtNum(calorieGoal)} kcal</Text>
                   </View>
                 )}
               </View>
@@ -401,46 +439,30 @@ export default function NutritionDayView() {
           )}
         </View>
 
-        {/* ── Macro summary card ── */}
+        {/* ── Calories summary card ── */}
         {enabledConfigs.length > 0 ? (
           <View style={styles.summaryCard}>
-            {caloriesConfig && (
-              <View style={styles.caloriesRow}>
-                <View>
-                  <Text style={styles.caloriesVal}>
-                    {totals.calories || 0}
-                    <Text style={styles.caloriesUnit}> kcal</Text>
-                  </Text>
-                  {calorieGoal > 0 && (
-                    <Text style={styles.caloriesGoal}>/ {calorieGoal} kcal mục tiêu</Text>
-                  )}
+            <Text style={styles.sectionLabel}>ĐÃ NẠP HÔM NAY</Text>
+            <View style={styles.caloriesMain}>
+              <View style={{ flex: 1, gap: 4 }}>
+                <View style={styles.caloriesValRow}>
+                  <Text style={styles.caloriesVal}>{fmtNum(calConsumed)}</Text>
+                  <Text style={styles.caloriesUnit}> kcal</Text>
                 </View>
                 {calorieGoal > 0 && (
-                  <Text style={styles.caloriesPct}>
-                    {Math.round(((totals.calories || 0) / calorieGoal) * 100)}%
-                  </Text>
+                  <Text style={styles.caloriesGoalText}>Mục tiêu {fmtNum(calorieGoal)} kcal</Text>
                 )}
               </View>
-            )}
-            {caloriesConfig && calorieGoal > 0 && (
-              <MacroBar value={totals.calories || 0} target={calorieGoal} color={NUTRITION_ACCENT} />
-            )}
-            {otherConfigs.length > 0 && (
-              <View style={styles.macroGrid}>
-                {otherConfigs.map((c) => {
-                  const val = totals[c.key] || 0;
-                  const target = goalMap[c.key];
-                  return (
-                    <View key={c.key} style={styles.macroItem}>
-                      <Text style={styles.macroVal}>{val}</Text>
-                      <Text style={styles.macroUnit}>{c.unit}</Text>
-                      <Text style={styles.macroName}>{c.label}</Text>
-                      {target ? <MacroBar value={val} target={target} color={NUTRITION_ACCENT} /> : null}
-                      {target ? <Text style={styles.macroTarget}>/ {target}</Text> : null}
-                    </View>
-                  );
-                })}
-              </View>
+              {calorieGoal > 0 && (
+                <View style={styles.caloriesGaugeSide}>
+                  <Text style={styles.remainingVal}>{fmtNum(calRemaining)}</Text>
+                  <Text style={styles.remainingLabel}>còn lại</Text>
+                  <CircleGauge value={calConsumed} total={calorieGoal} />
+                </View>
+              )}
+            </View>
+            {calorieGoal > 0 && (
+              <MacroBar value={calConsumed} target={calorieGoal} color={NUTRITION_ACCENT} />
             )}
           </View>
         ) : (
@@ -449,64 +471,83 @@ export default function NutritionDayView() {
           </TouchableOpacity>
         )}
 
-        {/* ── Meal sections ── */}
-        {MEAL_ORDER.map((mt) => {
-          const mealLogs = logsByMeal[mt];
-          return (
-            <View key={mt} style={styles.mealSection}>
-              <View style={styles.mealHeader}>
-                <Text style={styles.mealTitle}>{MEAL_LABELS[mt]}</Text>
-                {mealLogs.length > 0 && (
-                  <Text style={styles.mealCount}>{mealLogs.length} món</Text>
-                )}
-                <TouchableOpacity style={styles.mealAddBtn} onPress={() => openAdd(mt)}>
-                  <Plus color={NUTRITION_ACCENT} size={16} strokeWidth={2.5} />
-                </TouchableOpacity>
-              </View>
+        {/* ── Nutrients horizontal scroll ── */}
+        {otherConfigs.length > 0 && (
+          <View style={styles.nutrientsSection}>
+            <Text style={[styles.sectionLabel, { paddingHorizontal: 16 }]}>CHẤT DINH DƯỠNG</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.nutrientsScroll}
+            >
+              {otherConfigs.map((c) => {
+                const val = totals[c.key] || 0;
+                const target = goalMap[c.key];
+                const color = NUTRIENT_COLORS[c.key] || NUTRITION_ACCENT;
+                return (
+                  <View key={c.key} style={styles.nutrientCard}>
+                    <Text style={[styles.nutrientVal, { color }]}>{val}</Text>
+                    <Text style={styles.nutrientUnit}>{c.unit}</Text>
+                    <Text style={styles.nutrientName}>{c.label}</Text>
+                    {target ? (
+                      <>
+                        <MacroBar value={val} target={target} color={color} />
+                        <Text style={styles.nutrientTarget}>/ {target}{c.unit}</Text>
+                      </>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
-              {mealLogs.length === 0 ? (
-                <TouchableOpacity style={styles.mealEmpty} onPress={() => openAdd(mt)}>
-                  <Text style={styles.mealEmptyText}>+ Thêm món</Text>
-                </TouchableOpacity>
-              ) : (
-                mealLogs.map((log) => (
-                  <View key={log.id} style={styles.logCard}>
-                    <View style={styles.logAccent} />
-                    <View style={styles.logBody}>
-                      <View style={styles.logTopRow}>
-                        <Text style={styles.logName} numberOfLines={1}>{log.food_name}</Text>
-                        <TouchableOpacity
-                          onPress={() => removeLog(log.id)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Trash2 color={Colors.textMuted} size={13} strokeWidth={2} />
-                        </TouchableOpacity>
-                      </View>
-                      <View style={styles.logMacros}>
-                        {enabledConfigs.map((c) =>
-                          log.nutrients_json[c.key] != null ? (
-                            <Text key={c.key} style={styles.logMacroText}>
-                              {log.nutrients_json[c.key]}{c.unit}
-                              <Text style={styles.logMacroLabel}> {c.label.toLowerCase()}</Text>
-                            </Text>
-                          ) : null
-                        )}
-                      </View>
+        {/* ── Meals section ── */}
+        <View style={styles.mealsSection}>
+          <Text style={styles.sectionLabel}>BỮA ĂN HÔM NAY</Text>
+          {MEAL_ORDER.map((mt) => {
+            const mealLogs = logsByMeal[mt];
+            const mealCals = mealLogs.reduce((s, l) => s + (l.nutrients_json.calories || 0), 0);
+            return (
+              <View key={mt} style={styles.mealGroup}>
+                <View style={styles.mealHeader}>
+                  <Text style={styles.mealTitle}>{MEAL_LABELS[mt]}</Text>
+                  {mealLogs.length > 0 && (
+                    <Text style={styles.mealCals}>{fmtNum(mealCals)} kcal</Text>
+                  )}
+                  <TouchableOpacity style={styles.mealAddBtn} onPress={() => openAdd(mt)}>
+                    <Plus color={NUTRITION_ACCENT} size={14} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </View>
+                {mealLogs.map((log) => (
+                  <View key={log.id} style={styles.mealItem}>
+                    <Text style={styles.mealItemBullet}>•</Text>
+                    <Text style={styles.mealItemName} numberOfLines={1}>{log.food_name}</Text>
+                    <View style={styles.mealItemRight}>
+                      {log.nutrients_json.calories != null && (
+                        <Text style={styles.mealItemCals}>{fmtNum(log.nutrients_json.calories)} kcal</Text>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => removeLog(log.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Trash2 color={Colors.textMuted} size={12} strokeWidth={1.8} />
+                      </TouchableOpacity>
                     </View>
                   </View>
-                ))
-              )}
-            </View>
-          );
-        })}
+                ))}
+                {mealLogs.length === 0 && (
+                  <TouchableOpacity style={styles.mealEmpty} onPress={() => openAdd(mt)}>
+                    <Text style={styles.mealEmptyText}>+ Thêm món</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })}
+        </View>
 
-        <View style={{ height: 80 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* ── FAB ── */}
-      <TouchableOpacity style={styles.fab} onPress={() => openAdd()} activeOpacity={0.85}>
-        <Plus color={Colors.bg} size={22} strokeWidth={2.5} />
-      </TouchableOpacity>
 
       {/* ── Modals ── */}
       <AddFoodLogModal
@@ -534,36 +575,56 @@ export default function NutritionDayView() {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: 20 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // ── Calendar card ──
-  calendarCard: {
-    marginHorizontal: 16, marginBottom: 12,
-    backgroundColor: Colors.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
-    padding: 14, gap: 10,
+  // ── Header ──
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
-  calendarHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  headerDay: {
+    fontSize: 11, fontWeight: '700', color: Colors.textMuted,
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2,
   },
-  monthLabel: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  actionBtns: { flexDirection: 'row', gap: 6 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: Colors.text },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconBtn: {
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1, borderColor: Colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
-
-  weekNavRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  addBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: NUTRITION_ACCENT,
+    alignItems: 'center', justifyContent: 'center',
   },
+
+  // ── Layout ──
+  content: { paddingBottom: 20 },
+  sectionLabel: {
+    fontSize: 11, fontWeight: '700', color: Colors.textMuted,
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
+  },
+
+  // ── Calendar card ──
+  calendarCard: {
+    marginHorizontal: 16, marginTop: 14, marginBottom: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
+    padding: 14, gap: 10,
+  },
+  weekNavRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   weekNavBtn: { paddingVertical: 4, paddingHorizontal: 2 },
   weekNavText: { fontSize: 12, fontWeight: '600', color: NUTRITION_ACCENT },
   weekNavDisabled: { color: Colors.textMuted },
   selectedDateLabel: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-
   chartWrap: { gap: 6 },
   chartLegend: { flexDirection: 'row', gap: 14, justifyContent: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -576,25 +637,19 @@ const styles = StyleSheet.create({
 
   // ── Summary card ──
   summaryCard: {
-    marginHorizontal: 16,
+    marginHorizontal: 16, marginBottom: 12,
     backgroundColor: Colors.surface,
     borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
-    padding: 16, marginBottom: 12, gap: 12,
+    padding: 16, gap: 12,
   },
-  caloriesRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  caloriesVal: { fontSize: 32, fontWeight: '800', color: Colors.text },
-  caloriesUnit: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary },
-  caloriesGoal: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  caloriesPct: { fontSize: 22, fontWeight: '700', color: NUTRITION_ACCENT },
-
-  macroGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  macroItem: { minWidth: 72, gap: 2 },
-  macroVal: { fontSize: 18, fontWeight: '700', color: Colors.text },
-  macroUnit: { fontSize: 10, color: Colors.textMuted },
-  macroName: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
-  macroTarget: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  caloriesMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  caloriesValRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  caloriesVal: { fontSize: 36, fontWeight: '800', color: Colors.text, lineHeight: 42 },
+  caloriesUnit: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 5 },
+  caloriesGoalText: { fontSize: 11, color: Colors.textMuted },
+  caloriesGaugeSide: { alignItems: 'center', gap: 2 },
+  remainingVal: { fontSize: 18, fontWeight: '700', color: NUTRITION_ACCENT },
+  remainingLabel: { fontSize: 10, color: Colors.textMuted },
 
   configHint: {
     marginHorizontal: 16, marginBottom: 12,
@@ -604,52 +659,52 @@ const styles = StyleSheet.create({
   },
   configHintText: { fontSize: 13, color: NUTRITION_ACCENT, fontWeight: '600' },
 
-  // ── Meal sections ──
-  mealSection: { marginHorizontal: 16, marginBottom: 14 },
-  mealHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  mealTitle: {
-    fontSize: 12, fontWeight: '700', color: Colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.8, flex: 1,
+  // ── Nutrients section ──
+  nutrientsSection: { marginBottom: 12 },
+  nutrientsScroll: { paddingHorizontal: 16, gap: 10 },
+  nutrientCard: {
+    width: 88,
+    backgroundColor: Colors.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
+    padding: 12, gap: 2,
   },
-  mealCount: { fontSize: 11, color: Colors.textMuted },
+  nutrientVal: { fontSize: 22, fontWeight: '800' },
+  nutrientUnit: { fontSize: 10, color: Colors.textMuted },
+  nutrientName: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600', marginBottom: 6 },
+  nutrientTarget: { fontSize: 9, color: Colors.textMuted, marginTop: 2 },
+
+  // ── Meals section ──
+  mealsSection: { marginHorizontal: 16 },
+  mealGroup: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
+    marginBottom: 10, overflow: 'hidden',
+  },
+  mealHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 12, gap: 8,
+  },
+  mealTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, flex: 1 },
+  mealCals: { fontSize: 12, color: Colors.textMuted, fontWeight: '500' },
   mealAddBtn: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: NUTRITION_ACCENT + '18',
     borderWidth: 1, borderColor: NUTRITION_ACCENT + '40',
     alignItems: 'center', justifyContent: 'center',
   },
+  mealItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderTopWidth: 1, borderTopColor: Colors.border, gap: 8,
+  },
+  mealItemBullet: { fontSize: 16, color: NUTRITION_ACCENT, lineHeight: 20 },
+  mealItemName: { flex: 1, fontSize: 13, color: Colors.text, fontWeight: '500' },
+  mealItemRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mealItemCals: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
   mealEmpty: {
     paddingVertical: 12, paddingHorizontal: 14,
-    backgroundColor: Colors.surface,
-    borderRadius: 10, borderWidth: 1, borderColor: Colors.border,
-    borderStyle: 'dashed', alignItems: 'center',
+    borderTopWidth: 1, borderTopColor: Colors.border,
+    alignItems: 'center',
   },
   mealEmptyText: { fontSize: 13, color: Colors.textMuted, fontWeight: '500' },
-
-  logCard: {
-    flexDirection: 'row', backgroundColor: Colors.surface,
-    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
-    overflow: 'hidden', marginBottom: 6,
-  },
-  logAccent: { width: 3, backgroundColor: NUTRITION_ACCENT },
-  logBody: { flex: 1, padding: 12 },
-  logTopRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginBottom: 6,
-  },
-  logName: { fontSize: 14, fontWeight: '600', color: Colors.text, flex: 1, marginRight: 8 },
-  logMacros: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  logMacroText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
-  logMacroLabel: { fontWeight: '400', color: Colors.textMuted },
-
-  fab: {
-    position: 'absolute', bottom: 20, right: 20,
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: NUTRITION_ACCENT,
-    alignItems: 'center', justifyContent: 'center',
-    elevation: 4,
-    shadowColor: NUTRITION_ACCENT,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4, shadowRadius: 6,
-  },
 });
