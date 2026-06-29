@@ -12,7 +12,6 @@ import {
   AppState,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, X } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
@@ -123,7 +122,6 @@ function getWeekBounds() {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function WeeklyPlanScreen() {
-  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const userKey = user?.id || 'guest';
   const todayKey = getTodayKey();
@@ -530,7 +528,7 @@ export default function WeeklyPlanScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}
       >
         {/* ── Header ── */}
-        <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
+        <View style={[styles.header, { paddingTop: 12 }]}>
           <View>
             <Text style={styles.title}>Kế hoạch tuần</Text>
             <Text style={styles.subtitle}>Chỉ để theo dõi. Bạn vẫn tập linh hoạt theo thực tế.</Text>
