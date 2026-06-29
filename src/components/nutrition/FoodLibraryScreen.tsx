@@ -11,7 +11,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { X, Plus, Search, ChevronRight, Trash2, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { X, Plus, Search, ChevronRight, Trash2, ChevronDown, ChevronUp, RefreshCw, PenLine } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getNutritionFoods,
@@ -25,6 +25,19 @@ import {
 import { Colors } from '@/src/constants/colors';
 
 const NUTRITION_ACCENT = '#4ADE80';
+
+function computeAutoCalories(nutrients: Record<string, string>): number | null {
+  const p = parseFloat(nutrients.protein ?? '');
+  const c = parseFloat(nutrients.carb ?? '');
+  const f = parseFloat(nutrients.fat ?? '');
+  const hasAny = !isNaN(p) || !isNaN(c) || !isNaN(f);
+  if (!hasAny) return null;
+  return parseFloat((
+    (isNaN(p) ? 0 : p) * 4 +
+    (isNaN(c) ? 0 : c) * 4 +
+    (isNaN(f) ? 0 : f) * 9
+  ).toFixed(1));
+}
 
 type FoodForm = {
   name: string;
@@ -57,6 +70,13 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [showDisabledNutrients, setShowDisabledNutrients] = useState(false);
+  const [calAutoMode, setCalAutoMode] = useState(true);
+
+  // Auto-computed calories from form.nutrients.protein/carb/fat
+  const autoCalories = useMemo(
+    () => computeAutoCalories(form.nutrients),
+    [form.nutrients.protein, form.nutrients.carb, form.nutrients.fat],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +107,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setEditingFood(null);
     setFormError('');
     setShowDisabledNutrients(false);
+    setCalAutoMode(true);
     setShowForm(true);
   };
 
@@ -116,6 +137,9 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     setEditingFood(food);
     setFormError('');
     setShowDisabledNutrients(false);
+    // If food already has calories stored and protein/carb/fat exist, default to manual
+    const hasStoredCal = food.nutrients_json.calories != null;
+    setCalAutoMode(!hasStoredCal);
     setShowForm(true);
   };
 
@@ -145,10 +169,15 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     if (isNaN(servingSize) || servingSize <= 0) { setFormError('Khẩu phần phải lớn hơn 0'); return; }
 
     const nutrients_json: Record<string, number> = {};
-    // Nutrients from config fields
+    // Nutrients from config fields (skip calories if auto mode)
     for (const [key, val] of Object.entries(form.nutrients)) {
+      if (key === 'calories' && calAutoMode) continue;
       const n = parseFloat(val);
       if (!isNaN(n) && n >= 0) nutrients_json[key] = n;
+    }
+    // Auto-computed calories
+    if (calAutoMode && autoCalories !== null) {
+      nutrients_json.calories = autoCalories;
     }
     // Extra ad-hoc nutrients
     for (const row of form.extra) {
@@ -337,24 +366,80 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
 
             <Text style={styles.sectionLabel}>Dinh dưỡng đang theo dõi / khẩu phần</Text>
 
-            {enabledConfigs.map((c) => (
-              <View key={c.key} style={styles.nutrientRow}>
-                <View style={styles.nutrientRowLeft}>
-                  <Text style={styles.nutrientName}>{c.label}</Text>
-                  <Text style={styles.nutrientUnit}>{c.unit}</Text>
+            {enabledConfigs.map((c) => {
+              if (c.key === 'calories') {
+                // Special calories row with auto/manual toggle
+                return (
+                  <View key={c.key} style={styles.calCard}>
+                    <View style={styles.calCardRow}>
+                      <View>
+                        <Text style={styles.nutrientName}>{c.label}</Text>
+                        {calAutoMode && (
+                          <Text style={styles.calAutoHint}>đạm×4 + carb×4 + béo×9</Text>
+                        )}
+                      </View>
+                      <View style={styles.calRight}>
+                        {calAutoMode ? (
+                          <Text style={styles.calAutoVal}>
+                            {autoCalories !== null ? autoCalories : '—'}
+                          </Text>
+                        ) : (
+                          <TextInput
+                            style={styles.nutrientInput}
+                            keyboardType="decimal-pad"
+                            placeholder="—"
+                            placeholderTextColor={Colors.textMuted}
+                            value={form.nutrients[c.key] || ''}
+                            onChangeText={(t) =>
+                              setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
+                            }
+                          />
+                        )}
+                        <TouchableOpacity
+                          style={styles.calToggleBtn}
+                          onPress={() => {
+                            setCalAutoMode((v) => {
+                              if (!v) {
+                                // switching to auto: clear manual
+                                setForm((f) => ({ ...f, nutrients: { ...f.nutrients, calories: '' } }));
+                              }
+                              return !v;
+                            });
+                          }}
+                        >
+                          {calAutoMode ? (
+                            <RefreshCw color={NUTRITION_ACCENT} size={12} strokeWidth={2.5} />
+                          ) : (
+                            <PenLine color={Colors.textSecondary} size={12} strokeWidth={2.5} />
+                          )}
+                          <Text style={[styles.calToggleText, calAutoMode && styles.calToggleTextActive]}>
+                            {calAutoMode ? 'Tự tính' : 'Tay'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }
+              return (
+                <View key={c.key} style={styles.nutrientRow}>
+                  <View style={styles.nutrientRowLeft}>
+                    <Text style={styles.nutrientName}>{c.label}</Text>
+                    <Text style={styles.nutrientUnit}>{c.unit}</Text>
+                  </View>
+                  <TextInput
+                    style={styles.nutrientInput}
+                    keyboardType="decimal-pad"
+                    placeholder="—"
+                    placeholderTextColor={Colors.textMuted}
+                    value={form.nutrients[c.key] || ''}
+                    onChangeText={(t) =>
+                      setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
+                    }
+                  />
                 </View>
-                <TextInput
-                  style={styles.nutrientInput}
-                  keyboardType="decimal-pad"
-                  placeholder="—"
-                  placeholderTextColor={Colors.textMuted}
-                  value={form.nutrients[c.key] || ''}
-                  onChangeText={(t) =>
-                    setForm((f) => ({ ...f, nutrients: { ...f.nutrients, [c.key]: t } }))
-                  }
-                />
-              </View>
-            ))}
+              );
+            })}
 
             {/* Toggle để hiện chất không theo dõi */}
             {disabledConfigs.length > 0 && (
@@ -573,6 +658,25 @@ const styles = StyleSheet.create({
     borderRadius: 8, padding: 8,
     color: Colors.text, fontSize: 15, fontWeight: '600',
   },
+
+  // Calories auto-card
+  calCard: {
+    borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: 10,
+  },
+  calCardRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  calAutoHint: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  calRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  calAutoVal: { fontSize: 16, fontWeight: '800', color: NUTRITION_ACCENT },
+  calToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  calToggleText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  calToggleTextActive: { color: NUTRITION_ACCENT },
 
   toggleDisabledBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
