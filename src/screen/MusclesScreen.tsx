@@ -25,6 +25,10 @@ import {
   type WeekStat,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
+import NutritionDayView from '@/src/components/nutrition/NutritionDayView';
+
+type ScreenMode = 'muscles' | 'nutrition';
+const NUTRITION_ACCENT = '#4ADE80';
 
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
@@ -99,6 +103,7 @@ function ProgressRing({
 
 export default function MusclesScreen() {
   const insets = useSafeAreaInsets();
+  const [mode, setMode] = useState<ScreenMode>('muscles');
   const [stats, setStats] = useState<WeekStat[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -226,7 +231,7 @@ export default function MusclesScreen() {
     [stats],
   );
 
-  if (loading) {
+  if (loading && mode === 'muscles') {
     return (
       <View style={[styles.container, styles.center]}>
         <Text style={styles.loadingText}>Đang tải nhóm cơ...</Text>
@@ -236,6 +241,37 @@ export default function MusclesScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ── Mode toggle (always visible) ── */}
+      <View style={[styles.modeToggleWrap, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'muscles' && styles.modeBtnActive]}
+            onPress={() => setMode('muscles')}
+          >
+            <Text style={[styles.modeBtnText, mode === 'muscles' && styles.modeBtnTextActive]}>
+              Nhóm cơ
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'nutrition' && styles.modeBtnActiveNutrition]}
+            onPress={() => setMode('nutrition')}
+          >
+            <Text style={[styles.modeBtnText, mode === 'nutrition' && styles.modeBtnTextActiveNutrition]}>
+              Thực phẩm
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Nutrition mode ── */}
+      {mode === 'nutrition' && (
+        <View style={styles.nutritionContainer}>
+          <NutritionDayView />
+        </View>
+      )}
+
+      {/* ── Muscles mode ── */}
+      {mode === 'muscles' && (
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -243,7 +279,7 @@ export default function MusclesScreen() {
         }
       >
         {/* ── Header ── */}
-        <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
+        <View style={styles.header}>
           <View style={styles.headerTop}>
             <Text style={styles.title}>Nhóm cơ</Text>
             <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
@@ -411,8 +447,7 @@ export default function MusclesScreen() {
           })
         )}
       </ScrollView>
-
-      {/* ── Add modal ── */}
+      )}
       <Modal
         visible={showAdd}
         transparent
@@ -543,6 +578,41 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: Colors.textMuted, fontSize: 15 },
   content: { paddingBottom: 40 },
+
+  // Mode toggle
+  modeToggleWrap: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 4,
+    gap: 4,
+  },
+  modeBtn: {
+    flex: 1, paddingVertical: 9, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.accent + '1f',
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  modeBtnActiveNutrition: {
+    backgroundColor: NUTRITION_ACCENT + '1f',
+    borderWidth: 1,
+    borderColor: NUTRITION_ACCENT,
+  },
+  modeBtnText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
+  modeBtnTextActive: { color: Colors.accent },
+  modeBtnTextActiveNutrition: { color: NUTRITION_ACCENT },
+
+  // Nutrition container
+  nutritionContainer: { flex: 1 },
 
   // Header
   header: { paddingHorizontal: 20, paddingBottom: 4, gap: 12 },

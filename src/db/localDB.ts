@@ -45,6 +45,63 @@ export type LocalWeeklyPlanEntry = {
 
 export type LocalCardioLog = Database['public']['Tables']['cardio_logs']['Row'];
 
+export type LocalNutrientConfig = {
+  id: string;
+  key: string;
+  label: string;
+  unit: string;
+  is_enabled: number; // 0 | 1
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
+export type LocalNutritionFood = {
+  id: string;
+  name: string;
+  brand: string | null;
+  serving_size: number;
+  serving_unit: string;
+  nutrients_json: string; // JSON string
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
+export type LocalNutritionLog = {
+  id: string;
+  food_id: string | null;
+  food_name: string;
+  quantity: number;
+  nutrients_json: string; // JSON string
+  meal_type: string;
+  note: string | null;
+  logged_at: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
+export type LocalNutritionGoal = {
+  id: string;
+  nutrient_key: string;
+  target_value: number;
+  unit: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
 const DB_NAME = 'muscle-manager.db';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -188,6 +245,63 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_dirty_workout_logs ON workout_logs(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_body_measurements ON body_measurements(dirty) WHERE dirty = 1;
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_goals ON muscle_goals(dirty) WHERE dirty = 1;
+    CREATE TABLE IF NOT EXISTS nutrition_nutrient_configs (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'g',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      display_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS nutrition_foods (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      brand TEXT,
+      serving_size REAL NOT NULL DEFAULT 100,
+      serving_unit TEXT NOT NULL DEFAULT 'g',
+      nutrients_json TEXT NOT NULL DEFAULT '{}',
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS nutrition_logs (
+      id TEXT PRIMARY KEY,
+      food_id TEXT,
+      food_name TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1,
+      nutrients_json TEXT NOT NULL DEFAULT '{}',
+      meal_type TEXT NOT NULL DEFAULT 'snack',
+      note TEXT,
+      logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS nutrition_goals (
+      id TEXT PRIMARY KEY,
+      nutrient_key TEXT NOT NULL,
+      target_value REAL NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'g',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_nutrition_logs_logged_at ON nutrition_logs(logged_at);
+    CREATE INDEX IF NOT EXISTS idx_nutrition_logs_deleted_at ON nutrition_logs(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_nutrition_foods_name ON nutrition_foods(name);
+    CREATE INDEX IF NOT EXISTS idx_nutrition_goals_key ON nutrition_goals(nutrient_key);
   `);
   await migrateLegacySchema(database);
 }
@@ -1027,6 +1141,174 @@ export async function closeDatabase() {
     await db.closeAsync();
     db = null;
   }
+}
+
+// ─── Nutrition ────────────────────────────────────────────────────────────────
+
+export async function getNutrientConfigs(): Promise<LocalNutrientConfig[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutrientConfig>(
+    `SELECT * FROM nutrition_nutrient_configs
+     WHERE deleted_at IS NULL
+     ORDER BY display_order ASC, created_at ASC`
+  );
+}
+
+export async function upsertNutrientConfig(config: LocalNutrientConfig): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO nutrition_nutrient_configs
+       (id, key, label, unit, is_enabled, display_order, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       key = excluded.key,
+       label = excluded.label,
+       unit = excluded.unit,
+       is_enabled = excluded.is_enabled,
+       display_order = excluded.display_order,
+       updated_at = datetime('now'),
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      config.id, config.key, config.label, config.unit,
+      config.is_enabled, config.display_order,
+      config.created_at, config.updated_at || new Date().toISOString(),
+      config.deleted_at || null, config.sync_status || 'pending', config.user_id || null,
+    ]
+  );
+}
+
+export async function getNutritionFoods(): Promise<LocalNutritionFood[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutritionFood>(
+    `SELECT * FROM nutrition_foods
+     WHERE deleted_at IS NULL
+     ORDER BY name ASC`
+  );
+}
+
+export async function upsertNutritionFood(food: LocalNutritionFood): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO nutrition_foods
+       (id, name, brand, serving_size, serving_unit, nutrients_json, note, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       brand = excluded.brand,
+       serving_size = excluded.serving_size,
+       serving_unit = excluded.serving_unit,
+       nutrients_json = excluded.nutrients_json,
+       note = excluded.note,
+       updated_at = datetime('now'),
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      food.id, food.name, food.brand || null,
+      food.serving_size, food.serving_unit,
+      food.nutrients_json, food.note || null,
+      food.created_at, food.updated_at || new Date().toISOString(),
+      food.deleted_at || null, food.sync_status || 'pending', food.user_id || null,
+    ]
+  );
+}
+
+export async function softDeleteNutritionFood(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_foods
+     SET deleted_at = datetime('now'), updated_at = datetime('now'), sync_status = 'pending'
+     WHERE id = ? AND deleted_at IS NULL`,
+    [id]
+  );
+}
+
+export async function getNutritionLogsForDate(dateStr: string): Promise<LocalNutritionLog[]> {
+  const database = await getDatabase();
+  const start = `${dateStr} 00:00:00`;
+  const end = `${dateStr} 23:59:59`;
+  return database.getAllAsync<LocalNutritionLog>(
+    `SELECT * FROM nutrition_logs
+     WHERE deleted_at IS NULL
+       AND logged_at >= ? AND logged_at <= ?
+     ORDER BY logged_at ASC`,
+    [start, end]
+  );
+}
+
+export async function insertNutritionLog(data: {
+  id: string;
+  food_id: string | null;
+  food_name: string;
+  quantity: number;
+  nutrients_json: string;
+  meal_type: string;
+  note: string | null;
+  logged_at: string;
+}): Promise<void> {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  await database.runAsync(
+    `INSERT INTO nutrition_logs
+       (id, food_id, food_name, quantity, nutrients_json, meal_type, note, logged_at, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', NULL)`,
+    [
+      data.id, data.food_id || null, data.food_name,
+      data.quantity, data.nutrients_json, data.meal_type,
+      data.note || null, data.logged_at, now, now,
+    ]
+  );
+}
+
+export async function softDeleteNutritionLog(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_logs
+     SET deleted_at = datetime('now'), updated_at = datetime('now'), sync_status = 'pending'
+     WHERE id = ? AND deleted_at IS NULL`,
+    [id]
+  );
+}
+
+export async function getNutritionGoals(): Promise<LocalNutritionGoal[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalNutritionGoal>(
+    `SELECT * FROM nutrition_goals WHERE deleted_at IS NULL ORDER BY created_at ASC`
+  );
+}
+
+export async function upsertNutritionGoal(goal: LocalNutritionGoal): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO nutrition_goals
+       (id, nutrient_key, target_value, unit, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       nutrient_key = excluded.nutrient_key,
+       target_value = excluded.target_value,
+       unit = excluded.unit,
+       updated_at = datetime('now'),
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      goal.id, goal.nutrient_key, goal.target_value, goal.unit,
+      goal.created_at, goal.updated_at || new Date().toISOString(),
+      goal.deleted_at || null, goal.sync_status || 'pending', goal.user_id || null,
+    ]
+  );
+}
+
+export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE nutrition_goals
+     SET deleted_at = datetime('now'), updated_at = datetime('now'), sync_status = 'pending'
+     WHERE nutrient_key = ? AND deleted_at IS NULL`,
+    [nutrientKey]
+  );
 }
 
 export async function saveImageUriToMuscleGroup(id: string, imageUri: string) {

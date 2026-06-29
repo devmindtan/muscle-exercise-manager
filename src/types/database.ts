@@ -330,3 +330,60 @@ export type CardioLog = {
   sync_status: 'pending' | 'synced' | 'failed';
   user_id: string | null;
 };
+
+export type NutrientConfig = {
+  id: string;
+  key: string;
+  label: string;
+  unit: string;
+  is_enabled: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type NutritionFood = {
+  id: string;
+  name: string;
+  brand: string | null;
+  serving_size: number;
+  serving_unit: string;
+  nutrients_json: Record<string, number>;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type NutritionLog = {
+  id: string;
+  food_id: string | null;
+  food_name: string;
+  quantity: number;
+  nutrients_json: Record<string, number>;
+  meal_type: 'morning' | 'noon' | 'evening' | 'snack';
+  note: string | null;
+  logged_at: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type NutritionGoal = {
+  id: string;
+  nutrient_key: string;
+  target_value: number;
+  unit: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};

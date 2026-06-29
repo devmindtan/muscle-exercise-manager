@@ -1565,3 +1565,375 @@ export async function softDeleteCardioLog(id: string): Promise<void> {
 
   await LocalDB.softDeleteCardioLog(id);
 }
+
+// ─────────────────────────────────────────────────────────────────
+// NUTRITION
+// ─────────────────────────────────────────────────────────────────
+
+export interface NutrientConfigItem {
+  id: string;
+  key: string;
+  label: string;
+  unit: string;
+  is_enabled: boolean;
+  display_order: number;
+}
+
+export interface NutritionFoodItem {
+  id: string;
+  name: string;
+  brand: string | null;
+  serving_size: number;
+  serving_unit: string;
+  nutrients_json: Record<string, number>;
+  note: string | null;
+}
+
+export interface NutritionLogItem {
+  id: string;
+  food_id: string | null;
+  food_name: string;
+  quantity: number;
+  nutrients_json: Record<string, number>;
+  meal_type: 'morning' | 'noon' | 'evening' | 'snack';
+  note: string | null;
+  logged_at: string;
+}
+
+export interface NutritionGoalItem {
+  id: string;
+  nutrient_key: string;
+  target_value: number;
+  unit: string;
+}
+
+const DEFAULT_NUTRIENT_CONFIGS: Omit<NutrientConfigItem, 'id'>[] = [
+  { key: 'calories', label: 'Calo', unit: 'kcal', is_enabled: true, display_order: 0 },
+  { key: 'protein', label: 'Đạm', unit: 'g', is_enabled: true, display_order: 1 },
+  { key: 'carb', label: 'Tinh bột', unit: 'g', is_enabled: true, display_order: 2 },
+  { key: 'fat', label: 'Chất béo', unit: 'g', is_enabled: true, display_order: 3 },
+  { key: 'fiber', label: 'Chất xơ', unit: 'g', is_enabled: true, display_order: 4 },
+  { key: 'sugar', label: 'Đường', unit: 'g', is_enabled: false, display_order: 5 },
+  { key: 'sodium', label: 'Natri', unit: 'mg', is_enabled: false, display_order: 6 },
+  { key: 'saturated_fat', label: 'Béo bão hòa', unit: 'g', is_enabled: false, display_order: 7 },
+  { key: 'cholesterol', label: 'Cholesterol', unit: 'mg', is_enabled: false, display_order: 8 },
+];
+
+export async function getNutrientConfigs(): Promise<NutrientConfigItem[]> {
+  if (Platform.OS === 'web') {
+    try {
+      const userId = await getWebUserIdOrThrow();
+      const { data, error } = await (supabase as any)
+        .from('nutrition_nutrient_configs')
+        .select('*')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('display_order', { ascending: true });
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        await seedDefaultNutrientConfigs();
+        return getNutrientConfigs();
+      }
+      return (data as any[]).map((r) => ({
+        id: r.id, key: r.key, label: r.label, unit: r.unit,
+        is_enabled: r.is_enabled, display_order: r.display_order,
+      }));
+    } catch (err: any) {
+      if (String(err?.message || '').includes('relation')) {
+        throw new Error('Bảng nutrition chưa tạo. Hãy chạy migration SQL rồi thử lại.');
+      }
+      throw err;
+    }
+  }
+
+  const rows = await LocalDB.getNutrientConfigs();
+  if (rows.length === 0) {
+    await seedDefaultNutrientConfigs();
+    return getNutrientConfigs();
+  }
+  return rows.map((r) => ({
+    id: r.id, key: r.key, label: r.label, unit: r.unit,
+    is_enabled: r.is_enabled === 1, display_order: r.display_order,
+  }));
+}
+
+async function seedDefaultNutrientConfigs(): Promise<void> {
+  const now = new Date().toISOString();
+  for (const cfg of DEFAULT_NUTRIENT_CONFIGS) {
+    const id = generateUUID();
+    if (Platform.OS === 'web') {
+      try {
+        const userId = await getWebUserIdOrThrow();
+        await (supabase as any).from('nutrition_nutrient_configs').insert({
+          id, user_id: userId, ...cfg, is_enabled: cfg.is_enabled,
+          created_at: now, updated_at: now, deleted_at: null,
+        } as any);
+      } catch {}
+    } else {
+      await LocalDB.upsertNutrientConfig({
+        id, key: cfg.key, label: cfg.label, unit: cfg.unit,
+        is_enabled: cfg.is_enabled ? 1 : 0, display_order: cfg.display_order,
+        created_at: now, updated_at: now, deleted_at: null,
+        sync_status: 'pending', user_id: null,
+      });
+    }
+  }
+}
+
+export async function saveNutrientConfig(config: NutrientConfigItem): Promise<void> {
+  const now = new Date().toISOString();
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    await (supabase as any).from('nutrition_nutrient_configs').upsert({
+      id: config.id, user_id: userId, key: config.key, label: config.label,
+      unit: config.unit, is_enabled: config.is_enabled,
+      display_order: config.display_order, updated_at: now,
+    } as any);
+    return;
+  }
+  await LocalDB.upsertNutrientConfig({
+    id: config.id, key: config.key, label: config.label, unit: config.unit,
+    is_enabled: config.is_enabled ? 1 : 0, display_order: config.display_order,
+    created_at: now, updated_at: now, deleted_at: null,
+    sync_status: 'pending', user_id: null,
+  });
+}
+
+export async function getNutritionFoods(): Promise<NutritionFoodItem[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await (supabase as any)
+      .from('nutrition_foods')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id, name: r.name, brand: r.brand,
+      serving_size: r.serving_size, serving_unit: r.serving_unit,
+      nutrients_json: r.nutrients_json || {}, note: r.note,
+    }));
+  }
+
+  const rows = await LocalDB.getNutritionFoods();
+  return rows.map((r) => ({
+    id: r.id, name: r.name, brand: r.brand,
+    serving_size: r.serving_size, serving_unit: r.serving_unit,
+    nutrients_json: (() => { try { return JSON.parse(r.nutrients_json); } catch { return {}; } })(),
+    note: r.note,
+  }));
+}
+
+export async function createNutritionFood(data: {
+  name: string;
+  brand?: string | null;
+  serving_size: number;
+  serving_unit: string;
+  nutrients_json: Record<string, number>;
+  note?: string | null;
+}): Promise<NutritionFoodItem> {
+  const id = generateUUID();
+  const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const row = {
+      id, user_id: userId, name: data.name, brand: data.brand || null,
+      serving_size: data.serving_size, serving_unit: data.serving_unit,
+      nutrients_json: data.nutrients_json, note: data.note || null,
+      created_at: now, updated_at: now, deleted_at: null,
+    };
+    const { error } = await (supabase as any).from('nutrition_foods').insert(row as any);
+    if (error) throw error;
+    return { id, name: data.name, brand: data.brand || null, serving_size: data.serving_size, serving_unit: data.serving_unit, nutrients_json: data.nutrients_json, note: data.note || null };
+  }
+
+  await LocalDB.upsertNutritionFood({
+    id, name: data.name, brand: data.brand || null,
+    serving_size: data.serving_size, serving_unit: data.serving_unit,
+    nutrients_json: JSON.stringify(data.nutrients_json), note: data.note || null,
+    created_at: now, updated_at: now, deleted_at: null,
+    sync_status: 'pending', user_id: null,
+  });
+  return { id, name: data.name, brand: data.brand || null, serving_size: data.serving_size, serving_unit: data.serving_unit, nutrients_json: data.nutrients_json, note: data.note || null };
+}
+
+export async function updateNutritionFood(id: string, data: Partial<{
+  name: string;
+  brand: string | null;
+  serving_size: number;
+  serving_unit: string;
+  nutrients_json: Record<string, number>;
+  note: string | null;
+}>): Promise<void> {
+  const now = new Date().toISOString();
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    await (supabase as any).from('nutrition_foods').update({ ...data, updated_at: now } as any)
+      .eq('id', id).eq('user_id', userId).is('deleted_at', null);
+    return;
+  }
+
+  const rows = await LocalDB.getNutritionFoods();
+  const existing = rows.find((r) => r.id === id);
+  if (!existing) return;
+  const merged = {
+    ...existing,
+    ...{
+      name: data.name ?? existing.name,
+      brand: data.brand !== undefined ? data.brand : existing.brand,
+      serving_size: data.serving_size ?? existing.serving_size,
+      serving_unit: data.serving_unit ?? existing.serving_unit,
+      nutrients_json: data.nutrients_json ? JSON.stringify(data.nutrients_json) : existing.nutrients_json,
+      note: data.note !== undefined ? data.note : existing.note,
+    },
+    updated_at: now,
+  };
+  await LocalDB.upsertNutritionFood(merged);
+}
+
+export async function deleteNutritionFood(id: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+    await (supabase as any).from('nutrition_foods')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id).eq('user_id', userId).is('deleted_at', null);
+    return;
+  }
+  await LocalDB.softDeleteNutritionFood(id);
+}
+
+export async function getNutritionLogsForDate(dateStr: string): Promise<NutritionLogItem[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await (supabase as any)
+      .from('nutrition_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .gte('logged_at', `${dateStr} 00:00:00`)
+      .lte('logged_at', `${dateStr} 23:59:59`)
+      .order('logged_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id, food_id: r.food_id, food_name: r.food_name,
+      quantity: r.quantity, nutrients_json: r.nutrients_json || {},
+      meal_type: r.meal_type, note: r.note, logged_at: r.logged_at,
+    }));
+  }
+
+  const rows = await LocalDB.getNutritionLogsForDate(dateStr);
+  return rows.map((r) => ({
+    id: r.id, food_id: r.food_id, food_name: r.food_name,
+    quantity: r.quantity,
+    nutrients_json: (() => { try { return JSON.parse(r.nutrients_json); } catch { return {}; } })(),
+    meal_type: r.meal_type as NutritionLogItem['meal_type'],
+    note: r.note, logged_at: r.logged_at,
+  }));
+}
+
+export async function createNutritionLog(data: {
+  food_id: string | null;
+  food_name: string;
+  quantity: number;
+  nutrients_json: Record<string, number>;
+  meal_type: 'morning' | 'noon' | 'evening' | 'snack';
+  note: string | null;
+  logged_at: string;
+}): Promise<void> {
+  const id = generateUUID();
+  const now = new Date().toISOString();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const row = {
+      id, user_id: userId, food_id: data.food_id, food_name: data.food_name,
+      quantity: data.quantity, nutrients_json: data.nutrients_json,
+      meal_type: data.meal_type, note: data.note,
+      logged_at: data.logged_at, created_at: now, updated_at: now, deleted_at: null,
+    };
+    const { error } = await (supabase as any).from('nutrition_logs').insert(row as any);
+    if (error) throw error;
+    return;
+  }
+
+  await LocalDB.insertNutritionLog({
+    id, food_id: data.food_id, food_name: data.food_name,
+    quantity: data.quantity, nutrients_json: JSON.stringify(data.nutrients_json),
+    meal_type: data.meal_type, note: data.note, logged_at: data.logged_at,
+  });
+}
+
+export async function deleteNutritionLog(id: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+    await (supabase as any).from('nutrition_logs')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('id', id).eq('user_id', userId).is('deleted_at', null);
+    return;
+  }
+  await LocalDB.softDeleteNutritionLog(id);
+}
+
+export async function getNutritionGoals(): Promise<NutritionGoalItem[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await (supabase as any)
+      .from('nutrition_goals')
+      .select('*')
+      .eq('user_id', userId)
+      .is('deleted_at', null);
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id, nutrient_key: r.nutrient_key,
+      target_value: r.target_value, unit: r.unit,
+    }));
+  }
+
+  const rows = await LocalDB.getNutritionGoals();
+  return rows.map((r) => ({
+    id: r.id, nutrient_key: r.nutrient_key,
+    target_value: r.target_value, unit: r.unit,
+  }));
+}
+
+export async function saveNutritionGoal(data: {
+  nutrient_key: string;
+  target_value: number;
+  unit: string;
+  existingId?: string;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const id = data.existingId || generateUUID();
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    await (supabase as any).from('nutrition_goals').upsert({
+      id, user_id: userId, nutrient_key: data.nutrient_key,
+      target_value: data.target_value, unit: data.unit,
+      updated_at: now, deleted_at: null,
+    } as any, { onConflict: 'id' });
+    return;
+  }
+
+  await LocalDB.upsertNutritionGoal({
+    id, nutrient_key: data.nutrient_key, target_value: data.target_value,
+    unit: data.unit, created_at: now, updated_at: now,
+    deleted_at: null, sync_status: 'pending', user_id: null,
+  });
+}
+
+export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const deletedAt = new Date().toISOString();
+    await (supabase as any).from('nutrition_goals')
+      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .eq('nutrient_key', nutrientKey).eq('user_id', userId).is('deleted_at', null);
+    return;
+  }
+  await LocalDB.deleteNutritionGoalByKey(nutrientKey);
+}
