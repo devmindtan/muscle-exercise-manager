@@ -158,8 +158,12 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     });
     setEditingFood(food);
     setFormError('');
-    const hasStoredCal = food.nutrients_json.calories != null;
-    setCalAutoMode(!hasStoredCal);
+    // Chỉ bật lại "Tự tính" nếu calo đã lưu khớp với công thức đạm/tinh bột/béo
+    // (tức calo này từng được tự tính, không phải nhập tay hoặc đọc từ nhãn sản phẩm)
+    const computedCal = computeAutoCalories(nutrients);
+    const storedCal = food.nutrients_json.calories;
+    const matchesAuto = computedCal !== null && storedCal != null && Math.abs(computedCal - storedCal) < 0.6;
+    setCalAutoMode(matchesAuto);
     const preHidden = new Set<string>(
       configs
         .filter((c) => c.is_enabled && food.nutrients_json[c.key] == null)
@@ -210,6 +214,10 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
     if (!form.name.trim()) { setFormError('Nhập tên thực phẩm'); return; }
     const servingSize = parseFloat(form.serving_size);
     if (isNaN(servingSize) || servingSize <= 0) { setFormError('Khẩu phần phải lớn hơn 0'); return; }
+    if (calAutoMode && autoCalories === null) {
+      setFormError('Chưa nhập đạm/tinh bột/béo nên không thể tự tính calo. Nhập ít nhất 1 chất hoặc chuyển sang "Tay" để nhập calo trực tiếp.');
+      return;
+    }
 
     const nutrients_json: Record<string, number> = {};
     // Nutrients from config fields (skip calories if auto mode, skip hidden fields)
@@ -325,14 +333,19 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                     {food.serving_size}{food.serving_unit} / khẩu phần
                   </Text>
                   <View style={styles.macroRow}>
+                    <View style={[styles.macroChip, !food.nutrients_json.calories && styles.macroChipWarn]}>
+                      <Text style={[styles.macroChipText, !food.nutrients_json.calories && styles.macroChipWarnText]}>
+                        {food.nutrients_json.calories ?? 0}{caloriesConfigForm.unit}
+                        {!food.nutrients_json.calories ? ' · chưa có dữ liệu' : ''}
+                      </Text>
+                    </View>
                     {enabledConfigs
-                      .filter((c) => c.key === 'calories' || food.nutrients_json[c.key] != null)
-                      .slice(0, 4)
+                      .filter((c) => c.key !== 'calories' && food.nutrients_json[c.key] != null)
+                      .slice(0, 3)
                       .map((c) => (
                       <View key={c.key} style={styles.macroChip}>
                         <Text style={styles.macroChipText}>
-                          {food.nutrients_json[c.key] ?? 0}{c.unit}
-                          {c.key !== 'calories' ? ` ${c.label.toLowerCase()}` : ''}
+                          {food.nutrients_json[c.key]}{c.unit} {c.label.toLowerCase()}
                         </Text>
                       </View>
                     ))}
@@ -431,12 +444,16 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.nutrientName}>Calo ({caloriesConfigForm.unit})</Text>
                   {calAutoMode && (
-                    <Text style={styles.calAutoHint}>đạm×4 + carb×4 + béo×9</Text>
+                    <Text style={[styles.calAutoHint, autoCalories === null && styles.calAutoHintWarn]}>
+                      {autoCalories === null
+                        ? 'Nhập đạm/tinh bột/béo để tự tính'
+                        : 'đạm×4 + carb×4 + béo×9'}
+                    </Text>
                   )}
                 </View>
                 <View style={styles.calRight}>
                   {calAutoMode ? (
-                    <Text style={styles.calAutoVal}>
+                    <Text style={[styles.calAutoVal, autoCalories === null && styles.calAutoValEmpty]}>
                       {autoCalories !== null ? autoCalories : '—'}
                     </Text>
                   ) : (
@@ -742,6 +759,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3,
   },
   macroChipText: { fontSize: 10, color: NUTRITION_ACCENT, fontWeight: '600' },
+  macroChipWarn: { backgroundColor: Colors.error + '18' },
+  macroChipWarnText: { color: Colors.error },
   foodActions: {
     flexDirection: 'column',
     alignItems: 'center',
@@ -810,8 +829,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   calAutoHint: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  calAutoHintWarn: { color: Colors.error },
   calRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   calAutoVal: { fontSize: 16, fontWeight: '800', color: NUTRITION_ACCENT },
+  calAutoValEmpty: { color: Colors.textMuted },
   calToggleBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
