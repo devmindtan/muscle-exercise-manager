@@ -23,7 +23,7 @@ function generateUUID(): string {
   return uuid;
 }
 
-type SyncStatus = 'syncing' | 'synced' | 'error' | 'idle';
+type SyncStatus = 'syncing' | 'synced' | 'error' | 'offline' | 'idle';
 
 interface SyncContextType {
   status: SyncStatus;
@@ -107,8 +107,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (offlineTestMode) {
-      setStatus('error');
-      setSyncError('offline');
+      setStatus('offline');
+      setSyncError(null);
       return;
     }
 
@@ -121,10 +121,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       const result = await syncData(deviceId);
 
       if (!result.success && result.errors.length > 0) {
-        setStatus('error');
         const firstError = result.errors[0];
-        const isNetworkError = isNetworkSyncError(firstError);
-        setSyncError(isNetworkError ? 'Không có internet' : firstError);
+        if (isNetworkSyncError(firstError)) {
+          // No network: record offline silently, no error shown to the user.
+          setStatus('offline');
+          setSyncError(null);
+        } else {
+          setStatus('error');
+          setSyncError(firstError);
+        }
       } else {
         setStatus('synced');
         setSyncError(null);
@@ -134,11 +139,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setLastSyncAt(syncTime);
       await AsyncStorage.setItem(LAST_SYNC_KEY, syncTime.toISOString());
     } catch (err: any) {
-      const isNetworkError = isNetworkSyncError(err?.message);
-      const errorMessage = isNetworkError ? 'Không có internet' : err.message || 'Sync failed';
-      setStatus('error');
-      setSyncError(errorMessage);
-      console.error('Sync error:', err);
+      if (isNetworkSyncError(err?.message)) {
+        // No network: record offline silently, no error shown to the user.
+        setStatus('offline');
+        setSyncError(null);
+      } else {
+        setStatus('error');
+        setSyncError(err.message || 'Sync failed');
+        console.error('Sync error:', err);
+      }
     } finally {
       isSyncingRef.current = false;
     }
@@ -149,8 +158,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(OFFLINE_TEST_MODE_KEY, enabled ? '1' : '0');
 
     if (enabled) {
-      setStatus('error');
-      setSyncError('offline');
+      setStatus('offline');
+      setSyncError(null);
       return;
     }
 

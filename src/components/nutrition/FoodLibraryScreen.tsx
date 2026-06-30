@@ -582,8 +582,9 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                   )}
                 </View>
 
-                {/* Config list */}
+                {/* Config list (Calo có ô riêng phía trên, không cho chọn lại ở đây) */}
                 {configs
+                  .filter((c) => c.key !== 'calories')
                   .filter((c) =>
                     !pickerSearch.trim() ||
                     c.label.toLowerCase().includes(pickerSearch.trim().toLowerCase())
@@ -618,6 +619,7 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
                 {/* No results */}
                 {pickerSearch.trim() &&
                   !configs.some((c) =>
+                    c.key !== 'calories' &&
                     c.label.toLowerCase().includes(pickerSearch.trim().toLowerCase())
                   ) && (
                   <View style={styles.pickerEmpty}>
