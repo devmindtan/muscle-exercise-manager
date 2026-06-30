@@ -176,10 +176,21 @@ export default function FoodLibraryScreen({ visible, onClose }: Props) {
   };
 
   const pickNutrientConfig = (cfg: NutrientConfigItem) => {
-    setForm((f) => ({
-      ...f,
-      extra: [...f.extra, { key: cfg.key, label: cfg.label, unit: cfg.unit, value: '', isCustom: false }],
-    }));
+    if (cfg.is_enabled) {
+      // Field này đã có sẵn trong form.nutrients (ô chính), chỉ đang bị ẩn —
+      // hiện lại thay vì tạo dòng "extra" trùng key, nếu không giá trị nhập vào
+      // sẽ không được tính vào công thức tự tính calo (chỉ đọc form.nutrients).
+      setHiddenNutrientKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(cfg.key);
+        return next;
+      });
+    } else {
+      setForm((f) => ({
+        ...f,
+        extra: [...f.extra, { key: cfg.key, label: cfg.label, unit: cfg.unit, value: '', isCustom: false }],
+      }));
+    }
     setShowNutrientPicker(false);
   };
 
