@@ -626,11 +626,16 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
     // ─── NUTRITION PULL ──────────────────────────────────────────────────────
 
     // Configs, goals, TDEE — always pull (small tables, cross-device)
+    // Guard: skip any row still 'pending' locally (edited but not yet pushed),
+    // otherwise this pull would clobber it with a stale remote copy and mark
+    // it 'synced' so it never gets pushed at all.
     try {
+      const stillPendingConfigs = new Set((await LocalDB.getPendingNutrientConfigs()).map((c) => c.id));
       const { data: remoteConfigs, error } = await (supabase as any)
         .from('nutrition_nutrient_configs').select('*').eq('user_id', userId);
       if (error) throw error;
       for (const r of (remoteConfigs ?? [])) {
+        if (stillPendingConfigs.has(r.id)) continue;
         await LocalDB.upsertNutrientConfig({
           ...r, is_enabled: r.is_enabled ? 1 : 0, sync_status: 'synced',
         });
@@ -640,10 +645,12 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
     }
 
     try {
+      const stillPendingGoals = new Set((await LocalDB.getPendingNutritionGoals()).map((g) => g.id));
       const { data: remoteGoals, error } = await (supabase as any)
         .from('nutrition_goals').select('*').eq('user_id', userId);
       if (error) throw error;
       for (const r of (remoteGoals ?? [])) {
+        if (stillPendingGoals.has(r.id)) continue;
         await LocalDB.upsertNutritionGoal({ ...r, sync_status: 'synced' });
       }
     } catch (e: any) {
@@ -663,10 +670,12 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
 
     // Foods & logs — always pull (user needs their library & history cross-device)
     try {
+      const stillPendingFoods = new Set((await LocalDB.getPendingNutritionFoods()).map((f) => f.id));
       const { data: remoteFoods, error } = await (supabase as any)
         .from('nutrition_foods').select('*').eq('user_id', userId);
       if (error) throw error;
       for (const r of (remoteFoods ?? [])) {
+        if (stillPendingFoods.has(r.id)) continue;
         await LocalDB.upsertNutritionFood({
           ...r,
           nutrients_json: typeof r.nutrients_json === 'string'
@@ -680,11 +689,13 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
     }
 
     try {
+      const stillPendingLogs = new Set((await LocalDB.getPendingNutritionLogs()).map((l) => l.id));
       const { data: remoteLogs, error } = await (supabase as any)
         .from('nutrition_logs').select('*').eq('user_id', userId)
         .order('logged_at', { ascending: false }).limit(500);
       if (error) throw error;
       for (const r of (remoteLogs ?? [])) {
+        if (stillPendingLogs.has(r.id)) continue;
         await LocalDB.upsertNutritionLog({
           ...r,
           nutrients_json: typeof r.nutrients_json === 'string'
