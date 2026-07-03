@@ -1650,10 +1650,24 @@ export async function getNutrientConfigs(): Promise<NutrientConfigItem[]> {
     await seedDefaultNutrientConfigs();
     return getNutrientConfigs();
   }
-  return rows.map((r) => ({
-    id: r.id, key: r.key, label: r.label, unit: r.unit,
-    is_enabled: r.is_enabled === 1, display_order: r.display_order,
-  }));
+  // Deduplicate by key: prefer synced rows, then earliest by display_order
+  const sorted = [...rows].sort((a, b) => {
+    if (a.sync_status === 'synced' && b.sync_status !== 'synced') return -1;
+    if (a.sync_status !== 'synced' && b.sync_status === 'synced') return 1;
+    return a.display_order - b.display_order;
+  });
+  const seenKeys = new Set<string>();
+  return sorted
+    .filter((r) => {
+      if (seenKeys.has(r.key)) return false;
+      seenKeys.add(r.key);
+      return true;
+    })
+    .sort((a, b) => a.display_order - b.display_order)
+    .map((r) => ({
+      id: r.id, key: r.key, label: r.label, unit: r.unit,
+      is_enabled: r.is_enabled === 1, display_order: r.display_order,
+    }));
 }
 
 async function seedDefaultNutrientConfigs(): Promise<void> {
@@ -1779,15 +1793,14 @@ export async function updateNutritionFood(id: string, data: Partial<{
   if (!existing) return;
   const merged = {
     ...existing,
-    ...{
-      name: data.name ?? existing.name,
-      brand: data.brand !== undefined ? data.brand : existing.brand,
-      serving_size: data.serving_size ?? existing.serving_size,
-      serving_unit: data.serving_unit ?? existing.serving_unit,
-      nutrients_json: data.nutrients_json ? JSON.stringify(data.nutrients_json) : existing.nutrients_json,
-      note: data.note !== undefined ? data.note : existing.note,
-    },
+    name: data.name ?? existing.name,
+    brand: data.brand !== undefined ? data.brand : existing.brand,
+    serving_size: data.serving_size ?? existing.serving_size,
+    serving_unit: data.serving_unit ?? existing.serving_unit,
+    nutrients_json: data.nutrients_json ? JSON.stringify(data.nutrients_json) : existing.nutrients_json,
+    note: data.note !== undefined ? data.note : existing.note,
     updated_at: now,
+    sync_status: 'pending',
   };
   await LocalDB.upsertNutritionFood(merged);
 }

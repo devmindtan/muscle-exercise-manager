@@ -639,6 +639,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         await LocalDB.upsertNutrientConfig({
           ...r, is_enabled: r.is_enabled ? 1 : 0, sync_status: 'synced',
         });
+        // Remove local duplicates with same key but different id (seeded on another device)
+        await LocalDB.deleteNutrientConfigDuplicates(r.key, r.id);
       }
     } catch (e: any) {
       errors.push(`Failed to pull nutrient configs: ${e.message}`);

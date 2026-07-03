@@ -1135,6 +1135,11 @@ export async function clearAllLocalData() {
     await database.runAsync('DELETE FROM workout_logs');
     await database.runAsync('DELETE FROM exercises');
     await database.runAsync('DELETE FROM muscle_groups');
+    await database.runAsync('DELETE FROM nutrition_logs');
+    await database.runAsync('DELETE FROM nutrition_foods');
+    await database.runAsync('DELETE FROM nutrition_goals');
+    await database.runAsync('DELETE FROM nutrition_nutrient_configs');
+    await database.runAsync('DELETE FROM nutrition_tdee_settings');
   } catch (err) {
     console.error('Error clearing local data:', err);
     throw err;
@@ -1406,6 +1411,14 @@ export async function upsertTdeeSettings(s: LocalTdeeSettings): Promise<void> {
 }
 
 // ── Nutrition sync helpers ────────────────────────────────────────────────────
+
+export async function deleteNutrientConfigDuplicates(key: string, keepId: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `DELETE FROM nutrition_nutrient_configs WHERE key = ? AND id != ?`,
+    [key, keepId]
+  );
+}
 
 export async function getPendingNutrientConfigs(): Promise<LocalNutrientConfig[]> {
   const database = await getDatabase();
