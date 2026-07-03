@@ -90,7 +90,7 @@ export default function TabLayout() {
         options={{
           title: 'Ghi lại',
           tabBarItemStyle: {
-            transform: [{ translateX: -8 }], // Số âm di chuyển sang trái, số dương sang phải
+            transform: [{ translateX: -8 }], 
           },
           tabBarIcon: ({ color, size }) => (
             <ClipboardList color={color} size={size} strokeWidth={1.8} />
