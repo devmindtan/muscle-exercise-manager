@@ -12,7 +12,7 @@ import {
   AppState,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Check, Plus, X } from 'lucide-react-native';
+import { Check, ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
@@ -263,6 +263,11 @@ export default function WeeklyPlanScreen() {
   );
 
   // ── Derived data ──
+
+  const activePlanName = useMemo(
+    () => workoutPlans.find((p) => p.id === activePlanId)?.name ?? 'Kế hoạch tuần',
+    [workoutPlans, activePlanId],
+  );
 
   const muscleNameById = useMemo(() =>
     groups.reduce<Record<string, string>>((acc, g) => { acc[g.id] = g.name; return acc; }, {}),
@@ -632,41 +637,20 @@ export default function WeeklyPlanScreen() {
       >
         {/* ── Header ── */}
         <View style={[styles.header, { paddingTop: 12 }]}>
-          <View>
-            <Text style={styles.title}>Kế hoạch tuần</Text>
-            <Text style={styles.subtitle}>Chỉ để theo dõi. Bạn vẫn tập linh hoạt theo thực tế.</Text>
+          <View style={styles.headerTitleWrap}>
+            <TouchableOpacity style={styles.planSelector} onPress={openPlanManager} activeOpacity={0.7}>
+              <Text style={styles.title} numberOfLines={1}>{activePlanName}</Text>
+              <ChevronDown color={Colors.textMuted} size={20} strokeWidth={2.2} />
+            </TouchableOpacity>
+            <Text style={styles.subtitle}>
+              Chỉ để theo dõi. Bạn vẫn tập linh hoạt theo thực tế.
+              {workoutPlans.length > 1 ? ` · ${workoutPlans.length} kế hoạch` : ''}
+            </Text>
           </View>
           <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
             <Plus color={Colors.bg} size={18} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
-
-        {/* ── Workout plan switcher ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.planStrip}
-        >
-          {workoutPlans.map((plan) => {
-            const isActive = plan.id === activePlanId;
-            return (
-              <TouchableOpacity
-                key={plan.id}
-                style={[styles.planChip, isActive && styles.planChipActive]}
-                onPress={() => switchWorkoutPlan(plan.id)}
-                disabled={planActionBusy}
-              >
-                {isActive && <Check color={Colors.bg} size={12} strokeWidth={3} />}
-                <Text style={[styles.planChipText, isActive && styles.planChipTextActive]} numberOfLines={1}>
-                  {plan.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-          <TouchableOpacity style={styles.planManageBtn} onPress={openPlanManager}>
-            <Text style={styles.planManageBtnText}>Quản lý kế hoạch</Text>
-          </TouchableOpacity>
-        </ScrollView>
 
         {/* ── Summary stats ── */}
         <View style={styles.statsRow}>
@@ -1031,37 +1015,52 @@ export default function WeeklyPlanScreen() {
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Quản lý kế hoạch</Text>
+            <Text style={styles.sheetTitle}>Chọn kế hoạch</Text>
             <TouchableOpacity onPress={() => setShowPlanManager(false)}>
               <X color={Colors.textSecondary} size={20} />
             </TouchableOpacity>
           </View>
 
           <ScrollView style={{ maxHeight: 280 }}>
-            {workoutPlans.map((plan) => (
-              <View key={plan.id} style={styles.planManageRow}>
-                <View style={styles.planManageInfo}>
-                  {plan.id === activePlanId && (
-                    <View style={styles.planManageActiveBadge}>
-                      <Text style={styles.planManageActiveBadgeText}>Đang dùng</Text>
+            {workoutPlans.map((plan) => {
+              const isActive = plan.id === activePlanId;
+              return (
+                <TouchableOpacity
+                  key={plan.id}
+                  style={styles.planManageRow}
+                  activeOpacity={0.7}
+                  disabled={planActionBusy}
+                  onPress={async () => {
+                    await switchWorkoutPlan(plan.id);
+                    setShowPlanManager(false);
+                  }}
+                >
+                  <View style={styles.planManageInfo}>
+                    <View style={[styles.planManageCheck, isActive && styles.planManageCheckActive]}>
+                      {isActive && <Check color={Colors.bg} size={12} strokeWidth={3} />}
                     </View>
-                  )}
-                  <Text style={styles.planManageName} numberOfLines={1}>{plan.name}</Text>
-                </View>
-                <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.actionEdit} onPress={() => startRenamePlan(plan)}>
-                    <Text style={styles.actionEditText}>Đổi tên</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionDelete, workoutPlans.length <= 1 && styles.saveBtnDisabled]}
-                    onPress={() => removePlan(plan.id)}
-                    disabled={workoutPlans.length <= 1}
-                  >
-                    <Text style={styles.actionDeleteText}>Xoá</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
+                    <Text style={[styles.planManageName, isActive && styles.planManageNameActive]} numberOfLines={1}>
+                      {plan.name}
+                    </Text>
+                  </View>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={styles.planManageIconBtn}
+                      onPress={(e) => { e.stopPropagation(); startRenamePlan(plan); }}
+                    >
+                      <Pencil color={Colors.textSecondary} size={14} strokeWidth={2} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.planManageIconBtn, workoutPlans.length <= 1 && styles.saveBtnDisabled]}
+                      onPress={(e) => { e.stopPropagation(); removePlan(plan.id); }}
+                      disabled={workoutPlans.length <= 1}
+                    >
+                      <Trash2 color={Colors.error} size={14} strokeWidth={2} />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <Text style={styles.inputLabel}>
@@ -1115,38 +1114,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 16,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
   },
-  title: { fontSize: 28, fontWeight: '700', color: Colors.text, letterSpacing: -0.5 },
-  subtitle: { marginTop: 4, fontSize: 12, color: Colors.textMuted, lineHeight: 18, maxWidth: 260 },
+  headerTitleWrap: { flex: 1, minWidth: 0 },
+  planSelector: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  title: { fontSize: 28, fontWeight: '700', color: Colors.text, letterSpacing: -0.5, flexShrink: 1 },
+  subtitle: { marginTop: 4, fontSize: 12, color: Colors.textMuted, lineHeight: 18 },
   addBtn: {
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
   },
 
-  planStrip: { paddingHorizontal: 20, paddingBottom: 14, gap: 8, alignItems: 'center' },
-  planChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
-    maxWidth: 160,
-  },
-  planChipActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  planChipText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
-  planChipTextActive: { color: Colors.bg, fontWeight: '700' },
-  planManageBtn: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
-    borderWidth: 1, borderColor: Colors.accent + '55', backgroundColor: Colors.accent + '10',
-  },
-  planManageBtnText: { fontSize: 12, fontWeight: '600', color: Colors.accent },
   planManageRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: 8,
   },
-  planManageInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
-  planManageActiveBadge: {
-    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: Colors.accent + '20',
+  planManageInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
+  planManageCheck: {
+    width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg,
   },
-  planManageActiveBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.accent },
-  planManageName: { fontSize: 14, fontWeight: '600', color: Colors.text, flexShrink: 1 },
+  planManageCheckActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  planManageName: { fontSize: 14, fontWeight: '500', color: Colors.text, flexShrink: 1 },
+  planManageNameActive: { fontWeight: '700', color: Colors.accent },
+  planManageIconBtn: {
+    width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center',
+  },
   planManageActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
   planManageCancelBtn: { backgroundColor: Colors.surfaceElevated, paddingHorizontal: 18 },
   planManageCancelBtnText: { color: Colors.textSecondary, fontWeight: '700', fontSize: 14 },

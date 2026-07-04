@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { UserPlus, Check, X, UserMinus } from 'lucide-react-native';
+import { UserPlus, Check, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   FriendshipItem,
   getMyFriendships,
   getProfileByUserId,
+  getUserTag,
   PublicProfile,
   removeFriendship,
   respondToFriendRequest,
 } from '@/src/services/socialService';
+import { ProfileDetailModal, ProfileRelation } from './ProfileDetailModal';
+import { AvatarCircle } from './AvatarCircle';
 
 type FriendRow = FriendshipItem & { otherProfile: PublicProfile | null; otherUserId: string };
 
@@ -21,6 +24,7 @@ export function FriendsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [selectedRow, setSelectedRow] = useState<FriendRow | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -59,14 +63,20 @@ export function FriendsTab() {
     await respondToFriendRequest(id, 'declined');
     await load();
   };
-  const unfriend = async (id: string) => {
-    await removeFriendship(id);
+  const unfriend = async (targetUserId: string) => {
+    const row = rows.find((r) => r.otherUserId === targetUserId);
+    if (!row) return;
+    await removeFriendship(row.id);
+    setSelectedRow(null);
     await load();
   };
 
   const incoming = rows.filter((r) => r.status === 'pending' && r.requesterId !== user?.id);
   const outgoing = rows.filter((r) => r.status === 'pending' && r.requesterId === user?.id);
   const accepted = rows.filter((r) => r.status === 'accepted');
+
+  const relationForRow = (r: FriendRow): ProfileRelation =>
+    r.status === 'accepted' ? 'friend' : 'pending';
 
   if (loading) {
     return (
@@ -87,19 +97,34 @@ export function FriendsTab() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lời mời kết bạn ({incoming.length})</Text>
           {incoming.map((r) => (
-            <View key={r.id} style={styles.row}>
+            <TouchableOpacity
+              key={r.id}
+              style={styles.row}
+              activeOpacity={0.7}
+              onPress={() => setSelectedRow(r)}
+            >
+              <AvatarCircle uri={r.otherProfile?.avatarUrl} />
               <View style={styles.rowInfo}>
-                <Text style={styles.rowName}>{r.otherProfile?.displayName || 'Người dùng'}</Text>
+                <Text style={styles.rowName}>
+                  {r.otherProfile?.displayName || 'Người dùng'}
+                  <Text style={styles.rowTag}> #{getUserTag(r.otherUserId)}</Text>
+                </Text>
               </View>
               <View style={styles.rowActions}>
-                <TouchableOpacity style={styles.acceptBtn} onPress={() => accept(r.id)}>
+                <TouchableOpacity
+                  style={styles.acceptBtn}
+                  onPress={(e) => { e.stopPropagation(); accept(r.id); }}
+                >
                   <Check color={Colors.bg} size={14} strokeWidth={2.5} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.declineBtn} onPress={() => decline(r.id)}>
+                <TouchableOpacity
+                  style={styles.declineBtn}
+                  onPress={(e) => { e.stopPropagation(); decline(r.id); }}
+                >
                   <X color={Colors.error} size={14} strokeWidth={2.5} />
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -110,17 +135,23 @@ export function FriendsTab() {
           <Text style={styles.mutedText}>Chưa có bạn bè nào. Dùng tab &quot;Khám phá&quot; để tìm và kết bạn.</Text>
         ) : (
           accepted.map((r) => (
-            <View key={r.id} style={styles.row}>
+            <TouchableOpacity
+              key={r.id}
+              style={styles.row}
+              activeOpacity={0.7}
+              onPress={() => setSelectedRow(r)}
+            >
+              <AvatarCircle uri={r.otherProfile?.avatarUrl} />
               <View style={styles.rowInfo}>
-                <Text style={styles.rowName}>{r.otherProfile?.displayName || 'Người dùng'}</Text>
+                <Text style={styles.rowName}>
+                  {r.otherProfile?.displayName || 'Người dùng'}
+                  <Text style={styles.rowTag}> #{getUserTag(r.otherUserId)}</Text>
+                </Text>
                 {r.otherProfile?.bio ? (
                   <Text style={styles.rowBio} numberOfLines={1}>{r.otherProfile.bio}</Text>
                 ) : null}
               </View>
-              <TouchableOpacity style={styles.unfriendBtn} onPress={() => unfriend(r.id)}>
-                <UserMinus color={Colors.textMuted} size={14} strokeWidth={2} />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </View>
@@ -129,16 +160,33 @@ export function FriendsTab() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Đã gửi lời mời ({outgoing.length})</Text>
           {outgoing.map((r) => (
-            <View key={r.id} style={styles.row}>
+            <TouchableOpacity
+              key={r.id}
+              style={styles.row}
+              activeOpacity={0.7}
+              onPress={() => setSelectedRow(r)}
+            >
+              <AvatarCircle uri={r.otherProfile?.avatarUrl} />
               <View style={styles.rowInfo}>
-                <Text style={styles.rowName}>{r.otherProfile?.displayName || 'Người dùng'}</Text>
+                <Text style={styles.rowName}>
+                  {r.otherProfile?.displayName || 'Người dùng'}
+                  <Text style={styles.rowTag}> #{getUserTag(r.otherUserId)}</Text>
+                </Text>
                 <Text style={styles.rowBio}>Đang chờ chấp nhận</Text>
               </View>
               <UserPlus color={Colors.textMuted} size={14} strokeWidth={2} />
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       )}
+
+      <ProfileDetailModal
+        visible={!!selectedRow}
+        profile={selectedRow?.otherProfile ?? null}
+        relation={selectedRow ? relationForRow(selectedRow) : 'none'}
+        onClose={() => setSelectedRow(null)}
+        onUnfriend={unfriend}
+      />
     </ScrollView>
   );
 }
@@ -160,6 +208,7 @@ const styles = StyleSheet.create({
   },
   rowInfo: { flex: 1, minWidth: 0 },
   rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  rowTag: { fontSize: 11, fontWeight: '500', color: Colors.textMuted, fontFamily: 'monospace' },
   rowBio: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
   rowActions: { flexDirection: 'row', gap: 8 },
   acceptBtn: {
@@ -169,11 +218,6 @@ const styles = StyleSheet.create({
   declineBtn: {
     width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.error + '15',
     borderWidth: 1, borderColor: Colors.error + '40',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  unfriendBtn: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.bg,
-    borderWidth: 1, borderColor: Colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
 });

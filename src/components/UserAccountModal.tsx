@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,13 +9,16 @@ import {
   ScrollView,
   Platform,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, LogOut, User as UserIcon, Mail, Hash, Shield, Lock } from 'lucide-react-native';
+import { X, LogOut, User as UserIcon, Lock, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import { useSync } from '@/src/context/SyncContext';
 import { getMyProfile, saveProfile } from '@/src/lib/repository';
+import { ActivityHeatmap } from '@/src/components/community-tabs/ActivityHeatmap';
+import { getMyActivityCalendar, FriendActivityDay } from '@/src/services/socialService';
 
 export function UserAccountModal() {
   const { user, signOut } = useAuth();
@@ -27,10 +30,14 @@ export function UserAccountModal() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileDirty, setProfileDirty] = useState(false);
+  const [activity, setActivity] = useState<FriendActivityDay[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [showAccountInfo, setShowAccountInfo] = useState(false);
 
   useEffect(() => {
     if (!visible || !user) return;
     let cancelled = false;
+
     setProfileLoading(true);
     getMyProfile()
       .then((profile) => {
@@ -45,6 +52,13 @@ export function UserAccountModal() {
       .finally(() => {
         if (!cancelled) setProfileLoading(false);
       });
+
+    setActivityLoading(true);
+    getMyActivityCalendar()
+      .then((data) => { if (!cancelled) setActivity(data); })
+      .catch(() => { if (!cancelled) setActivity([]); })
+      .finally(() => { if (!cancelled) setActivityLoading(false); });
+
     return () => { cancelled = true; };
   }, [visible, user]);
 
@@ -75,7 +89,9 @@ export function UserAccountModal() {
     setProfileSaving(true);
     try {
       await saveProfile({
-        displayName: displayNameDraft.trim() || null,
+        // Never persist an empty display name — a nameless profile is a dead
+        // end for friend search/discovery, so fall back to the Google name.
+        displayName: displayNameDraft.trim() || userName,
         bio: bioDraft.trim() || null,
         isPrivate,
       });
@@ -86,32 +102,6 @@ export function UserAccountModal() {
       setProfileSaving(false);
     }
   };
-
-  const InfoRow = ({
-    icon,
-    label,
-    value,
-    isCode = false,
-  }: {
-    icon: React.ReactNode;
-    label: string;
-    value: string;
-    isCode?: boolean;
-  }) => (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIconWrap}>{icon}</View>
-      <View style={styles.infoTextWrap}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text
-          style={isCode ? styles.infoValueCode : styles.infoValue}
-          numberOfLines={isCode ? 1 : undefined}
-          ellipsizeMode={isCode ? 'middle' : undefined}
-        >
-          {value}
-        </Text>
-      </View>
-    </View>
-  );
 
   return (
     <>
@@ -171,41 +161,6 @@ export function UserAccountModal() {
                 <Text style={styles.displayEmail}>{userEmail}</Text>
               </View>
 
-              {/* Info Card */}
-              <View style={styles.infoCard}>
-                <InfoRow
-                  icon={<UserIcon color={Colors.accent} size={16} strokeWidth={1.8} />}
-                  label="Tên"
-                  value={userName}
-                />
-                <View style={styles.divider} />
-                <InfoRow
-                  icon={<Mail color={Colors.accent} size={16} strokeWidth={1.8} />}
-                  label="Email"
-                  value={userEmail}
-                />
-                <View style={styles.divider} />
-                <InfoRow
-                  icon={<Hash color={Colors.accent} size={16} strokeWidth={1.8} />}
-                  label="User ID"
-                  value={userId}
-                  isCode
-                />
-                <View style={styles.divider} />
-                <InfoRow
-                  icon={<Shield color={Colors.accent} size={16} strokeWidth={1.8} />}
-                  label="Nhà cung cấp"
-                  value={provider.charAt(0).toUpperCase() + provider.slice(1)}
-                />
-              </View>
-
-              {/* Notice */}
-              <View style={styles.noticeBox}>
-                <Text style={styles.noticeText}>
-                  Thông tin tài khoản được cung cấp bởi Google. Dữ liệu tập thể dục của bạn được lưu trữ an toàn và tách riêng theo UUID.
-                </Text>
-              </View>
-
               {/* Public profile — editable */}
               <View style={styles.sectionCard}>
                 <Text style={styles.sectionTitle}>Hồ sơ công khai</Text>
@@ -261,6 +216,55 @@ export function UserAccountModal() {
                 </TouchableOpacity>
               </View>
 
+              {/* Activity heatmap — same visual as viewing a friend's profile */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>Quá trình tập luyện</Text>
+                {activityLoading ? (
+                  <ActivityIndicator color={Colors.accent} style={{ paddingVertical: 12 }} />
+                ) : (
+                  <ActivityHeatmap days={activity ?? []} />
+                )}
+              </View>
+
+              {/* Account info — collapsible, read-only, de-emphasized */}
+              <View style={styles.sectionCard}>
+                <TouchableOpacity
+                  style={styles.collapsibleHeader}
+                  onPress={() => setShowAccountInfo((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.sectionTitle}>Thông tin tài khoản</Text>
+                  {showAccountInfo ? (
+                    <ChevronUp color={Colors.textMuted} size={16} strokeWidth={2} />
+                  ) : (
+                    <ChevronDown color={Colors.textMuted} size={16} strokeWidth={2} />
+                  )}
+                </TouchableOpacity>
+
+                {showAccountInfo && (
+                  <>
+                    <View style={styles.compactList}>
+                      <View style={styles.compactRow}>
+                        <Text style={styles.compactLabel}>Email</Text>
+                        <Text style={styles.compactValue} numberOfLines={1}>{userEmail}</Text>
+                      </View>
+                      <View style={[styles.compactRow, styles.compactRowBorder]}>
+                        <Text style={styles.compactLabel}>User ID</Text>
+                        <Text style={styles.compactValueCode} numberOfLines={1} ellipsizeMode="middle">{userId}</Text>
+                      </View>
+                      <View style={[styles.compactRow, styles.compactRowBorder]}>
+                        <Text style={styles.compactLabel}>Nhà cung cấp</Text>
+                        <Text style={styles.compactValue}>{provider.charAt(0).toUpperCase() + provider.slice(1)}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.noticeText}>
+                      Thông tin tài khoản được cung cấp bởi Google. Dữ liệu tập luyện của bạn được lưu trữ an toàn và tách riêng theo tài khoản.
+                    </Text>
+                  </>
+                )}
+              </View>
+
+              {/* Settings */}
               <View style={styles.toggleCard}>
                 <Text style={styles.toggleTitle}>Mô phỏng offline</Text>
                 <Switch
@@ -314,7 +318,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     // KEY FIX: use maxHeight instead of relying on ScrollView flex
-    maxHeight: '85%',
+    maxHeight: '88%',
   },
 
   // Drag handle
@@ -358,7 +362,7 @@ const styles = StyleSheet.create({
   // Avatar
   avatarSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
   avatarRing: {
     width: 90,
@@ -392,73 +396,63 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
 
-  // Info card
-  infoCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    gap: 14,
-  },
-  infoIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: `${Colors.accent}18`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   infoTextWrap: {
     flex: 1,
   },
-  infoLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+
+  // Compact key/value rows (account info section)
+  compactList: {
+    marginTop: 10,
   },
-  infoValue: {
-    fontSize: 14,
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  compactRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  compactLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  compactValue: {
+    fontSize: 13,
     fontWeight: '500',
     color: Colors.text,
+    flexShrink: 1,
+    textAlign: 'right',
   },
-  infoValueCode: {
+  compactValueCode: {
     fontSize: 12,
     fontWeight: '400',
-    color: Colors.accent,
+    color: Colors.textSecondary,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: Colors.bg,
-    marginLeft: 46,
+    flexShrink: 1,
+    textAlign: 'right',
   },
 
-  // Notice
-  noticeBox: {
-    backgroundColor: Colors.surface,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 20,
-  },
   noticeText: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 16,
     color: Colors.textMuted,
+    marginTop: 10,
+  },
+
+  collapsibleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 
   sectionCard: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 13,

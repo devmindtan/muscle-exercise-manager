@@ -70,7 +70,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="nutrition"
         options={{
-          title: 'Dinh dưỡng',
+          title: 'Sức khỏe',
           tabBarIcon: ({ color, size }) => (
             <UtensilsCrossed color={color} size={size} strokeWidth={1.8} />
           ),

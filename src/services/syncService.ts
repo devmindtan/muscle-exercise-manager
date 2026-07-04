@@ -54,6 +54,48 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
 
     const userId = user.id;
 
+    // Every signed-in user needs a discoverable `profiles` row for the
+    // Cộng đồng tab — auto-provision it here (seeded from Google name) so
+    // people show up in "Khám phá" without first having to open account
+    // settings and manually hit "Lưu hồ sơ".
+    try {
+      const { data: existingProfile, error: profileLookupError } = await (supabase as any)
+        .from('profiles')
+        .select('id, display_name')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (profileLookupError) throw profileLookupError;
+
+      const fallbackName =
+        user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Người dùng';
+
+      if (!existingProfile) {
+        const now = new Date().toISOString();
+        const { error: profileInsertError } = await (supabase as any).from('profiles').insert({
+          id: `${userId}`,
+          user_id: userId,
+          display_name: fallbackName,
+          avatar_url: user.user_metadata?.picture ?? null,
+          bio: null,
+          is_private: false,
+          created_at: now,
+          updated_at: now,
+        });
+        if (profileInsertError) throw profileInsertError;
+      } else if (!existingProfile.display_name || !existingProfile.display_name.trim()) {
+        // Repair older/blanked-out rows so no profile is ever nameless in
+        // friend search/discovery.
+        const { error: profileRepairError } = await (supabase as any)
+          .from('profiles')
+          .update({ display_name: fallbackName, updated_at: new Date().toISOString() })
+          .eq('id', existingProfile.id);
+        if (profileRepairError) throw profileRepairError;
+      }
+    } catch (e: any) {
+      errors.push(`Failed to auto-provision profile: ${e.message}`);
+    }
+
     const lastSyncStored = await AsyncStorage.getItem(LAST_SYNC_KEY);
     // FIX: shouldHydrateFromRemote chỉ dùng để quyết định pull toàn bộ
     // history (measurements, logs cũ) hay chỉ pull incremental.
@@ -705,16 +747,39 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     }
 
-    // Friendships (both directions — I may be requester or addressee)
+    // Friendships (both directions — I may be requester or addressee).
+    // Can't use upsert() here: the "friendships" RLS INSERT policy only
+    // allows the requester to create a row, but the addressee also needs to
+    // push status changes (accept/decline) for a row someone else created.
+    // Postgres checks the INSERT policy's WITH CHECK on the proposed row
+    // before it even gets to fall back to ON CONFLICT DO UPDATE, so an
+    // addressee-initiated upsert() is rejected outright. Try UPDATE first
+    // (allowed for either participant); only INSERT when truly new (i.e.
+    // the update matched no row), which only ever happens when this device
+    // is the requester.
     const pendingFriendships = await LocalDB.getPendingFriendships();
     for (const f of pendingFriendships) {
       try {
-        const { error } = await (supabase as any).from('friendships').upsert({
-          id: f.id, requester_id: f.requester_id, addressee_id: f.addressee_id,
-          status: f.status, created_at: f.created_at, updated_at: f.updated_at,
-          deleted_at: f.deleted_at ?? null,
-        }, { onConflict: 'id' });
-        if (error) throw error;
+        const { data: updatedRows, error: updateError } = await (supabase as any)
+          .from('friendships')
+          .update({
+            status: f.status,
+            updated_at: f.updated_at,
+            deleted_at: f.deleted_at ?? null,
+          })
+          .eq('id', f.id)
+          .select('id');
+        if (updateError) throw updateError;
+
+        if (!updatedRows || updatedRows.length === 0) {
+          const { error: insertError } = await (supabase as any).from('friendships').insert({
+            id: f.id, requester_id: f.requester_id, addressee_id: f.addressee_id,
+            status: f.status, created_at: f.created_at, updated_at: f.updated_at,
+            deleted_at: f.deleted_at ?? null,
+          });
+          if (insertError) throw insertError;
+        }
+
         await LocalDB.markFriendshipSynced(f.id);
         nutritionSynced++;
       } catch (e: any) {

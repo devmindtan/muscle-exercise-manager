@@ -1,43 +1,70 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Search, UserPlus, Lock } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import {
   getMyFriendships,
+  getUserTag,
   PublicProfile,
+  removeFriendship,
   searchProfiles,
   sendFriendRequest,
 } from '@/src/services/socialService';
+import { ProfileDetailModal, ProfileRelation } from './ProfileDetailModal';
+import { AvatarCircle } from './AvatarCircle';
 
 export function DiscoverTab() {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PublicProfile[]>([]);
   const [statusByUserId, setStatusByUserId] = useState<Record<string, 'friend' | 'pending' | 'none'>>({});
-  const [loading, setLoading] = useState(false);
+  const [friendshipIdByUserId, setFriendshipIdByUserId] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+  const [selectedProfile, setSelectedProfile] = useState<PublicProfile | null>(null);
 
-  const runSearch = useCallback(async () => {
-    if (!query.trim() || !user) return;
-    setLoading(true);
+  const load = useCallback(async (q: string) => {
+    if (!user) return;
     setError('');
     try {
-      const [profiles, friendships] = await Promise.all([searchProfiles(query), getMyFriendships()]);
+      const [profiles, friendships] = await Promise.all([searchProfiles(q), getMyFriendships()]);
       const statusMap: Record<string, 'friend' | 'pending' | 'none'> = {};
+      const idMap: Record<string, string> = {};
       for (const f of friendships) {
         const other = f.requesterId === user.id ? f.addresseeId : f.requesterId;
         statusMap[other] = f.status === 'accepted' ? 'friend' : f.status === 'pending' ? 'pending' : 'none';
+        idMap[other] = f.id;
       }
       setStatusByUserId(statusMap);
+      setFriendshipIdByUserId(idMap);
       setResults(profiles);
     } catch (e: any) {
-      setError(e?.message || 'Không thể tìm kiếm.');
-    } finally {
-      setLoading(false);
+      setError(e?.message || 'Không thể tải danh sách người dùng.');
     }
-  }, [query, user]);
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      load('').finally(() => setLoading(false));
+    }, [load]),
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load(query);
+    setRefreshing(false);
+  };
+
+  const runSearch = async () => {
+    setLoading(true);
+    await load(query);
+    setLoading(false);
+  };
 
   const addFriend = async (targetUserId: string) => {
     try {
@@ -48,8 +75,31 @@ export function DiscoverTab() {
     }
   };
 
+  const unfriend = async (targetUserId: string) => {
+    const friendshipId = friendshipIdByUserId[targetUserId];
+    if (!friendshipId) return;
+    try {
+      await removeFriendship(friendshipId);
+      setSelectedProfile(null);
+      await load(query);
+    } catch (e: any) {
+      setError(e?.message || 'Không thể huỷ kết bạn.');
+    }
+  };
+
+  const getRelation = (profile: PublicProfile): ProfileRelation => {
+    if (profile.userId === user?.id) return 'self';
+    const status = statusByUserId[profile.userId] ?? 'none';
+    if (status === 'friend') return 'friend';
+    if (status === 'pending' || sentTo.has(profile.userId)) return 'pending';
+    return 'none';
+  };
+
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}
+    >
       <View style={styles.searchRow}>
         <View style={styles.searchInputWrap}>
           <Search color={Colors.textMuted} size={16} strokeWidth={2} />
@@ -57,7 +107,7 @@ export function DiscoverTab() {
             style={styles.searchInput}
             value={query}
             onChangeText={setQuery}
-            placeholder="Tìm theo tên hiển thị..."
+            placeholder="Tìm theo tên hiển thị (để trống để xem tất cả)..."
             placeholderTextColor={Colors.textMuted}
             onSubmitEditing={runSearch}
             returnKeyType="search"
@@ -71,39 +121,74 @@ export function DiscoverTab() {
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       <View style={styles.list}>
-        {results.map((profile) => {
-          const status = statusByUserId[profile.userId] ?? 'none';
-          const justSent = sentTo.has(profile.userId);
-          return (
-            <View key={profile.userId} style={styles.row}>
-              <View style={styles.rowInfo}>
-                <Text style={styles.rowName}>{profile.displayName || 'Người dùng'}</Text>
-                {profile.isPrivate ? (
-                  <View style={styles.privateBadge}>
-                    <Lock color={Colors.textMuted} size={10} strokeWidth={2} />
-                    <Text style={styles.privateBadgeText}>Riêng tư</Text>
+        {loading ? (
+          <Text style={styles.mutedText}>Đang tải...</Text>
+        ) : (
+          <>
+            {results.map((profile) => {
+              const isMe = profile.userId === user?.id;
+              const status = statusByUserId[profile.userId] ?? 'none';
+              const justSent = sentTo.has(profile.userId);
+              return (
+                <TouchableOpacity
+                  key={profile.userId}
+                  style={styles.row}
+                  activeOpacity={0.7}
+                  onPress={() => setSelectedProfile(profile)}
+                >
+                  <AvatarCircle uri={profile.avatarUrl} />
+                  <View style={styles.rowInfo}>
+                    <View style={styles.rowNameRow}>
+                      <Text style={styles.rowName}>{profile.displayName || 'Người dùng'}</Text>
+                      <Text style={styles.rowTag}>#{getUserTag(profile.userId)}</Text>
+                      {isMe && (
+                        <View style={styles.meBadge}>
+                          <Text style={styles.meBadgeText}>Bạn</Text>
+                        </View>
+                      )}
+                    </View>
+                    {profile.isPrivate ? (
+                      <View style={styles.privateBadge}>
+                        <Lock color={Colors.textMuted} size={10} strokeWidth={2} />
+                        <Text style={styles.privateBadgeText}>Riêng tư</Text>
+                      </View>
+                    ) : profile.bio ? (
+                      <Text style={styles.rowBio} numberOfLines={1}>{profile.bio}</Text>
+                    ) : null}
                   </View>
-                ) : profile.bio ? (
-                  <Text style={styles.rowBio} numberOfLines={1}>{profile.bio}</Text>
-                ) : null}
-              </View>
-              {status === 'friend' ? (
-                <Text style={styles.statusText}>Bạn bè</Text>
-              ) : status === 'pending' || justSent ? (
-                <Text style={styles.statusText}>Đã gửi</Text>
-              ) : (
-                <TouchableOpacity style={styles.addBtn} onPress={() => addFriend(profile.userId)}>
-                  <UserPlus color={Colors.bg} size={13} strokeWidth={2.5} />
-                  <Text style={styles.addBtnText}>Kết bạn</Text>
+                  {isMe ? null : status === 'friend' ? (
+                    <Text style={styles.statusText}>Bạn bè</Text>
+                  ) : status === 'pending' || justSent ? (
+                    <Text style={styles.statusText}>Đã gửi</Text>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.addBtn}
+                      onPress={(e) => { e.stopPropagation(); addFriend(profile.userId); }}
+                    >
+                      <UserPlus color={Colors.bg} size={13} strokeWidth={2.5} />
+                      <Text style={styles.addBtnText}>Kết bạn</Text>
+                    </TouchableOpacity>
+                  )}
                 </TouchableOpacity>
-              )}
-            </View>
-          );
-        })}
-        {!loading && query.trim() && results.length === 0 && (
-          <Text style={styles.mutedText}>Không tìm thấy người dùng nào.</Text>
+              );
+            })}
+            {results.length === 0 && (
+              <Text style={styles.mutedText}>
+                {query.trim() ? 'Không tìm thấy người dùng nào.' : 'Chưa có ai trong hệ thống.'}
+              </Text>
+            )}
+          </>
         )}
       </View>
+
+      <ProfileDetailModal
+        visible={!!selectedProfile}
+        profile={selectedProfile}
+        relation={selectedProfile ? getRelation(selectedProfile) : 'none'}
+        onClose={() => setSelectedProfile(null)}
+        onAddFriend={(targetUserId) => { addFriend(targetUserId); }}
+        onUnfriend={unfriend}
+      />
     </ScrollView>
   );
 }
@@ -131,8 +216,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 12, gap: 10,
   },
   rowInfo: { flex: 1, minWidth: 0 },
+  rowNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  rowTag: { fontSize: 11, fontWeight: '500', color: Colors.textMuted, fontFamily: 'monospace' },
   rowBio: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  meBadge: {
+    backgroundColor: Colors.accent + '20', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999,
+  },
+  meBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.accent },
   privateBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, alignSelf: 'flex-start',
     backgroundColor: Colors.bg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999,

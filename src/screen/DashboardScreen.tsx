@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
@@ -9,6 +9,7 @@ import type { HistoryPoint } from '../components/dashboard-tabs/HistoryTab';
 import { OverviewTab, getProgressState } from '../components/dashboard-tabs/OverviewTab';
 import type { ProgressTab } from '../components/dashboard-tabs/OverviewTab';
 import { SlidingTabs } from '@/src/components/common/SlidingTabs';
+import { RectTabBar } from '@/src/components/common/RectTabBar';
 import { SyncStatusChip } from '@/src/components/SyncStatusChip';
 import { Colors } from '@/src/constants/colors';
 
@@ -309,24 +310,14 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
         }
         renderTabBar={({ activeTab, onSelect }) => (
-          <View style={styles.dashboardTabRow}>
-            <TouchableOpacity
-              style={[styles.dashboardTabBtn, activeTab === 'overview' && styles.dashboardTabBtnActive]}
-              onPress={() => onSelect('overview')}
-            >
-              <Text style={[styles.dashboardTabText, activeTab === 'overview' && styles.dashboardTabTextActive]}>
-                Tổng quan
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dashboardTabBtn, activeTab === 'history' && styles.dashboardTabBtnActive]}
-              onPress={() => onSelect('history')}
-            >
-              <Text style={[styles.dashboardTabText, activeTab === 'history' && styles.dashboardTabTextActive]}>
-                Lịch sử
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <RectTabBar
+            tabs={[
+              { key: 'overview', label: 'Tổng quan' },
+              { key: 'history', label: 'Lịch sử' },
+            ]}
+            activeTab={activeTab}
+            onSelect={onSelect}
+          />
         )}
         renderScreen={(key) =>
           key === 'overview' ? (
@@ -380,30 +371,4 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   headerSub: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
-
-  dashboardTabRow: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 14,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 4,
-    gap: 6,
-  },
-  dashboardTabBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  dashboardTabBtnActive: {
-    backgroundColor: Colors.accent + '1f',
-    borderWidth: 1,
-    borderColor: Colors.accent,
-  },
-  dashboardTabText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-  dashboardTabTextActive: { color: Colors.accent },
 });

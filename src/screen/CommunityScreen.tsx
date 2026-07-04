@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/colors';
 import { SlidingTabs } from '@/src/components/common/SlidingTabs';
+import { RectTabBar } from '@/src/components/common/RectTabBar';
 import { FriendsTab } from '@/src/components/community-tabs/FriendsTab';
 import { DiscoverTab } from '@/src/components/community-tabs/DiscoverTab';
 import { MySharesTab } from '@/src/components/community-tabs/MySharesTab';
@@ -36,6 +37,9 @@ export default function CommunityScreen() {
           visitedRef.current.add(key);
           setActiveTab(key);
         }}
+        renderTabBar={({ activeTab: current, onSelect }) => (
+          <RectTabBar tabs={TABS} activeTab={current} onSelect={onSelect} />
+        )}
         renderScreen={(key) => {
           if (!visitedRef.current.has(key)) {
             return <View style={{ flex: 1 }} />;

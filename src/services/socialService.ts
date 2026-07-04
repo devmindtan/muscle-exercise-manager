@@ -65,6 +65,14 @@ async function getCurrentUserId(): Promise<string> {
   return userId;
 }
 
+// Display names alone aren't unique (many "Tan Nguyen"s), so every profile
+// gets a short, stable tag derived from its userId (already globally unique)
+// to tell people apart in search/friends lists — no schema change needed.
+export function getUserTag(userId: string): string {
+  const hex = userId.replace(/-/g, '');
+  return hex.slice(-4).toUpperCase();
+}
+
 function mapLocalFriendship(row: LocalDB.LocalFriendship): FriendshipItem {
   return {
     id: row.id, requesterId: row.requester_id, addresseeId: row.addressee_id,
@@ -177,19 +185,71 @@ export async function removeFriendship(id: string): Promise<void> {
 
 // ─── Discovery ──────────────────────────────────────────────────────────────
 
-export async function searchProfiles(query: string): Promise<PublicProfile[]> {
-  const userId = await getCurrentUserId();
-  const trimmed = query.trim();
-  if (!trimmed) return [];
+// Lists everyone who has joined (including yourself) — no friendship needed
+// to see someone. An empty query returns everyone; a non-empty query filters
+// by display name.
+export async function searchProfiles(query: string = ''): Promise<PublicProfile[]> {
+  await getCurrentUserId(); // require login, but don't exclude self from results
 
-  const { data, error } = await (supabase as any)
+  const trimmed = query.trim();
+  let request = (supabase as any)
     .from('profiles')
     .select('*')
-    .ilike('display_name', `%${trimmed}%`)
-    .neq('user_id', userId)
-    .limit(20);
+    .order('display_name', { ascending: true })
+    .limit(200);
+
+  if (trimmed) {
+    request = request.ilike('display_name', `%${trimmed}%`);
+  }
+
+  const { data, error } = await request;
   if (error) throw error;
   return (data || []).map(mapRemoteProfile);
+}
+
+export interface FriendActivityDay {
+  date: string; // 'YYYY-MM-DD'
+  totalSets: number;
+}
+
+// Daily training volume for a GitHub-style contribution heatmap — only
+// works for an accepted friend whose profile isn't private (RPC enforces it).
+export async function getFriendActivityCalendar(friendUserId: string): Promise<FriendActivityDay[]> {
+  const { data, error } = await (supabase as any).rpc('get_friend_activity_calendar', {
+    p_friend_user_id: friendUserId,
+  });
+  if (error) throw error;
+  return (data || []).map((r: any) => ({
+    date: r.activity_date,
+    totalSets: Number(r.total_sets) || 0,
+  }));
+}
+
+// Your own daily training volume, read straight from Supabase (not the local
+// SQLite mirror) so it's guaranteed consistent with what friends see via
+// get_friend_activity_calendar — workout_logs only fully re-pulls to local
+// on first sync, so a local-only read can go stale on a device that's been
+// used for a while.
+export async function getMyActivityCalendar(): Promise<FriendActivityDay[]> {
+  const userId = await getCurrentUserId();
+  const since = new Date();
+  since.setDate(since.getDate() - 371);
+
+  const { data, error } = await (supabase as any)
+    .from('workout_logs')
+    .select('sets, logged_at')
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .gte('logged_at', since.toISOString());
+  if (error) throw error;
+
+  const byDate = new Map<string, number>();
+  for (const row of data || []) {
+    const d = new Date(row.logged_at);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    byDate.set(key, (byDate.get(key) ?? 0) + (Number(row.sets) || 0));
+  }
+  return Array.from(byDate.entries()).map(([date, totalSets]) => ({ date, totalSets }));
 }
 
 export async function getProfileByUserId(userId: string): Promise<PublicProfile | null> {
