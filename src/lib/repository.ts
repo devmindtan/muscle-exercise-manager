@@ -2214,3 +2214,72 @@ export async function getLatestInBodySnapshot(): Promise<InBodySnapshot> {
     measured_at,
   };
 }
+
+// ─── Profile (display name, avatar, bio, privacy) ─────────────────────────────
+
+export interface ProfileItem {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  is_private: boolean;
+}
+
+export async function getMyProfile(): Promise<ProfileItem | null> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await (supabase as any)
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      id: data.id, display_name: data.display_name, avatar_url: data.avatar_url,
+      bio: data.bio, is_private: !!data.is_private,
+    };
+  }
+
+  const row = await LocalDB.getMyProfile();
+  if (!row) return null;
+  return {
+    id: row.id, display_name: row.display_name, avatar_url: row.avatar_url,
+    bio: row.bio, is_private: row.is_private === 1,
+  };
+}
+
+export async function saveProfile(data: {
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  isPrivate?: boolean;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const existing = await getMyProfile();
+
+  const next = {
+    display_name: data.displayName !== undefined ? data.displayName : existing?.display_name ?? null,
+    avatar_url: data.avatarUrl !== undefined ? data.avatarUrl : existing?.avatar_url ?? null,
+    bio: data.bio !== undefined ? data.bio : existing?.bio ?? null,
+    is_private: data.isPrivate !== undefined ? data.isPrivate : existing?.is_private ?? false,
+  };
+
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const id = existing?.id || generateUUID();
+    const { error } = await (supabase as any).from('profiles').upsert({
+      id, user_id: userId, display_name: next.display_name, avatar_url: next.avatar_url,
+      bio: next.bio, is_private: next.is_private, updated_at: now,
+    }, { onConflict: 'id' });
+    if (error) throw error;
+    return;
+  }
+
+  const id = existing?.id || generateUUID();
+  await LocalDB.upsertProfile({
+    id, display_name: next.display_name, avatar_url: next.avatar_url, bio: next.bio,
+    is_private: next.is_private ? 1 : 0, created_at: now, updated_at: now,
+    deleted_at: null, sync_status: 'pending', user_id: null,
+  });
+}

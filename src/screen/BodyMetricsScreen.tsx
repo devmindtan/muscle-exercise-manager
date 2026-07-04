@@ -14,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Target, X } from 'lucide-react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SegmentalFormSection, SegmentalMetricPicker } from '@/src/components/SegmentalFormSection';
@@ -22,6 +21,7 @@ import { OverviewTab } from '@/src/components/body-metrics-tabs/OverviewTab';
 import { SegmentalTab } from '@/src/components/body-metrics-tabs/SegmentalTab';
 import { GoalsTab } from '@/src/components/body-metrics-tabs/GoalsTab';
 import { HistoryTab } from '@/src/components/body-metrics-tabs/HistoryTab';
+import { SlidingTabs } from '@/src/components/common/SlidingTabs';
 
 import {
   createBodyMeasurement,
@@ -60,8 +60,6 @@ export type InBodyFormState = {
   waist_hip_ratio: string;
   visceral_fat_level: string;
 };
-
-type ScreenTab = 'overview' | 'segmental' | 'goals' | 'history';
 
 function confirmDestructive(
   title: string,
@@ -282,8 +280,7 @@ function FormField({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function BodyMetricsScreen() {
-  const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<ScreenTab>('overview');
+  const [tab, setTab] = useState<'overview' | 'segmental' | 'goals' | 'history'>('overview');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
@@ -719,109 +716,117 @@ export default function BodyMetricsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.content}
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: 15 }]}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Chỉ số cơ thể</Text>
+            {lastUpdated ? (
+              <Text style={styles.subtitle}>
+                Cập nhật lần cuối {formatDateFull(lastUpdated)}
+              </Text>
+            ) : (
+              <Text style={styles.subtitle}>Nhập chỉ số InBody để bắt đầu theo dõi</Text>
+            )}
+          </View>
+        </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerBtn} onPress={openCreateInBody}>
+            <Plus color={Colors.bg} size={15} strokeWidth={2.5} />
+            <Text style={styles.headerBtnText}>Nhập InBody</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.headerBtn, styles.headerBtnGhost]}
+            onPress={openCreateGoal}
+          >
+            <Target color={Colors.accent} size={15} strokeWidth={2.2} />
+            <Text style={[styles.headerBtnText, styles.headerBtnGhostText]}>Thêm goal</Text>
+          </TouchableOpacity>
+        </View>
+
+        {statusMessage ? (
+          <View style={styles.statusCard}>
+            <Text style={styles.statusText}>{statusMessage}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <SlidingTabs
+        tabs={[
+          { key: 'overview', label: 'Tổng quan' },
+          { key: 'segmental', label: 'Segmental' },
+          { key: 'goals', label: 'Goals' },
+          { key: 'history', label: 'Lịch sử' },
+        ]}
+        activeTab={tab}
+        onTabChange={(key) => setTab(key as typeof tab)}
+        containerStyle={{ backgroundColor: Colors.bg }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
         }
-      >
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={styles.title}>Chỉ số cơ thể</Text>
-              {lastUpdated ? (
-                <Text style={styles.subtitle}>
-                  Cập nhật lần cuối {formatDateFull(lastUpdated)}
+        renderTabBar={({ activeTab, onSelect }) => (
+          <View style={styles.tabBar}>
+            {(
+              [
+                { key: 'overview', label: 'Tổng quan' },
+                { key: 'segmental', label: 'Segmental' },
+                { key: 'goals', label: 'Goals' },
+                { key: 'history', label: 'Lịch sử' },
+              ] as const
+            ).map((t) => (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.tabItem, activeTab === t.key && styles.tabItemActive]}
+                onPress={() => onSelect(t.key)}
+              >
+                <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>
+                  {t.label}
                 </Text>
-              ) : (
-                <Text style={styles.subtitle}>Nhập chỉ số InBody để bắt đầu theo dõi</Text>
-              )}
-            </View>
+              </TouchableOpacity>
+            ))}
           </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerBtn} onPress={openCreateInBody}>
-              <Plus color={Colors.bg} size={15} strokeWidth={2.5} />
-              <Text style={styles.headerBtnText}>Nhập InBody</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.headerBtn, styles.headerBtnGhost]}
-              onPress={openCreateGoal}
-            >
-              <Target color={Colors.accent} size={15} strokeWidth={2.2} />
-              <Text style={[styles.headerBtnText, styles.headerBtnGhostText]}>Thêm goal</Text>
-            </TouchableOpacity>
+        )}
+        renderScreen={(key) => (
+          <View style={styles.tabContent}>
+            {key === 'overview' && (
+              <OverviewTab
+                summaryMetrics={SUMMARY_METRICS}
+                latestMetrics={latestMetrics}
+                historyByMetric={historyByMetric}
+                selectedMetric={selectedMetric}
+                onSelectMetric={setSelectedMetric}
+                selectedHistory={selectedHistory}
+                selectedMax={selectedMax}
+                getMetricLabel={getMetricLabel}
+                getMetricUnit={getMetricUnit}
+                getTrendTone={getTrendTone}
+                formatDateShort={formatDateShort}
+              />
+            )}
+            {key === 'segmental' && <SegmentalTab historyByMetric={historyByMetric} />}
+            {key === 'goals' && (
+              <GoalsTab
+                prioritizedGoals={prioritizedGoals}
+                completedGoals={completedGoals}
+                goalFilterMode={goalFilterMode}
+                onChangeGoalFilterMode={setGoalFilterMode}
+                onEditGoal={openEditGoal}
+                onDeleteGoal={confirmDeleteGoal}
+                getMetricLabel={getMetricLabel}
+                formatDateFull={formatDateFull}
+              />
+            )}
+            {key === 'history' && (
+              <HistoryTab
+                inBodyRecords={inBodyRecords}
+                formatDateFull={formatDateFull}
+                onEditRecord={openEditInBody}
+                onDeleteRecord={confirmDeleteInBody}
+              />
+            )}
           </View>
-
-          {statusMessage ? (
-            <View style={styles.statusCard}>
-              <Text style={styles.statusText}>{statusMessage}</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Tab bar */}
-        <View style={styles.tabBar}>
-          {(
-            [
-              { key: 'overview', label: 'Tổng quan' },
-              { key: 'segmental', label: 'Segmental' },
-              { key: 'goals', label: 'Goals' },
-              { key: 'history', label: 'Lịch sử' },
-            ] as const
-          ).map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.tabItem, tab === t.key && styles.tabItemActive]}
-              onPress={() => setTab(t.key)}
-            >
-              <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Tab content */}
-        <View style={styles.tabContent}>
-          {tab === 'overview' && (
-            <OverviewTab
-              summaryMetrics={SUMMARY_METRICS}
-              latestMetrics={latestMetrics}
-              historyByMetric={historyByMetric}
-              selectedMetric={selectedMetric}
-              onSelectMetric={setSelectedMetric}
-              selectedHistory={selectedHistory}
-              selectedMax={selectedMax}
-              getMetricLabel={getMetricLabel}
-              getMetricUnit={getMetricUnit}
-              getTrendTone={getTrendTone}
-              formatDateShort={formatDateShort}
-            />
-          )}
-          {tab === 'segmental' && <SegmentalTab historyByMetric={historyByMetric} />}
-          {tab === 'goals' && (
-            <GoalsTab
-              prioritizedGoals={prioritizedGoals}
-              completedGoals={completedGoals}   
-              goalFilterMode={goalFilterMode}
-              onChangeGoalFilterMode={setGoalFilterMode}
-              onEditGoal={openEditGoal}
-              onDeleteGoal={confirmDeleteGoal}
-              getMetricLabel={getMetricLabel}
-              formatDateFull={formatDateFull}
-            />
-          )}
-          {tab === 'history' && (
-            <HistoryTab
-              inBodyRecords={inBodyRecords}
-              formatDateFull={formatDateFull}
-              onEditRecord={openEditInBody}
-              onDeleteRecord={confirmDeleteInBody}
-            />
-          )}
-        </View>
-      </ScrollView>
+        )}
+      />
 
       {/* ── InBody modal ── */}
       <Modal
@@ -1112,7 +1117,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: Colors.textMuted, fontSize: 15 },
-  content: { paddingBottom: 40 },
 
   // Header
   header: { paddingHorizontal: 20, paddingBottom: 16, gap: 12 },

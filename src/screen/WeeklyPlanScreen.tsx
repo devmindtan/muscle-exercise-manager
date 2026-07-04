@@ -12,18 +12,24 @@ import {
   AppState,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Plus, X } from 'lucide-react-native';
+import { Check, Plus, X } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import {
+  createWorkoutPlan,
   deleteWeeklyPlanEntry,
+  deleteWorkoutPlan,
   getWeeklyPlanEntries,
+  getWorkoutPlans,
+  renameWorkoutPlan,
+  setActiveWorkoutPlan,
   upsertWeeklyPlanEntry,
   upsertWeeklyPlanEntries,
   WEEK_DAYS,
   WeekDayKey,
   WeeklyPlanEntry,
+  WorkoutPlan,
 } from '@/src/services/weeklyPlanService';
 import { MuscleGroup } from '@/src/types/database';
 
@@ -130,6 +136,13 @@ export default function WeeklyPlanScreen() {
 
   const [groups, setGroups] = useState<MuscleGroupWithCount[]>([]);
   const [plans, setPlans] = useState<WeeklyPlanEntry[]>([]);
+  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [showPlanManager, setShowPlanManager] = useState(false);
+  const [planNameDraft, setPlanNameDraft] = useState('');
+  const [renamingPlanId, setRenamingPlanId] = useState<string | null>(null);
+  const [planActionError, setPlanActionError] = useState('');
+  const [planActionBusy, setPlanActionBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actualSetsByMuscle, setActualSetsByMuscle] = useState<Record<string, number>>({});
@@ -158,11 +171,17 @@ export default function WeeklyPlanScreen() {
   // ── Data loading ──
 
   const load = useCallback(async () => {
-    const [nextGroups, nextPlans] = await Promise.all([
+    const [nextGroups, nextWorkoutPlans] = await Promise.all([
       getMuscleGroups() as Promise<MuscleGroupWithCount[]>,
-      getWeeklyPlanEntries(userKey),
+      getWorkoutPlans(userKey),
     ]);
     setGroups(nextGroups);
+    setWorkoutPlans(nextWorkoutPlans);
+
+    const active = nextWorkoutPlans.find((p) => p.isActive) ?? nextWorkoutPlans[0] ?? null;
+    setActivePlanId(active?.id ?? null);
+
+    const nextPlans = await getWeeklyPlanEntries(userKey, active?.id ?? null);
     setPlans(sortPlans(nextPlans));
   }, [userKey]);
 
@@ -453,6 +472,7 @@ export default function WeeklyPlanScreen() {
         const nextPlans = await upsertWeeklyPlanEntry(
           { id: editingId, dayKey: formDaySingle, muscleGroupId: muscleIds[0], sets: muscleEntries[0].sets, note: editNote },
           userKey,
+          activePlanId,
         );
         setPlans(sortPlans(nextPlans));
       } else {
@@ -482,7 +502,7 @@ export default function WeeklyPlanScreen() {
           setSaving(false);
           return;
         }
-        const nextPlans = await upsertWeeklyPlanEntries(payload, userKey);
+        const nextPlans = await upsertWeeklyPlanEntries(payload, userKey, activePlanId);
         setPlans(sortPlans(nextPlans));
       }
       setShowEditor(false);
@@ -495,8 +515,91 @@ export default function WeeklyPlanScreen() {
   };
 
   const remove = async (id: string) => {
-    const nextPlans = await deleteWeeklyPlanEntry(id, userKey);
+    const nextPlans = await deleteWeeklyPlanEntry(id, userKey, activePlanId);
     setPlans(sortPlans(nextPlans));
+  };
+
+  // ── Workout plan (named plan group) management ──
+
+  const switchWorkoutPlan = async (planId: string) => {
+    if (planId === activePlanId) return;
+    setPlanActionBusy(true);
+    try {
+      const nextWorkoutPlans = await setActiveWorkoutPlan(planId, userKey);
+      setWorkoutPlans(nextWorkoutPlans);
+      setActivePlanId(planId);
+      const nextPlans = await getWeeklyPlanEntries(userKey, planId);
+      setPlans(sortPlans(nextPlans));
+    } finally {
+      setPlanActionBusy(false);
+    }
+  };
+
+  const openPlanManager = () => {
+    setPlanActionError('');
+    setPlanNameDraft('');
+    setRenamingPlanId(null);
+    setShowPlanManager(true);
+  };
+
+  const submitCreatePlan = async () => {
+    const name = planNameDraft.trim();
+    if (!name) { setPlanActionError('Vui lòng nhập tên kế hoạch.'); return; }
+    setPlanActionBusy(true);
+    try {
+      const nextWorkoutPlans = await createWorkoutPlan(name, userKey);
+      setWorkoutPlans(nextWorkoutPlans);
+      setPlanNameDraft('');
+      setPlanActionError('');
+    } catch {
+      setPlanActionError('Không thể tạo kế hoạch. Vui lòng thử lại.');
+    } finally {
+      setPlanActionBusy(false);
+    }
+  };
+
+  const startRenamePlan = (plan: WorkoutPlan) => {
+    setRenamingPlanId(plan.id);
+    setPlanNameDraft(plan.name);
+    setPlanActionError('');
+  };
+
+  const submitRenamePlan = async () => {
+    if (!renamingPlanId) return;
+    const name = planNameDraft.trim();
+    if (!name) { setPlanActionError('Vui lòng nhập tên kế hoạch.'); return; }
+    setPlanActionBusy(true);
+    try {
+      const nextWorkoutPlans = await renameWorkoutPlan(renamingPlanId, name, userKey);
+      setWorkoutPlans(nextWorkoutPlans);
+      setRenamingPlanId(null);
+      setPlanNameDraft('');
+      setPlanActionError('');
+    } catch {
+      setPlanActionError('Không thể đổi tên. Vui lòng thử lại.');
+    } finally {
+      setPlanActionBusy(false);
+    }
+  };
+
+  const removePlan = async (planId: string) => {
+    if (workoutPlans.length <= 1) {
+      setPlanActionError('Cần giữ lại ít nhất 1 kế hoạch.');
+      return;
+    }
+    setPlanActionBusy(true);
+    try {
+      const nextWorkoutPlans = await deleteWorkoutPlan(planId, userKey);
+      setWorkoutPlans(nextWorkoutPlans);
+      const nextActive = nextWorkoutPlans.find((p) => p.isActive) ?? nextWorkoutPlans[0] ?? null;
+      setActivePlanId(nextActive?.id ?? null);
+      const nextPlans = await getWeeklyPlanEntries(userKey, nextActive?.id ?? null);
+      setPlans(sortPlans(nextPlans));
+    } catch {
+      setPlanActionError('Không thể xoá kế hoạch. Vui lòng thử lại.');
+    } finally {
+      setPlanActionBusy(false);
+    }
   };
 
   if (loading) {
@@ -537,6 +640,33 @@ export default function WeeklyPlanScreen() {
             <Plus color={Colors.bg} size={18} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
+
+        {/* ── Workout plan switcher ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.planStrip}
+        >
+          {workoutPlans.map((plan) => {
+            const isActive = plan.id === activePlanId;
+            return (
+              <TouchableOpacity
+                key={plan.id}
+                style={[styles.planChip, isActive && styles.planChipActive]}
+                onPress={() => switchWorkoutPlan(plan.id)}
+                disabled={planActionBusy}
+              >
+                {isActive && <Check color={Colors.bg} size={12} strokeWidth={3} />}
+                <Text style={[styles.planChipText, isActive && styles.planChipTextActive]} numberOfLines={1}>
+                  {plan.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity style={styles.planManageBtn} onPress={openPlanManager}>
+            <Text style={styles.planManageBtnText}>Quản lý kế hoạch</Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         {/* ── Summary stats ── */}
         <View style={styles.statsRow}>
@@ -894,6 +1024,81 @@ export default function WeeklyPlanScreen() {
           <View style={{ height: 24 }} />
         </ScrollView>
       </Modal>
+
+      {/* ── Plan manager sheet ── */}
+      <Modal visible={showPlanManager} transparent animationType="slide" onRequestClose={() => setShowPlanManager(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowPlanManager(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Quản lý kế hoạch</Text>
+            <TouchableOpacity onPress={() => setShowPlanManager(false)}>
+              <X color={Colors.textSecondary} size={20} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ maxHeight: 280 }}>
+            {workoutPlans.map((plan) => (
+              <View key={plan.id} style={styles.planManageRow}>
+                <View style={styles.planManageInfo}>
+                  {plan.id === activePlanId && (
+                    <View style={styles.planManageActiveBadge}>
+                      <Text style={styles.planManageActiveBadgeText}>Đang dùng</Text>
+                    </View>
+                  )}
+                  <Text style={styles.planManageName} numberOfLines={1}>{plan.name}</Text>
+                </View>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.actionEdit} onPress={() => startRenamePlan(plan)}>
+                    <Text style={styles.actionEditText}>Đổi tên</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionDelete, workoutPlans.length <= 1 && styles.saveBtnDisabled]}
+                    onPress={() => removePlan(plan.id)}
+                    disabled={workoutPlans.length <= 1}
+                  >
+                    <Text style={styles.actionDeleteText}>Xoá</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.inputLabel}>
+            {renamingPlanId ? 'Đổi tên kế hoạch' : 'Tạo kế hoạch mới'}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={planNameDraft}
+            onChangeText={setPlanNameDraft}
+            placeholder="VD: Kế hoạch mùa hè, Kế hoạch tăng cơ..."
+            placeholderTextColor={Colors.textMuted}
+          />
+
+          {planActionError ? <Text style={styles.errorText}>{planActionError}</Text> : null}
+
+          <View style={styles.planManageActions}>
+            {renamingPlanId && (
+              <TouchableOpacity
+                style={[styles.saveBtn, styles.planManageCancelBtn]}
+                onPress={() => { setRenamingPlanId(null); setPlanNameDraft(''); setPlanActionError(''); }}
+              >
+                <Text style={styles.planManageCancelBtnText}>Huỷ</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.saveBtn, { flex: 1 }, planActionBusy && styles.saveBtnDisabled]}
+              onPress={renamingPlanId ? submitRenamePlan : submitCreatePlan}
+              disabled={planActionBusy}
+            >
+              <Text style={styles.saveBtnText}>
+                {planActionBusy ? 'Đang lưu...' : renamingPlanId ? 'Lưu tên mới' : 'Tạo kế hoạch'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ height: 24 }} />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -916,6 +1121,35 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
   },
+
+  planStrip: { paddingHorizontal: 20, paddingBottom: 14, gap: 8, alignItems: 'center' },
+  planChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+    maxWidth: 160,
+  },
+  planChipActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  planChipText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  planChipTextActive: { color: Colors.bg, fontWeight: '700' },
+  planManageBtn: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.accent + '55', backgroundColor: Colors.accent + '10',
+  },
+  planManageBtnText: { fontSize: 12, fontWeight: '600', color: Colors.accent },
+  planManageRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border, gap: 8,
+  },
+  planManageInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
+  planManageActiveBadge: {
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: Colors.accent + '20',
+  },
+  planManageActiveBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.accent },
+  planManageName: { fontSize: 14, fontWeight: '600', color: Colors.text, flexShrink: 1 },
+  planManageActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  planManageCancelBtn: { backgroundColor: Colors.surfaceElevated, paddingHorizontal: 18 },
+  planManageCancelBtnText: { color: Colors.textSecondary, fontWeight: '700', fontSize: 14 },
 
   statsRow: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginBottom: 16 },
   statCard: {

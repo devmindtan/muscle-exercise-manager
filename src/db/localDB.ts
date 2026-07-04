@@ -37,10 +37,22 @@ export type LocalWeeklyPlanEntry = {
   muscle_group_id: string;
   sets: number;
   note: string | null;
+  plan_id: string | null;
   created_at: string;
   updated_at: string;
   dirty?: 0 | 1;
   deleted?: 0 | 1;
+};
+
+export type LocalWorkoutPlan = {
+  id: string;
+  name: string;
+  is_active: 0 | 1;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
 };
 
 export type LocalCardioLog = Database['public']['Tables']['cardio_logs']['Row'];
@@ -95,6 +107,48 @@ export type LocalNutritionGoal = {
   nutrient_key: string;
   target_value: number;
   unit: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
+export type LocalProfile = {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  is_private: number; // 0 | 1
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
+export type FriendshipStatus = 'pending' | 'accepted' | 'declined';
+
+export type LocalFriendship = {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: FriendshipStatus;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: string;
+  user_id: string | null;
+};
+
+export type PlanShareVisibility = 'link' | 'friends';
+
+export type LocalPlanShare = {
+  id: string;
+  plan_id: string;
+  owner_id: string;
+  share_code: string;
+  visibility: PlanShareVisibility;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -232,6 +286,16 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       deleted INTEGER DEFAULT 0,
       FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
     );
+    CREATE TABLE IF NOT EXISTS workout_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
     CREATE TABLE IF NOT EXISTS cardio_logs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -253,6 +317,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_muscle_goals_muscle_group_id ON muscle_goals(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_weekly_plan_day_key ON weekly_plan_entries(day_key);
     CREATE INDEX IF NOT EXISTS idx_weekly_plan_muscle_group_id ON weekly_plan_entries(muscle_group_id);
+    CREATE INDEX IF NOT EXISTS idx_workout_plans_deleted_at ON workout_plans(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_cardio_logs_logged_at ON cardio_logs(logged_at);
     CREATE INDEX IF NOT EXISTS idx_cardio_logs_deleted_at ON cardio_logs(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_dirty_muscle_groups ON muscle_groups(dirty) WHERE dirty = 1;
@@ -331,6 +396,44 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_nutrition_logs_deleted_at ON nutrition_logs(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_nutrition_foods_name ON nutrition_foods(name);
     CREATE INDEX IF NOT EXISTS idx_nutrition_goals_key ON nutrition_goals(nutrient_key);
+    CREATE TABLE IF NOT EXISTS profiles (
+      id TEXT PRIMARY KEY,
+      display_name TEXT,
+      avatar_url TEXT,
+      bio TEXT,
+      is_private INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS friendships (
+      id TEXT PRIMARY KEY,
+      requester_id TEXT NOT NULL,
+      addressee_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE TABLE IF NOT EXISTS plan_shares (
+      id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      share_code TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'link',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_friendships_deleted_at ON friendships(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_plan_shares_plan_id ON plan_shares(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_shares_deleted_at ON plan_shares(deleted_at);
   `);
   await migrateLegacySchema(database);
 }
@@ -377,6 +480,21 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'weekly_plan_entries', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
+  await ensureColumn(database, 'weekly_plan_entries', 'plan_id', 'TEXT');
+
+  await database.execAsync(
+    `CREATE TABLE IF NOT EXISTS workout_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
+      user_id TEXT
+    )`
+  );
+  await migrateDefaultWorkoutPlanBackfill(database);
 
   await database.execAsync(
     `CREATE TABLE IF NOT EXISTS cardio_logs (
@@ -408,6 +526,42 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   // (created before dirty/deleted existed) can crash on startup.
   await database.execAsync(
     'CREATE INDEX IF NOT EXISTS idx_dirty_weekly_plan_entries ON weekly_plan_entries(dirty) WHERE dirty = 1'
+  );
+  await database.execAsync(
+    'CREATE INDEX IF NOT EXISTS idx_weekly_plan_plan_id ON weekly_plan_entries(plan_id)'
+  );
+  await database.execAsync(
+    'CREATE INDEX IF NOT EXISTS idx_workout_plans_deleted_at ON workout_plans(deleted_at)'
+  );
+}
+
+// One-time, idempotent backfill: existing users had a single implicit plan
+// (a flat weekly_plan_entries table with no plan concept). Wrap any entries
+// missing plan_id into an auto-created "Kế hoạch của tôi" so no data is lost
+// when multi-plan support is introduced.
+async function migrateDefaultWorkoutPlanBackfill(database: SQLite.SQLiteDatabase) {
+  const orphanCount = await database.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) as count FROM weekly_plan_entries WHERE plan_id IS NULL`
+  );
+  if (!orphanCount || orphanCount.count === 0) return;
+
+  const existingPlan = await database.getFirstAsync<{ id: string }>(
+    `SELECT id FROM workout_plans WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`
+  );
+
+  let defaultPlanId = existingPlan?.id;
+  if (!defaultPlanId) {
+    defaultPlanId = generateId();
+    await database.runAsync(
+      `INSERT INTO workout_plans (id, name, is_active, created_at, updated_at, deleted_at, sync_status, user_id)
+       VALUES (?, ?, 1, datetime('now'), datetime('now'), NULL, 'pending', NULL)`,
+      [defaultPlanId, 'Kế hoạch của tôi']
+    );
+  }
+
+  await database.runAsync(
+    `UPDATE weekly_plan_entries SET plan_id = ? WHERE plan_id IS NULL`,
+    [defaultPlanId]
   );
 }
 
@@ -944,12 +1098,9 @@ export async function upsertMuscleGoal(goal: LocalMuscleGoal) {
   );
 }
 
-export async function getWeeklyPlanEntries() {
+export async function getWeeklyPlanEntries(planId?: string | null) {
   const database = await getDatabase();
-  return database.getAllAsync<LocalWeeklyPlanEntry>(
-    `SELECT * FROM weekly_plan_entries
-     WHERE deleted = 0
-     ORDER BY
+  const orderClause = `ORDER BY
        CASE day_key
          WHEN 'mon' THEN 1
          WHEN 'tue' THEN 2
@@ -960,7 +1111,17 @@ export async function getWeeklyPlanEntries() {
          WHEN 'sun' THEN 7
          ELSE 99
        END ASC,
-       created_at ASC`
+       created_at ASC`;
+
+  if (planId) {
+    return database.getAllAsync<LocalWeeklyPlanEntry>(
+      `SELECT * FROM weekly_plan_entries WHERE deleted = 0 AND plan_id = ? ${orderClause}`,
+      [planId]
+    );
+  }
+
+  return database.getAllAsync<LocalWeeklyPlanEntry>(
+    `SELECT * FROM weekly_plan_entries WHERE deleted = 0 ${orderClause}`
   );
 }
 
@@ -970,13 +1131,14 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
   const deleted = entry.deleted ?? 0;
 
   await database.runAsync(
-    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, sets, note, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, sets, note, plan_id, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        day_key = excluded.day_key,
        muscle_group_id = excluded.muscle_group_id,
        sets = excluded.sets,
        note = excluded.note,
+       plan_id = COALESCE(excluded.plan_id, plan_id),
        updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
@@ -986,6 +1148,7 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
       entry.muscle_group_id,
       Math.max(1, Math.round(entry.sets)),
       entry.note || null,
+      entry.plan_id || null,
       entry.created_at,
       entry.updated_at || new Date().toISOString(),
       dirty,
@@ -1024,6 +1187,102 @@ export async function markMissingWeeklyPlanEntriesDeleted(remoteIds: string[]) {
 
 function generateId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// ─── Workout Plans (multi-plan) ────────────────────────────────────────────────
+
+export async function getWorkoutPlans(): Promise<LocalWorkoutPlan[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalWorkoutPlan>(
+    `SELECT * FROM workout_plans WHERE deleted_at IS NULL ORDER BY created_at ASC`
+  );
+}
+
+export async function getActiveWorkoutPlan(): Promise<LocalWorkoutPlan | null> {
+  const database = await getDatabase();
+  const active = await database.getFirstAsync<LocalWorkoutPlan>(
+    `SELECT * FROM workout_plans WHERE deleted_at IS NULL AND is_active = 1 ORDER BY created_at ASC LIMIT 1`
+  );
+  if (active) return active;
+  return database.getFirstAsync<LocalWorkoutPlan>(
+    `SELECT * FROM workout_plans WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`
+  );
+}
+
+export async function createWorkoutPlan(name: string): Promise<LocalWorkoutPlan> {
+  const database = await getDatabase();
+  const id = generateId();
+  const now = new Date().toISOString();
+  await database.runAsync(
+    `INSERT INTO workout_plans (id, name, is_active, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, 0, ?, ?, NULL, 'pending', NULL)`,
+    [id, name, now, now]
+  );
+  return { id, name, is_active: 0, created_at: now, updated_at: now, deleted_at: null, sync_status: 'pending', user_id: null };
+}
+
+export async function renameWorkoutPlan(id: string, name: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE workout_plans SET name = ?, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?`,
+    [name, id]
+  );
+}
+
+export async function setActiveWorkoutPlan(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE workout_plans SET is_active = 0, updated_at = datetime('now'), sync_status = 'pending' WHERE is_active = 1 AND id != ?`,
+    [id]
+  );
+  await database.runAsync(
+    `UPDATE workout_plans SET is_active = 1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?`,
+    [id]
+  );
+}
+
+export async function softDeleteWorkoutPlan(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE workout_plans SET deleted_at = datetime('now'), updated_at = datetime('now'), sync_status = 'pending' WHERE id = ? AND deleted_at IS NULL`,
+    [id]
+  );
+  // Plan-scoped entries have no meaning without their plan — soft-delete them too.
+  await database.runAsync(
+    `UPDATE weekly_plan_entries SET deleted = 1, dirty = 1, updated_at = datetime('now') WHERE plan_id = ? AND deleted = 0`,
+    [id]
+  );
+}
+
+export async function getPendingWorkoutPlans(): Promise<LocalWorkoutPlan[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalWorkoutPlan>(
+    `SELECT * FROM workout_plans WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markWorkoutPlanSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(`UPDATE workout_plans SET sync_status = 'synced' WHERE id = ?`, [id]);
+}
+
+export async function upsertWorkoutPlan(plan: LocalWorkoutPlan): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO workout_plans (id, name, is_active, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       is_active = excluded.is_active,
+       updated_at = excluded.updated_at,
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      plan.id, plan.name, plan.is_active, plan.created_at, plan.updated_at,
+      plan.deleted_at ?? null, plan.sync_status || 'synced', plan.user_id ?? null,
+    ]
+  );
 }
 
 export async function insertCardioLog(data: {
@@ -1130,6 +1389,7 @@ export async function clearAllLocalData() {
   try {
     await database.runAsync('DELETE FROM cardio_logs');
     await database.runAsync('DELETE FROM weekly_plan_entries');
+    await database.runAsync('DELETE FROM workout_plans');
     await database.runAsync('DELETE FROM body_measurements');
     await database.runAsync('DELETE FROM muscle_goals');
     await database.runAsync('DELETE FROM workout_logs');
@@ -1140,6 +1400,9 @@ export async function clearAllLocalData() {
     await database.runAsync('DELETE FROM nutrition_goals');
     await database.runAsync('DELETE FROM nutrition_nutrient_configs');
     await database.runAsync('DELETE FROM nutrition_tdee_settings');
+    await database.runAsync('DELETE FROM profiles');
+    await database.runAsync('DELETE FROM friendships');
+    await database.runAsync('DELETE FROM plan_shares');
   } catch (err) {
     console.error('Error clearing local data:', err);
     throw err;
@@ -1513,6 +1776,142 @@ export async function markTdeeSettingsSynced(id: string, userId: string): Promis
   const database = await getDatabase();
   await database.runAsync(
     `UPDATE nutrition_tdee_settings SET user_id = ? WHERE id = ?`, [userId, id]
+  );
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+export async function getMyProfile(): Promise<LocalProfile | null> {
+  const database = await getDatabase();
+  return database.getFirstAsync<LocalProfile>(
+    `SELECT * FROM profiles WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`
+  );
+}
+
+export async function upsertProfile(profile: LocalProfile): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO profiles (id, display_name, avatar_url, bio, is_private, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       display_name = excluded.display_name,
+       avatar_url = excluded.avatar_url,
+       bio = excluded.bio,
+       is_private = excluded.is_private,
+       updated_at = excluded.updated_at,
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      profile.id, profile.display_name ?? null, profile.avatar_url ?? null, profile.bio ?? null,
+      profile.is_private, profile.created_at, profile.updated_at || new Date().toISOString(),
+      profile.deleted_at ?? null, profile.sync_status || 'pending', profile.user_id ?? null,
+    ]
+  );
+}
+
+export async function getPendingProfile(): Promise<LocalProfile | null> {
+  const database = await getDatabase();
+  return database.getFirstAsync<LocalProfile>(
+    `SELECT * FROM profiles WHERE sync_status = 'pending' ORDER BY updated_at DESC LIMIT 1`
+  );
+}
+
+export async function markProfileSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(`UPDATE profiles SET sync_status = 'synced' WHERE id = ?`, [id]);
+}
+
+// ─── Friendships ────────────────────────────────────────────────────────────
+
+export async function getFriendships(): Promise<LocalFriendship[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalFriendship>(
+    `SELECT * FROM friendships WHERE deleted_at IS NULL ORDER BY created_at DESC`
+  );
+}
+
+export async function upsertFriendship(row: LocalFriendship): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO friendships (id, requester_id, addressee_id, status, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       requester_id = excluded.requester_id,
+       addressee_id = excluded.addressee_id,
+       status = excluded.status,
+       updated_at = excluded.updated_at,
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      row.id, row.requester_id, row.addressee_id, row.status,
+      row.created_at, row.updated_at || new Date().toISOString(),
+      row.deleted_at ?? null, row.sync_status || 'pending', row.user_id ?? null,
+    ]
+  );
+}
+
+export async function getPendingFriendships(): Promise<LocalFriendship[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalFriendship>(
+    `SELECT * FROM friendships WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markFriendshipSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(`UPDATE friendships SET sync_status = 'synced' WHERE id = ?`, [id]);
+}
+
+// ─── Plan shares ──────────────────────────────────────────────────────────────
+
+export async function getPlanShares(): Promise<LocalPlanShare[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalPlanShare>(
+    `SELECT * FROM plan_shares WHERE deleted_at IS NULL ORDER BY created_at DESC`
+  );
+}
+
+export async function upsertPlanShare(row: LocalPlanShare): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO plan_shares (id, plan_id, owner_id, share_code, visibility, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       plan_id = excluded.plan_id,
+       owner_id = excluded.owner_id,
+       share_code = excluded.share_code,
+       visibility = excluded.visibility,
+       updated_at = excluded.updated_at,
+       deleted_at = excluded.deleted_at,
+       sync_status = excluded.sync_status,
+       user_id = excluded.user_id`,
+    [
+      row.id, row.plan_id, row.owner_id, row.share_code, row.visibility,
+      row.created_at, row.updated_at || new Date().toISOString(),
+      row.deleted_at ?? null, row.sync_status || 'pending', row.user_id ?? null,
+    ]
+  );
+}
+
+export async function getPendingPlanShares(): Promise<LocalPlanShare[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalPlanShare>(
+    `SELECT * FROM plan_shares WHERE sync_status = 'pending' ORDER BY updated_at ASC`
+  );
+}
+
+export async function markPlanShareSynced(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(`UPDATE plan_shares SET sync_status = 'synced' WHERE id = ?`, [id]);
+}
+
+export async function softDeletePlanShare(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE plan_shares SET deleted_at = datetime('now'), updated_at = datetime('now'), sync_status = 'pending' WHERE id = ? AND deleted_at IS NULL`,
+    [id]
   );
 }
 

@@ -21,6 +21,7 @@ export type WeeklyPlanEntry = {
   muscleGroupId: string;
   sets: number;
   note: string | null;
+  planId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -33,12 +34,24 @@ export type WeeklyPlanEntryInput = {
   note?: string | null;
 };
 
+export type WorkoutPlan = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function getWebStorageKey(userId?: string | null) {
   return `weekly_plan_entries_v1_${userId || 'guest'}`;
+}
+
+function getWebPlansStorageKey(userId?: string | null) {
+  return `workout_plans_v1_${userId || 'guest'}`;
 }
 
 async function getWebUserId() {
@@ -66,6 +79,7 @@ function normalizeEntries(value: unknown): WeeklyPlanEntry[] {
         muscleGroupId: String(entry.muscleGroupId),
         sets: Math.round(numericSets),
         note: entry.note ? String(entry.note) : null,
+        planId: entry.planId ? String(entry.planId) : null,
         createdAt: entry.createdAt || new Date().toISOString(),
         updatedAt: entry.updatedAt || new Date().toISOString(),
       };
@@ -73,16 +87,295 @@ function normalizeEntries(value: unknown): WeeklyPlanEntry[] {
     .filter((entry): entry is WeeklyPlanEntry => Boolean(entry));
 }
 
-async function getWebWeeklyPlanEntries(userId?: string | null) {
+function normalizePlans(value: unknown): WorkoutPlan[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const plan = item as Partial<WorkoutPlan>;
+      if (!plan.id || !plan.name) return null;
+      return {
+        id: String(plan.id),
+        name: String(plan.name),
+        isActive: !!plan.isActive,
+        createdAt: plan.createdAt || new Date().toISOString(),
+        updatedAt: plan.updatedAt || new Date().toISOString(),
+      };
+    })
+    .filter((plan): plan is WorkoutPlan => Boolean(plan));
+}
+
+// ─── Web (guest, AsyncStorage-backed) plan storage ─────────────────────────────
+
+async function getWebGuestPlans(userId?: string | null): Promise<WorkoutPlan[]> {
+  const raw = await AsyncStorage.getItem(getWebPlansStorageKey(userId));
+  if (!raw) return [];
+  try {
+    return normalizePlans(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+async function saveWebGuestPlans(plans: WorkoutPlan[], userId?: string | null) {
+  await AsyncStorage.setItem(getWebPlansStorageKey(userId), JSON.stringify(normalizePlans(plans)));
+}
+
+async function ensureWebGuestDefaultPlan(userId?: string | null): Promise<WorkoutPlan> {
+  const plans = await getWebGuestPlans(userId);
+  const active = plans.find((p) => p.isActive) || plans[0];
+  if (active) return active;
+
+  const now = new Date().toISOString();
+  const defaultPlan: WorkoutPlan = {
+    id: generateId(),
+    name: 'Kế hoạch của tôi',
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await saveWebGuestPlans([defaultPlan], userId);
+  return defaultPlan;
+}
+
+// ─── Web (logged-in, Supabase-backed) plan storage ─────────────────────────────
+
+async function ensureWebRemoteDefaultPlan(resolvedUserId: string): Promise<WorkoutPlan> {
+  const { data, error } = await (supabase as any)
+    .from('workout_plans')
+    .select('*')
+    .eq('user_id', resolvedUserId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  const rows = (data || []) as any[];
+  if (rows.length > 0) {
+    const activeRow = rows.find((r) => r.is_active) || rows[0];
+    return {
+      id: activeRow.id,
+      name: activeRow.name,
+      isActive: !!activeRow.is_active,
+      createdAt: activeRow.created_at,
+      updatedAt: activeRow.updated_at,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const id = generateId();
+  const { error: insertError } = await (supabase as any).from('workout_plans').insert({
+    id,
+    user_id: resolvedUserId,
+    name: 'Kế hoạch của tôi',
+    is_active: true,
+    created_at: now,
+    updated_at: now,
+  });
+  if (insertError) throw insertError;
+
+  return { id, name: 'Kế hoạch của tôi', isActive: true, createdAt: now, updatedAt: now };
+}
+
+// ─── Plans: public API ──────────────────────────────────────────────────────────
+
+export async function getWorkoutPlans(userId?: string | null): Promise<WorkoutPlan[]> {
+  if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+    if (resolvedUserId) {
+      await ensureWebRemoteDefaultPlan(resolvedUserId);
+      const { data, error } = await (supabase as any)
+        .from('workout_plans')
+        .select('*')
+        .eq('user_id', resolvedUserId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data || []).map((r: any) => ({
+        id: r.id, name: r.name, isActive: !!r.is_active, createdAt: r.created_at, updatedAt: r.updated_at,
+      }));
+    }
+
+    await ensureWebGuestDefaultPlan(userId);
+    return getWebGuestPlans(userId);
+  }
+
+  const rows = await LocalDB.getWorkoutPlans();
+  return rows.map((r) => ({
+    id: r.id, name: r.name, isActive: !!r.is_active, createdAt: r.created_at, updatedAt: r.updated_at,
+  }));
+}
+
+export async function getActiveWorkoutPlanId(userId?: string | null): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+    if (resolvedUserId) {
+      const plan = await ensureWebRemoteDefaultPlan(resolvedUserId);
+      return plan.id;
+    }
+    const plan = await ensureWebGuestDefaultPlan(userId);
+    return plan.id;
+  }
+
+  const plan = await LocalDB.getActiveWorkoutPlan();
+  return plan?.id ?? null;
+}
+
+export async function createWorkoutPlan(name: string, userId?: string | null): Promise<WorkoutPlan[]> {
+  const trimmed = name.trim() || 'Kế hoạch mới';
+
+  if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+    const now = new Date().toISOString();
+
+    if (resolvedUserId) {
+      const id = generateId();
+      const { error } = await (supabase as any).from('workout_plans').insert({
+        id, user_id: resolvedUserId, name: trimmed, is_active: false, created_at: now, updated_at: now,
+      });
+      if (error) throw error;
+      return getWorkoutPlans(resolvedUserId);
+    }
+
+    const plans = await getWebGuestPlans(userId);
+    plans.push({ id: generateId(), name: trimmed, isActive: plans.length === 0, createdAt: now, updatedAt: now });
+    await saveWebGuestPlans(plans, userId);
+    return plans;
+  }
+
+  await LocalDB.createWorkoutPlan(trimmed);
+  return getWorkoutPlans(userId);
+}
+
+export async function renameWorkoutPlan(id: string, name: string, userId?: string | null): Promise<WorkoutPlan[]> {
+  const trimmed = name.trim();
+  if (!trimmed) return getWorkoutPlans(userId);
+
+  if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+
+    if (resolvedUserId) {
+      const { error } = await (supabase as any)
+        .from('workout_plans')
+        .update({ name: trimmed, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('user_id', resolvedUserId);
+      if (error) throw error;
+      return getWorkoutPlans(resolvedUserId);
+    }
+
+    const plans = await getWebGuestPlans(userId);
+    const next = plans.map((p) => (p.id === id ? { ...p, name: trimmed, updatedAt: new Date().toISOString() } : p));
+    await saveWebGuestPlans(next, userId);
+    return next;
+  }
+
+  await LocalDB.renameWorkoutPlan(id, trimmed);
+  return getWorkoutPlans(userId);
+}
+
+export async function setActiveWorkoutPlan(id: string, userId?: string | null): Promise<WorkoutPlan[]> {
+  if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+    const now = new Date().toISOString();
+
+    if (resolvedUserId) {
+      const { error: clearError } = await (supabase as any)
+        .from('workout_plans')
+        .update({ is_active: false, updated_at: now })
+        .eq('user_id', resolvedUserId)
+        .neq('id', id);
+      if (clearError) throw clearError;
+
+      const { error } = await (supabase as any)
+        .from('workout_plans')
+        .update({ is_active: true, updated_at: now })
+        .eq('id', id)
+        .eq('user_id', resolvedUserId);
+      if (error) throw error;
+      return getWorkoutPlans(resolvedUserId);
+    }
+
+    const plans = await getWebGuestPlans(userId);
+    const next = plans.map((p) => ({ ...p, isActive: p.id === id, updatedAt: p.id === id ? now : p.updatedAt }));
+    await saveWebGuestPlans(next, userId);
+    return next;
+  }
+
+  await LocalDB.setActiveWorkoutPlan(id);
+  return getWorkoutPlans(userId);
+}
+
+export async function deleteWorkoutPlan(id: string, userId?: string | null): Promise<WorkoutPlan[]> {
+  const existingPlans = await getWorkoutPlans(userId);
+  if (existingPlans.length <= 1) {
+    // Always keep at least one plan so entries never end up orphaned with no home.
+    return existingPlans;
+  }
+
+  const wasActive = existingPlans.find((p) => p.id === id)?.isActive;
+
+  if (Platform.OS === 'web') {
+    const resolvedUserId = userId || (await getWebUserId());
+    const now = new Date().toISOString();
+
+    if (resolvedUserId) {
+      const { error } = await (supabase as any)
+        .from('workout_plans')
+        .update({ deleted_at: now, updated_at: now })
+        .eq('id', id)
+        .eq('user_id', resolvedUserId);
+      if (error) throw error;
+
+      await (supabase as any)
+        .from('weekly_plan_entries')
+        .update({ deleted_at: now, updated_at: now })
+        .eq('plan_id', id)
+        .eq('user_id', resolvedUserId);
+
+      const remaining = await getWorkoutPlans(resolvedUserId);
+      if (wasActive && remaining[0]) {
+        return setActiveWorkoutPlan(remaining[0].id, resolvedUserId);
+      }
+      return remaining;
+    }
+
+    const plans = await getWebGuestPlans(userId);
+    const remaining = plans.filter((p) => p.id !== id);
+    if (wasActive && remaining[0]) remaining[0] = { ...remaining[0], isActive: true };
+    await saveWebGuestPlans(remaining, userId);
+
+    const entries = await getWebWeeklyPlanEntries(userId);
+    await saveWebWeeklyPlanEntries(entries.filter((e) => e.planId !== id), userId);
+    return remaining;
+  }
+
+  await LocalDB.softDeleteWorkoutPlan(id);
+  const remaining = await getWorkoutPlans(userId);
+  if (wasActive && remaining[0]) {
+    return setActiveWorkoutPlan(remaining[0].id, userId);
+  }
+  return remaining;
+}
+
+// ─── Weekly plan entries ────────────────────────────────────────────────────────
+
+async function getWebWeeklyPlanEntries(userId?: string | null, planId?: string | null) {
   const resolvedUserId = userId || (await getWebUserId());
 
   if (resolvedUserId) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('weekly_plan_entries')
       .select('*')
       .eq('user_id', resolvedUserId)
-      .is('deleted_at', null)
-      .order('updated_at', { ascending: false });
+      .is('deleted_at', null);
+
+    if (planId) {
+      query = (query as any).eq('plan_id', planId);
+    }
+
+    const { data, error } = await query.order('updated_at', { ascending: false });
 
     if (error) {
       throw error;
@@ -94,6 +387,7 @@ async function getWebWeeklyPlanEntries(userId?: string | null) {
       muscleGroupId: row.muscle_group_id,
       sets: row.sets,
       note: row.note,
+      planId: row.plan_id ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     })));
@@ -103,7 +397,8 @@ async function getWebWeeklyPlanEntries(userId?: string | null) {
   if (!raw) return [];
 
   try {
-    return normalizeEntries(JSON.parse(raw));
+    const all = normalizeEntries(JSON.parse(raw));
+    return planId ? all.filter((e) => e.planId === planId) : all;
   } catch {
     return [];
   }
@@ -119,18 +414,19 @@ async function saveWebWeeklyPlanEntries(
   );
 }
 
-export async function getWeeklyPlanEntries(userId?: string | null) {
+export async function getWeeklyPlanEntries(userId?: string | null, planId?: string | null) {
   if (Platform.OS === 'web') {
-    return getWebWeeklyPlanEntries(userId);
+    return getWebWeeklyPlanEntries(userId, planId);
   }
 
-  const rows = await LocalDB.getWeeklyPlanEntries();
+  const rows = await LocalDB.getWeeklyPlanEntries(planId ?? undefined);
   return rows.map((row) => ({
     id: row.id,
     dayKey: row.day_key as WeekDayKey,
     muscleGroupId: row.muscle_group_id,
     sets: Number(row.sets) || 0,
     note: row.note || null,
+    planId: row.plan_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -139,14 +435,17 @@ export async function getWeeklyPlanEntries(userId?: string | null) {
 export async function upsertWeeklyPlanEntry(
   input: WeeklyPlanEntryInput,
   userId?: string | null,
+  planId?: string | null,
 ) {
   const now = new Date().toISOString();
+  const resolvedPlanId = planId ?? (await getActiveWorkoutPlanId(userId));
   const nextEntry: WeeklyPlanEntry = {
     id: input.id || generateId(),
     dayKey: input.dayKey,
     muscleGroupId: input.muscleGroupId,
     sets: Math.max(1, Math.round(input.sets)),
     note: input.note?.trim() || null,
+    planId: resolvedPlanId,
     createdAt: now,
     updatedAt: now,
   };
@@ -162,13 +461,14 @@ export async function upsertWeeklyPlanEntry(
         muscle_group_id: nextEntry.muscleGroupId,
         sets: nextEntry.sets,
         note: nextEntry.note,
+        plan_id: nextEntry.planId,
         created_at: nextEntry.createdAt,
         updated_at: now,
         deleted_at: null,
       }) as any);
 
       if (error) throw error;
-      return getWebWeeklyPlanEntries(resolvedUserId);
+      return getWebWeeklyPlanEntries(resolvedUserId, resolvedPlanId);
     }
 
     const entries = await getWebWeeklyPlanEntries(userId);
@@ -186,10 +486,10 @@ export async function upsertWeeklyPlanEntry(
     }
 
     await saveWebWeeklyPlanEntries(entries, userId);
-    return entries;
+    return resolvedPlanId ? entries.filter((e) => e.planId === resolvedPlanId) : entries;
   }
 
-  const existingEntries = await getWeeklyPlanEntries(userId);
+  const existingEntries = await getWeeklyPlanEntries(userId, resolvedPlanId);
   const existing = existingEntries.find((entry) => entry.id === nextEntry.id);
 
   await LocalDB.upsertWeeklyPlanEntry({
@@ -198,21 +498,25 @@ export async function upsertWeeklyPlanEntry(
     muscle_group_id: nextEntry.muscleGroupId,
     sets: nextEntry.sets,
     note: nextEntry.note,
+    plan_id: resolvedPlanId,
     created_at: existing?.createdAt || now,
     updated_at: now,
     dirty: 1,
     deleted: 0,
   });
 
-  return getWeeklyPlanEntries(userId);
+  return getWeeklyPlanEntries(userId, resolvedPlanId);
 }
 
 export async function upsertWeeklyPlanEntries(
   inputs: WeeklyPlanEntryInput[],
   userId?: string | null,
+  planId?: string | null,
 ) {
+  const resolvedPlanId = planId ?? (await getActiveWorkoutPlanId(userId));
+
   if (inputs.length === 0) {
-    return getWeeklyPlanEntries(userId);
+    return getWeeklyPlanEntries(userId, resolvedPlanId);
   }
 
   const now = new Date().toISOString();
@@ -222,6 +526,7 @@ export async function upsertWeeklyPlanEntries(
     muscleGroupId: input.muscleGroupId,
     sets: Math.max(1, Math.round(input.sets)),
     note: input.note?.trim() || null,
+    planId: resolvedPlanId,
     createdAt: now,
     updatedAt: now,
   }));
@@ -237,6 +542,7 @@ export async function upsertWeeklyPlanEntries(
         muscle_group_id: nextEntry.muscleGroupId,
         sets: nextEntry.sets,
         note: nextEntry.note,
+        plan_id: nextEntry.planId,
         created_at: nextEntry.createdAt,
         updated_at: now,
         deleted_at: null,
@@ -244,7 +550,7 @@ export async function upsertWeeklyPlanEntries(
 
       const { error } = await (supabase.from('weekly_plan_entries').upsert(payload as any) as any);
       if (error) throw error;
-      return getWebWeeklyPlanEntries(resolvedUserId);
+      return getWebWeeklyPlanEntries(resolvedUserId, resolvedPlanId);
     }
 
     const entries = await getWebWeeklyPlanEntries(userId);
@@ -265,10 +571,10 @@ export async function upsertWeeklyPlanEntries(
     }
 
     await saveWebWeeklyPlanEntries(entries, userId);
-    return entries;
+    return resolvedPlanId ? entries.filter((e) => e.planId === resolvedPlanId) : entries;
   }
 
-  const existingEntries = await getWeeklyPlanEntries(userId);
+  const existingEntries = await getWeeklyPlanEntries(userId, resolvedPlanId);
   const existingById = new Map(existingEntries.map((entry) => [entry.id, entry]));
 
   for (const nextEntry of nextEntries) {
@@ -280,6 +586,7 @@ export async function upsertWeeklyPlanEntries(
       muscle_group_id: nextEntry.muscleGroupId,
       sets: nextEntry.sets,
       note: nextEntry.note,
+      plan_id: resolvedPlanId,
       created_at: existing?.createdAt || now,
       updated_at: now,
       dirty: 1,
@@ -287,10 +594,10 @@ export async function upsertWeeklyPlanEntries(
     });
   }
 
-  return getWeeklyPlanEntries(userId);
+  return getWeeklyPlanEntries(userId, resolvedPlanId);
 }
 
-export async function deleteWeeklyPlanEntry(id: string, userId?: string | null) {
+export async function deleteWeeklyPlanEntry(id: string, userId?: string | null, planId?: string | null) {
   if (Platform.OS === 'web') {
     const resolvedUserId = userId || (await getWebUserId());
 
@@ -303,15 +610,15 @@ export async function deleteWeeklyPlanEntry(id: string, userId?: string | null) 
         .is('deleted_at', null) as any);
 
       if (error) throw error;
-      return getWebWeeklyPlanEntries(resolvedUserId);
+      return getWebWeeklyPlanEntries(resolvedUserId, planId);
     }
 
     const entries = await getWebWeeklyPlanEntries(userId);
     const filtered = entries.filter((entry) => entry.id !== id);
     await saveWebWeeklyPlanEntries(filtered, userId);
-    return filtered;
+    return planId ? filtered.filter((e) => e.planId === planId) : filtered;
   }
 
   await LocalDB.deleteWeeklyPlanEntry(id);
-  return getWeeklyPlanEntries(userId);
+  return getWeeklyPlanEntries(userId, planId);
 }

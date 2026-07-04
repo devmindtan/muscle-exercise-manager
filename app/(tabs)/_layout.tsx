@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, Dumbbell, ClipboardList, Activity, UtensilsCrossed } from 'lucide-react-native';
+import { LayoutDashboard, Dumbbell, ClipboardList, UtensilsCrossed, Users } from 'lucide-react-native';
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/colors';
@@ -77,20 +77,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="metrics"
-        options={{
-          title: 'Chỉ số',
-          tabBarIcon: ({ color, size }) => (
-            <Activity color={color} size={size} strokeWidth={1.8} />
-          ),
-        }}
-      />
+          name="community"
+          options={{
+            title: 'Cộng đồng',
+            tabBarIcon: ({ color, size }) => (
+              <Users color={color} size={size} strokeWidth={1.8} />
+            ),
+          }}
+        />
       <Tabs.Screen
         name="log"
         options={{
           title: 'Ghi lại',
           tabBarItemStyle: {
-            transform: [{ translateX: -8 }], 
+            transform: [{ translateX: -8 }],
           },
           tabBarIcon: ({ color, size }) => (
             <ClipboardList color={color} size={size} strokeWidth={1.8} />

@@ -1,24 +1,16 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  RefreshControl,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { TrendingUp, ChevronRight, Dumbbell } from 'lucide-react-native';
 import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
 import type { WeekStat } from '@/src/lib/repository';
 import { HistoryTabSection } from '../components/dashboard-tabs/HistoryTab';
 import type { HistoryPoint } from '../components/dashboard-tabs/HistoryTab';
+import { OverviewTab, getProgressState } from '../components/dashboard-tabs/OverviewTab';
+import type { ProgressTab } from '../components/dashboard-tabs/OverviewTab';
+import { SlidingTabs } from '@/src/components/common/SlidingTabs';
 import { SyncStatusChip } from '@/src/components/SyncStatusChip';
 import { Colors } from '@/src/constants/colors';
-
-type DashboardTab = 'overview' | 'history';
 
 function getWeekRange() {
   const now = new Date();
@@ -126,118 +118,11 @@ function sumVolume(logs: any[]) {
   }, 0);
 }
 
-const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
-
-type ProgressTab = 'completed' | 'pending' | 'over';
-
-function getProgressState(stat: WeekStat): ProgressTab {
-  if (stat.targetSetsPerWeek > 0 && stat.weekly_sets > stat.targetSetsPerWeek) {
-    return 'over';
-  }
-  if (stat.targetSetsPerWeek > 0 && stat.weekly_sets === stat.targetSetsPerWeek) {
-    return 'completed';
-  }
-  return 'pending';
-}
-
-function getProgressCopy(stat: WeekStat) {
-  const status = getProgressState(stat);
-  const remaining = Math.max(stat.targetSetsPerWeek - stat.weekly_sets, 0);
-  const exceeded = Math.max(stat.weekly_sets - stat.targetSetsPerWeek, 0);
-  const progressPercent =
-    stat.targetSetsPerWeek > 0
-      ? Math.round((stat.weekly_sets / stat.targetSetsPerWeek) * 100)
-      : 0;
-
-  if (status === 'over') {
-    return {
-      status,
-      badgeLabel: 'Vượt',
-      badgeStyle: styles.statusOver,
-      badgeTextStyle: styles.statusOverText,
-      helperText: `Vượt ${exceeded} sets so với mục tiêu tuần`,
-      accentColor: Colors.success,
-      progressText: `${progressPercent}%`,
-    };
-  }
-  if (status === 'completed') {
-    return {
-      status,
-      badgeLabel: 'Hoàn thành',
-      badgeStyle: styles.statusCompleted,
-      badgeTextStyle: styles.statusCompletedText,
-      helperText: 'Đã chạm đúng mục tiêu tuần',
-      accentColor: Colors.accent,
-      progressText: `${progressPercent}%`,
-    };
-  }
-  return {
-    status,
-    badgeLabel: 'Chưa đủ',
-    badgeStyle: styles.statusPending,
-    badgeTextStyle: styles.statusPendingText,
-    helperText: `Còn ${remaining} sets để đạt mục tiêu`,
-    accentColor: Colors.accent,
-    progressText: `${progressPercent}%`,
-  };
-}
-
-function ProgressBar({
-  value,
-  color,
-  target,
-}: {
-  value: number;
-  color: string;
-  target: number;
-}) {
-  const pct = target > 0 ? Math.min(value / target, 1) : 0;
-  const over = target > 0 && value > target;
-  return (
-    <View style={styles.progressTrack}>
-      <View
-        style={[
-          styles.progressFill,
-          {
-            width: `${pct * 100}%`,
-            backgroundColor: over ? Colors.success : color,
-          },
-        ]}
-      />
-    </View>
-  );
-}
-
-// Segmented goal bar in summary card
-function GoalSegmentBar({
-  completed,
-  over,
-  total,
-}: {
-  completed: number;
-  over: number;
-  total: number;
-}) {
-  const pctDone = total > 0 ? (completed / total) * 100 : 0;
-  const pctOver = total > 0 ? (over / total) * 100 : 0;
-  return (
-    <View style={styles.segmentTrack}>
-      {pctDone > 0 && (
-        <View style={[styles.segmentFill, { width: `${pctDone}%`, backgroundColor: Colors.accent }]} />
-      )}
-      {pctOver > 0 && (
-        <View style={[styles.segmentFill, { width: `${pctOver}%`, backgroundColor: Colors.success }]} />
-      )}
-    </View>
-  );
-}
-
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<WeekStat[]>([]);
   const [totalSets, setTotalSets] = useState(0);
   const [monthlyVolume, setMonthlyVolume] = useState(0);
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [weeklyHistory, setWeeklyHistory] = useState<HistoryPoint[]>([]);
   const [monthlyHistory, setMonthlyHistory] = useState<HistoryPoint[]>([]);
@@ -248,6 +133,7 @@ export default function DashboardScreen() {
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [progressTab, setProgressTab] = useState<ProgressTab>('pending');
   const [weekKey, setWeekKey] = useState(getWeekKey());
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'history'>('overview');
 
   // Total target sets across all muscle groups
   const totalTargetSets = useMemo(
@@ -364,15 +250,24 @@ export default function DashboardScreen() {
     [categoryFilteredStats],
   );
 
+  const effectiveProgressTab = useMemo<ProgressTab>(() => {
+    if (categoryFilteredStats.length === 0) return progressTab;
+    if (progressCounts[progressTab] > 0) return progressTab;
+    const order: ProgressTab[] = ['pending', 'completed', 'over'];
+    return order.find((t) => progressCounts[t] > 0) ?? progressTab;
+  }, [progressCounts, progressTab, categoryFilteredStats.length]);
+
+  useEffect(() => {
+    if (effectiveProgressTab !== progressTab) {
+      setProgressTab(effectiveProgressTab);
+    }
+  }, [effectiveProgressTab, progressTab]);
+
   const filteredStats = useMemo(
-    () => categoryFilteredStats.filter((s) => getProgressState(s) === progressTab),
-    [categoryFilteredStats, progressTab],
+    () => categoryFilteredStats.filter((s) => getProgressState(s) === effectiveProgressTab),
+    [categoryFilteredStats, effectiveProgressTab],
   );
-  const hasStatsForCurrentTab = filteredStats.length > 0;
-  const displayedStats = useMemo(
-    () => (hasStatsForCurrentTab ? filteredStats : categoryFilteredStats),
-    [hasStatsForCurrentTab, filteredStats, categoryFilteredStats],
-  );
+  const displayedStats = filteredStats;
 
   // Monthly volume: number only, unit in hint
   const monthlyVolumeNumber =
@@ -391,269 +286,77 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.accent}
-          />
-        }
-      >
-        {/* ── Header ── */}
-        <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={styles.headerTitle}>Tuần này</Text>
-              <Text style={styles.headerSub}>{weekLabel}</Text>
-            </View>
-            <SyncStatusChip />
+      {/* ── Header ── */}
+      <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerTitle}>Tuần này</Text>
+            <Text style={styles.headerSub}>{weekLabel}</Text>
           </View>
+          <SyncStatusChip />
         </View>
+      </View>
 
-        <View style={styles.dashboardTabRow}>
-          <TouchableOpacity
-            style={[styles.dashboardTabBtn, dashboardTab === 'overview' && styles.dashboardTabBtnActive]}
-            onPress={() => setDashboardTab('overview')}
-          >
-            <Text style={[styles.dashboardTabText, dashboardTab === 'overview' && styles.dashboardTabTextActive]}>
-              Tổng quan
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dashboardTabBtn, dashboardTab === 'history' && styles.dashboardTabBtnActive]}
-            onPress={() => setDashboardTab('history')}
-          >
-            <Text style={[styles.dashboardTabText, dashboardTab === 'history' && styles.dashboardTabTextActive]}>
-              Lịch sử
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {dashboardTab === 'overview' ? (
-          <>
-            {/* ── 2-col stat grid: sets + volume ── */}
-            <View style={styles.statGrid}>
-              <View style={styles.statCard}>
-                <View style={styles.statLabelRow}>
-                  <TrendingUp color={Colors.accent} size={14} strokeWidth={2} />
-                  <Text style={styles.statLabel}>Sets tuần này</Text>
-                </View>
-                <View style={styles.statValueRow}>
-                  <Text style={[styles.statValue, { color: Colors.accent }]}>{totalSets}</Text>
-                  <Text style={styles.statValueDivider}>/{totalTargetSets}</Text>
-                </View>
-                <Text style={styles.statHint}>
-                  {stats.filter((s) => getProgressState(s) !== 'pending').length}/{stats.length} nhóm cơ
-                </Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <View style={styles.statLabelRow}>
-                  <Dumbbell color={Colors.textSecondary} size={14} strokeWidth={2} />
-                  <Text style={styles.statLabel}>Khối lượng / tháng</Text>
-                </View>
-                <Text style={styles.statValue}>{monthlyVolumeNumber}</Text>
-                <Text style={styles.statHint}>sets × reps × kg ({monthlyVolumeUnit}) </Text>
-              </View>
-            </View>
-
-            <View style={styles.goalCard}>
-              <View style={styles.goalHeader}>
-                <Text style={styles.goalTitle}>Mục tiêu tuần</Text>
-                <Text style={styles.goalRatio}>
-                  {progressCounts.completed + progressCounts.over}/{stats.length} nhóm cơ
-                </Text>
-              </View>
-
-              <GoalSegmentBar
-                completed={progressCounts.completed}
-                over={progressCounts.over}
-                total={stats.length}
-              />
-
-              <View style={styles.goalChipRow}>
-                <View style={[styles.goalChip, styles.statusCompleted]}>
-                  <Text style={[styles.goalChipText, styles.statusCompletedText]}>
-                    Hoàn thành {progressCounts.completed}
-                  </Text>
-                </View>
-                <View style={[styles.goalChip, styles.statusPending]}>
-                  <Text style={[styles.goalChipText, styles.statusPendingText]}>
-                    Chưa {progressCounts.pending}
-                  </Text>
-                </View>
-                <View style={[styles.goalChip, styles.statusOver]}>
-                  <Text style={[styles.goalChipText, styles.statusOverText]}>
-                    Vượt {progressCounts.over}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {stats.length > 0 && (
-              <View style={styles.filterSection}>
-                <View style={styles.filterWrap}>
-                  {CATEGORIES.map((cat) => {
-                    const isSelected = selectedCategories.has(cat);
-                    const count = stats.filter((s) => (s.category || 'Khác') === cat).length;
-                    return (
-                      <TouchableOpacity
-                        key={cat}
-                        style={[styles.filterChip, isSelected && styles.filterChipActive]}
-                        onPress={() => toggleCategory(cat)}
-                      >
-                        <Text
-                          style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}
-                        >
-                          {cat} ({count})
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            {stats.length > 0 && (
-              <View style={styles.progressTabs}>
-                {(
-                  [
-                    { key: 'completed', label: 'Hoàn thành', count: progressCounts.completed },
-                    { key: 'pending', label: 'Chưa', count: progressCounts.pending },
-                    { key: 'over', label: 'Vượt', count: progressCounts.over },
-                  ] as const
-                ).map((tab) => {
-                  const isActive = progressTab === tab.key;
-                  const isDisabled = tab.count === 0;
-                  return (
-                    <TouchableOpacity
-                      key={tab.key}
-                      style={[
-                        styles.progressTab,
-                        isActive && styles.progressTabActive,
-                        isDisabled && styles.progressTabDisabled,
-                      ]}
-                      onPress={() => {
-                        if (isDisabled) return;
-                        setProgressTab(tab.key);
-                      }}
-                      disabled={isDisabled}
-                    >
-                      <Text
-                        style={[
-                          styles.progressTabText,
-                          isActive && styles.progressTabTextActive,
-                          isDisabled && styles.progressTabTextDisabled,
-                        ]}
-                      >
-                        {tab.label}
-                      </Text>
-                      <View
-                        style={[
-                          styles.progressTabBadge,
-                          isActive && styles.progressTabBadgeActive,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.progressTabBadgeText,
-                            isActive && styles.progressTabBadgeTextActive,
-                            isDisabled && styles.progressTabBadgeTextDisabled,
-                          ]}
-                        >
-                          {tab.count}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            {stats.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyTitle}>Chưa có nhóm cơ nào</Text>
-                <Text style={styles.emptyText}>
-                  Vào tab &quot;Nhóm cơ&quot; để thêm nhóm cơ và bài tập
-                </Text>
-              </View>
-            ) : (
-              <>
-                <Text style={styles.sectionTitle}>Tiến độ nhóm cơ ({displayedStats.length})</Text>
-
-                {!hasStatsForCurrentTab && (
-                  <View style={styles.filterHintBox}>
-                    <Text style={styles.filterHintText}>
-                      Không có nhóm cơ cho trạng thái đã chọn. Đang hiển thị tất cả nhóm trong bộ lọc hiện tại.
-                    </Text>
-                  </View>
-                )}
-
-                {displayedStats.map((s) => {
-                  const progressCopy = getProgressCopy(s);
-                  return (
-                    <TouchableOpacity
-                      key={s.id}
-                      style={styles.muscleCard}
-                      onPress={() => router.push(`/muscles/${s.id}`)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={styles.muscleRow}>
-                        <View style={[styles.dot, { backgroundColor: s.color }]} />
-                        <View style={styles.muscleInfo}>
-                          <View style={styles.muscleNameRow}>
-                            <Text style={styles.muscleName}>{s.name}</Text>
-                            <Text style={styles.exerciseCount}> · {s.exerciseCount} bài</Text>
-                          </View>
-                        </View>
-                        <View style={[styles.statusChip, progressCopy.badgeStyle]}>
-                          <Text style={[styles.statusChipText, progressCopy.badgeTextStyle]}>
-                            {progressCopy.badgeLabel}
-                          </Text>
-                        </View>
-                        <ChevronRight color={Colors.textMuted} size={16} strokeWidth={1.8} />
-                      </View>
-
-                      <View style={styles.setsRow}>
-                        <Text style={[styles.setsActual, { color: progressCopy.accentColor }]}> 
-                          {s.weekly_sets}
-                        </Text>
-                        <Text style={styles.setsSlash}> / </Text>
-                        <Text style={styles.setsTarget}>{s.targetSetsPerWeek} sets</Text>
-                      </View>
-
-                      <ProgressBar
-                        value={s.weekly_sets}
-                        target={s.targetSetsPerWeek}
-                        color={progressCopy.accentColor || s.color || Colors.accent}
-                      />
-
-                      <View style={styles.progressMetaRow}>
-                        <Text style={styles.progressHelper}>{progressCopy.helperText}</Text>
-                        <Text style={styles.progressPercent}>{progressCopy.progressText}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
-            )}
-          </>
-        ) : (
-          <HistoryTabSection
-            historyLoading={historyLoading}
-            weeklyHistory={weeklyHistory}
-            monthlyHistory={monthlyHistory}
-            selectedWeekKey={selectedWeekKey}
-            selectedMonthKey={selectedMonthKey}
-            setSelectedWeekKey={setSelectedWeekKey}
-            setSelectedMonthKey={setSelectedMonthKey}
-          />
+      <SlidingTabs
+        tabs={[
+          { key: 'overview', label: 'Tổng quan' },
+          { key: 'history', label: 'Lịch sử' },
+        ]}
+        activeTab={dashboardTab}
+        onTabChange={(key) => setDashboardTab(key as 'overview' | 'history')}
+        containerStyle={{ backgroundColor: Colors.bg }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
+        }
+        renderTabBar={({ activeTab, onSelect }) => (
+          <View style={styles.dashboardTabRow}>
+            <TouchableOpacity
+              style={[styles.dashboardTabBtn, activeTab === 'overview' && styles.dashboardTabBtnActive]}
+              onPress={() => onSelect('overview')}
+            >
+              <Text style={[styles.dashboardTabText, activeTab === 'overview' && styles.dashboardTabTextActive]}>
+                Tổng quan
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dashboardTabBtn, activeTab === 'history' && styles.dashboardTabBtnActive]}
+              onPress={() => onSelect('history')}
+            >
+              <Text style={[styles.dashboardTabText, activeTab === 'history' && styles.dashboardTabTextActive]}>
+                Lịch sử
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
-      </ScrollView>
-
+        renderScreen={(key) =>
+          key === 'overview' ? (
+            <OverviewTab
+              stats={stats}
+              totalSets={totalSets}
+              totalTargetSets={totalTargetSets}
+              monthlyVolumeNumber={monthlyVolumeNumber}
+              monthlyVolumeUnit={monthlyVolumeUnit}
+              selectedCategories={selectedCategories}
+              toggleCategory={toggleCategory}
+              progressCounts={progressCounts}
+              effectiveProgressTab={effectiveProgressTab}
+              setProgressTab={setProgressTab}
+              categoryFilteredStats={categoryFilteredStats}
+              displayedStats={displayedStats}
+            />
+          ) : (
+            <HistoryTabSection
+              historyLoading={historyLoading}
+              weeklyHistory={weeklyHistory}
+              monthlyHistory={monthlyHistory}
+              selectedWeekKey={selectedWeekKey}
+              selectedMonthKey={selectedMonthKey}
+              setSelectedWeekKey={setSelectedWeekKey}
+              setSelectedMonthKey={setSelectedMonthKey}
+            />
+          )
+        }
+      />
     </View>
   );
 }
@@ -662,11 +365,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: Colors.textMuted, fontSize: 15 },
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 32 },
 
   // ── Header ──
-  header: { paddingHorizontal: 20, paddingBottom: 16 },
+  header: { paddingHorizontal: 20, paddingBottom: 16, backgroundColor: Colors.bg },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -705,242 +406,4 @@ const styles = StyleSheet.create({
   },
   dashboardTabText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
   dashboardTabTextActive: { color: Colors.accent },
-
-  // ── 2-col stat grid ──
-  statGrid: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    gap: 12,
-    marginBottom: 14,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  statLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginBottom: 6,
-  },
-  statLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
-  // Row for "totalSets / totalTargetSets"
-  statValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-  },
-  statValueDivider: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.textMuted,
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: Colors.text,
-    lineHeight: 36,
-  },
-  statHint: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
-
-  // ── Goal progress card ──
-  goalCard: {
-    marginHorizontal: 20,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 20,
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  goalTitle: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
-  goalRatio: { fontSize: 12, color: Colors.textMuted },
-
-  segmentTrack: {
-    height: 6,
-    backgroundColor: Colors.border,
-    borderRadius: 3,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  segmentFill: { height: '100%' },
-
-  goalChipRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  goalChip: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  goalChipText: { fontSize: 11, fontWeight: '700' },
-
-  // ── Category filter ──
-  filterSection: { paddingHorizontal: 20, marginBottom: 20 },
-  filterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.accent,
-    borderColor: Colors.accent,
-  },
-  filterChipText: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary },
-  filterChipTextActive: { color: Colors.bg, fontWeight: '700' },
-
-  // ── Section title + tabs ──
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-  progressTabs: {
-    flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-  progressTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  progressTabDisabled: {
-    opacity: 0.45,
-  },
-  progressTabActive: {
-    borderColor: Colors.accent,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  progressTabText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-  progressTabTextDisabled: { color: Colors.textMuted },
-  progressTabTextActive: { color: Colors.accent },
-  progressTabBadge: {
-    minWidth: 20,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 999,
-    backgroundColor: Colors.border,
-    alignItems: 'center',
-  },
-  progressTabBadgeActive: { backgroundColor: Colors.accent + '20' },
-  progressTabBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
-  progressTabBadgeTextDisabled: { color: Colors.textMuted },
-  progressTabBadgeTextActive: { color: Colors.accent },
-  filterHintBox: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  filterHintText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-  },
-
-  // ── Muscle cards ──
-  muscleCard: {
-    marginHorizontal: 20,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 10,
-  },
-  muscleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  dot: { width: 9, height: 9, borderRadius: 5 },
-  muscleInfo: { flex: 1 },
-  muscleNameRow: { flexDirection: 'row', alignItems: 'baseline' },
-  muscleName: { fontSize: 15, fontWeight: '600', color: Colors.text },
-  exerciseCount: { fontSize: 12, color: Colors.textMuted, fontWeight: '400' },
-
-  setsRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 8 },
-  setsActual: { fontSize: 22, fontWeight: '700' },
-  setsSlash: { fontSize: 14, color: Colors.textMuted },
-  setsTarget: { fontSize: 13, color: Colors.textMuted },
-
-  progressTrack: {
-    height: 3,
-    backgroundColor: Colors.border,
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  progressFill: { height: '100%', borderRadius: 2 },
-
-  progressMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  progressHelper: { fontSize: 11, color: Colors.textMuted, flex: 1 },
-  progressPercent: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
-
-  // ── Status chips ──
-  statusChip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
-  statusChipText: { fontSize: 11, fontWeight: '700' },
-  statusCompleted: { backgroundColor: Colors.accent + '20' },
-  statusCompletedText: { color: Colors.accent },
-  statusPending: { backgroundColor: Colors.textMuted + '1a' },
-  statusPendingText: { color: Colors.textSecondary },
-  statusOver: { backgroundColor: Colors.success + '20' },
-  statusOverText: { color: Colors.success },
-
-  // ── Empty states ──
-  emptyBox: {
-    margin: 20,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.text, marginBottom: 8 },
-  emptyText: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
 });

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   Modal,
@@ -10,15 +11,42 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, LogOut, User as UserIcon, Mail, Hash, Shield } from 'lucide-react-native';
+import { X, LogOut, User as UserIcon, Mail, Hash, Shield, Lock } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import { useSync } from '@/src/context/SyncContext';
+import { getMyProfile, saveProfile } from '@/src/lib/repository';
 
 export function UserAccountModal() {
   const { user, signOut } = useAuth();
   const { offlineTestMode, setOfflineTestMode } = useSync();
   const [visible, setVisible] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [bioDraft, setBioDraft] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileDirty, setProfileDirty] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !user) return;
+    let cancelled = false;
+    setProfileLoading(true);
+    getMyProfile()
+      .then((profile) => {
+        if (cancelled) return;
+        const fallbackName = user.name || user.user_metadata?.name || user.email?.split('@')[0] || '';
+        setDisplayNameDraft(profile?.display_name ?? fallbackName);
+        setBioDraft(profile?.bio ?? '');
+        setIsPrivate(profile?.is_private ?? false);
+        setProfileDirty(false);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setProfileLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [visible, user]);
 
   if (!user) {
     return null;
@@ -40,6 +68,22 @@ export function UserAccountModal() {
       setVisible(false);
     } catch (error) {
       console.error('Sign out error:', error);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    try {
+      await saveProfile({
+        displayName: displayNameDraft.trim() || null,
+        bio: bioDraft.trim() || null,
+        isPrivate,
+      });
+      setProfileDirty(false);
+    } catch (error) {
+      console.error('Save profile error:', error);
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -160,6 +204,61 @@ export function UserAccountModal() {
                 <Text style={styles.noticeText}>
                   Thông tin tài khoản được cung cấp bởi Google. Dữ liệu tập thể dục của bạn được lưu trữ an toàn và tách riêng theo UUID.
                 </Text>
+              </View>
+
+              {/* Public profile — editable */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>Hồ sơ công khai</Text>
+
+                <Text style={styles.fieldLabel}>Tên hiển thị</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={displayNameDraft}
+                  onChangeText={(v) => { setDisplayNameDraft(v); setProfileDirty(true); }}
+                  placeholder={userName}
+                  placeholderTextColor={Colors.textMuted}
+                  editable={!profileLoading}
+                />
+
+                <Text style={styles.fieldLabel}>Giới thiệu (tuỳ chọn)</Text>
+                <TextInput
+                  style={[styles.fieldInput, styles.fieldInputMultiline]}
+                  value={bioDraft}
+                  onChangeText={(v) => { setBioDraft(v); setProfileDirty(true); }}
+                  placeholder="Vài dòng giới thiệu về bạn..."
+                  placeholderTextColor={Colors.textMuted}
+                  multiline
+                  editable={!profileLoading}
+                />
+
+                <View style={styles.privacyRow}>
+                  <View style={styles.privacyIconWrap}>
+                    <Lock color={Colors.accent} size={16} strokeWidth={1.8} />
+                  </View>
+                  <View style={styles.infoTextWrap}>
+                    <Text style={styles.toggleTitle}>Riêng tư tập luyện</Text>
+                    <Text style={styles.privacyHint}>
+                      Ẩn nhật ký, kế hoạch và tiến độ tập luyện khỏi người khác — tên và ảnh đại diện luôn hiển thị.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={isPrivate}
+                    onValueChange={(value) => { setIsPrivate(value); setProfileDirty(true); }}
+                    trackColor={{ false: Colors.border, true: Colors.accent + '55' }}
+                    thumbColor={isPrivate ? Colors.accent : '#f4f3f4'}
+                    disabled={profileLoading}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.saveProfileButton, (!profileDirty || profileSaving) && styles.saveProfileButtonDisabled]}
+                  onPress={handleSaveProfile}
+                  disabled={!profileDirty || profileSaving}
+                >
+                  <Text style={styles.saveProfileButtonText}>
+                    {profileSaving ? 'Đang lưu...' : 'Lưu hồ sơ'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.toggleCard}>
@@ -353,6 +452,77 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: Colors.textMuted,
+  },
+
+  sectionCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    marginBottom: 6,
+  },
+  fieldInput: {
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 14,
+  },
+  fieldInputMultiline: {
+    minHeight: 64,
+    textAlignVertical: 'top',
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  privacyIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: `${Colors.accent}18`,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  privacyHint: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  saveProfileButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.accent,
+  },
+  saveProfileButtonDisabled: {
+    opacity: 0.5,
+  },
+  saveProfileButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.bg,
   },
 
   toggleCard: {

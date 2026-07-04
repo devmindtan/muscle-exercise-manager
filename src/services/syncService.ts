@@ -281,6 +281,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           muscle_group_id: plan.muscle_group_id,
           sets: plan.sets,
           note: plan.note,
+          plan_id: plan.plan_id,
           created_at: plan.created_at,
           updated_at: new Date().toISOString(),
           deleted_at: isDeleted ? new Date().toISOString() : null,
@@ -293,6 +294,23 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         }
       } catch (e: any) {
         errors.push(`Error syncing weekly plan ${plan.id}: ${e.message}`);
+      }
+    }
+
+    // Workout plans (named plan groups) — guard against pull clobbering pending edits
+    const pendingWorkoutPlans = await LocalDB.getPendingWorkoutPlans();
+    for (const plan of pendingWorkoutPlans) {
+      try {
+        const { error } = await (supabase as any).from('workout_plans').upsert({
+          id: plan.id, user_id: userId, name: plan.name, is_active: plan.is_active === 1,
+          created_at: plan.created_at, updated_at: plan.updated_at,
+          deleted_at: plan.deleted_at ?? null, sync_status: 'synced',
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markWorkoutPlanSynced(plan.id);
+        weeklyPlansSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync workout plan ${plan.id}: ${e.message}`);
       }
     }
 
@@ -504,6 +522,70 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       errors.push(`Error pulling weekly plans: ${e.message}`);
     }
 
+    // Workout plans — luôn pull mỗi lần, guard chống đè lên edit chưa sync
+    try {
+      const stillPendingPlans = new Set((await LocalDB.getPendingWorkoutPlans()).map((p) => p.id));
+      const { data: remotePlans, error: workoutPlanError } = await (supabase as any)
+        .from('workout_plans')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (workoutPlanError) {
+        errors.push(`Failed to fetch workout plans: ${workoutPlanError.message}`);
+      } else if (remotePlans && Array.isArray(remotePlans)) {
+        for (const r of remotePlans) {
+          if (stillPendingPlans.has(r.id)) continue;
+          await LocalDB.upsertWorkoutPlan({
+            ...r,
+            is_active: r.is_active ? 1 : 0,
+            sync_status: 'synced',
+          });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling workout plans: ${e.message}`);
+    }
+
+    // Friendships — pull rows where I'm either requester or addressee
+    try {
+      const stillPendingFriendships = new Set((await LocalDB.getPendingFriendships()).map((f) => f.id));
+      const { data: remoteFriendships, error: friendshipError } = await (supabase as any)
+        .from('friendships')
+        .select('*')
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+
+      if (friendshipError) {
+        errors.push(`Failed to fetch friendships: ${friendshipError.message}`);
+      } else if (remoteFriendships && Array.isArray(remoteFriendships)) {
+        for (const r of remoteFriendships) {
+          if (stillPendingFriendships.has(r.id)) continue;
+          await LocalDB.upsertFriendship({ ...r, sync_status: 'synced' });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling friendships: ${e.message}`);
+    }
+
+    // Plan shares — only shares I own (shares by others are resolved on-demand via share code)
+    try {
+      const stillPendingShares = new Set((await LocalDB.getPendingPlanShares()).map((s) => s.id));
+      const { data: remoteShares, error: shareError } = await (supabase as any)
+        .from('plan_shares')
+        .select('*')
+        .eq('owner_id', userId);
+
+      if (shareError) {
+        errors.push(`Failed to fetch plan shares: ${shareError.message}`);
+      } else if (remoteShares && Array.isArray(remoteShares)) {
+        for (const r of remoteShares) {
+          if (stillPendingShares.has(r.id)) continue;
+          await LocalDB.upsertPlanShare({ ...r, sync_status: 'synced' });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling plan shares: ${e.message}`);
+    }
+
     // Cardio logs — luôn pull mỗi lần (cross-device realtime)
     try {
       const { data: remoteCardioLogs, error: cardioError } = await supabase
@@ -603,6 +685,60 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     }
 
+    // Profile (display name, avatar, bio, privacy) — singleton row
+    const pendingProfile = await LocalDB.getPendingProfile();
+    if (pendingProfile) {
+      try {
+        const { error } = await (supabase as any).from('profiles').upsert({
+          id: pendingProfile.id, user_id: userId,
+          display_name: pendingProfile.display_name ?? null,
+          avatar_url: pendingProfile.avatar_url ?? null,
+          bio: pendingProfile.bio ?? null,
+          is_private: pendingProfile.is_private === 1,
+          created_at: pendingProfile.created_at, updated_at: pendingProfile.updated_at,
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markProfileSynced(pendingProfile.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync profile: ${e.message}`);
+      }
+    }
+
+    // Friendships (both directions — I may be requester or addressee)
+    const pendingFriendships = await LocalDB.getPendingFriendships();
+    for (const f of pendingFriendships) {
+      try {
+        const { error } = await (supabase as any).from('friendships').upsert({
+          id: f.id, requester_id: f.requester_id, addressee_id: f.addressee_id,
+          status: f.status, created_at: f.created_at, updated_at: f.updated_at,
+          deleted_at: f.deleted_at ?? null,
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markFriendshipSynced(f.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync friendship ${f.id}: ${e.message}`);
+      }
+    }
+
+    // Plan shares (only shares I own)
+    const pendingPlanShares = await LocalDB.getPendingPlanShares();
+    for (const s of pendingPlanShares) {
+      try {
+        const { error } = await (supabase as any).from('plan_shares').upsert({
+          id: s.id, plan_id: s.plan_id, owner_id: s.owner_id, share_code: s.share_code,
+          visibility: s.visibility, created_at: s.created_at, updated_at: s.updated_at,
+          deleted_at: s.deleted_at ?? null,
+        }, { onConflict: 'id' });
+        if (error) throw error;
+        await LocalDB.markPlanShareSynced(s.id);
+        nutritionSynced++;
+      } catch (e: any) {
+        errors.push(`Failed to sync plan share ${s.id}: ${e.message}`);
+      }
+    }
+
     // TDEE settings (no sync_status column — detect unsynced by user_id IS NULL)
     const pendingTdee = await LocalDB.getPendingTdeeSettings();
     if (pendingTdee) {
@@ -668,6 +804,25 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     } catch (e: any) {
       errors.push(`Failed to pull TDEE settings: ${e.message}`);
+    }
+
+    // Profile — guard against pull clobbering a pending (not-yet-pushed) edit
+    try {
+      const stillPendingProfile = await LocalDB.getPendingProfile();
+      if (!stillPendingProfile) {
+        const { data: remoteProfile, error } = await (supabase as any)
+          .from('profiles').select('*').eq('user_id', userId).maybeSingle();
+        if (error) throw error;
+        if (remoteProfile) {
+          await LocalDB.upsertProfile({
+            ...remoteProfile,
+            is_private: remoteProfile.is_private ? 1 : 0,
+            sync_status: 'synced',
+          });
+        }
+      }
+    } catch (e: any) {
+      errors.push(`Failed to pull profile: ${e.message}`);
     }
 
     // Foods & logs — always pull (user needs their library & history cross-device)
