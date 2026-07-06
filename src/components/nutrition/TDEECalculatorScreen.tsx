@@ -9,6 +9,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { X, ChevronDown, CheckCircle } from 'lucide-react-native';
 import {
@@ -207,7 +209,7 @@ export default function TDEECalculatorScreen({ visible, onClose, onApplied }: Pr
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      <View style={styles.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Tính TDEE & Protein</Text>
@@ -422,7 +424,7 @@ export default function TDEECalculatorScreen({ visible, onClose, onApplied }: Pr
             <View style={{ height: 40 }} />
           </ScrollView>
         )}
-      </View>
+      </KeyboardAvoidingView>
 
       {/* Goal type picker modal */}
       <Modal visible={showGoalPicker} transparent animationType="fade">

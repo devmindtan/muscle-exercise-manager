@@ -10,6 +10,8 @@ import {
   Switch,
   ActivityIndicator,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { X, ChevronRight, Plus, Trash2 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -281,7 +283,7 @@ export default function NutrientConfigScreen({ visible, onClose }: Props) {
       {editingGoal && (
         <Modal visible transparent animationType="slide">
           <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setEditingGoal(null)} />
-          <View style={styles.sheet}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>
               Mục tiêu {editingGoal.config.label} / ngày
@@ -308,14 +310,14 @@ export default function NutrientConfigScreen({ visible, onClose }: Props) {
                 <Text style={styles.confirmBtnText}>Lưu</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
       {/* Add custom nutrient modal */}
       <Modal visible={showAddNutrient} transparent animationType="slide">
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowAddNutrient(false)} />
-        <View style={[styles.sheet, styles.addSheet]}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheet, styles.addSheet]}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Thêm chất dinh dưỡng</Text>
 
@@ -361,7 +363,7 @@ export default function NutrientConfigScreen({ visible, onClose }: Props) {
               {addSaving ? 'Đang lưu...' : 'Thêm'}
             </Text>
           </TouchableOpacity>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </Modal>
   );

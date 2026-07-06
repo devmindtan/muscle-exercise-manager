@@ -10,6 +10,7 @@ import {
   Platform,
   Switch,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, LogOut, User as UserIcon, Lock, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -129,7 +130,7 @@ export function UserAccountModal() {
             onPress={() => setVisible(false)}
           />
 
-          <View style={styles.sheet}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheet}>
             {/* Drag Handle */}
             <View style={styles.dragHandle} />
 
@@ -290,7 +291,7 @@ export function UserAccountModal() {
 
             {/* Safe area bottom padding */}
             <SafeAreaView style={styles.safeBottom} />
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>
