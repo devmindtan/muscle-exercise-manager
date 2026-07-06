@@ -1058,42 +1058,44 @@ export default function WeeklyPlanScreen() {
                     isChosen && { borderColor: col?.bar ?? Colors.accent, backgroundColor: col?.badgeBg ?? Colors.accent + '10' },
                   ]}
                 >
-                  <TouchableOpacity
-                    style={styles.musclePickerLeft}
-                    onPress={() => !editingId && toggleMuscle(group.id)}
-                    activeOpacity={editingId ? 1 : 0.6}
-                  >
-                    <View style={[styles.musclePickerCheck, isChosen && { backgroundColor: col?.bar ?? Colors.accent, borderColor: col?.bar ?? Colors.accent }]}>
-                      {isChosen && <Text style={styles.musclePickerCheckMark}>✓</Text>}
-                    </View>
-                    <View style={styles.musclePickerTextWrap}>
-                      <View style={styles.musclePickerNameRow}>
-                        <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
-                          {group.name}
-                        </Text>
-                        <Text style={[styles.musclePickerGoalStatus, reached ? styles.musclePickerGoalReached : styles.musclePickerGoalPending]}>
-                          {reached ? 'Đủ' : `Thiếu ${remain}`}
+                  <View style={styles.musclePickerMainRow}>
+                    <TouchableOpacity
+                      style={styles.musclePickerLeft}
+                      onPress={() => !editingId && toggleMuscle(group.id)}
+                      activeOpacity={editingId ? 1 : 0.6}
+                    >
+                      <View style={[styles.musclePickerCheck, isChosen && { backgroundColor: col?.bar ?? Colors.accent, borderColor: col?.bar ?? Colors.accent }]}>
+                        {isChosen && <Text style={styles.musclePickerCheckMark}>✓</Text>}
+                      </View>
+                      <View style={styles.musclePickerTextWrap}>
+                        <View style={styles.musclePickerNameRow}>
+                          <Text style={[styles.musclePickerName, isChosen && { color: col?.badgeText ?? Colors.accent, fontWeight: '700' }]}>
+                            {group.name}
+                          </Text>
+                          <Text style={[styles.musclePickerGoalStatus, reached ? styles.musclePickerGoalReached : styles.musclePickerGoalPending]}>
+                            {reached ? 'Đủ' : `Thiếu ${remain}`}
+                          </Text>
+                        </View>
+                        <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
+                          {/* FIX: hiển thị actual sets riêng để người dùng không nhầm */}
+                          Mục tiêu {targetSets}s · Đã tập {weekProgressLoading ? '…' : actualWeeklySets}s · Kế hoạch {projectedPlannedSets}s
                         </Text>
                       </View>
-                      <Text style={[styles.musclePickerMeta, isChosen && { color: col?.badgeText ?? Colors.textSecondary }]}>
-                        {/* FIX: hiển thị actual sets riêng để người dùng không nhầm */}
-                        Mục tiêu {targetSets}s · Đã tập {weekProgressLoading ? '…' : actualWeeklySets}s · Kế hoạch {projectedPlannedSets}s
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
 
-                  {isChosen && (
-                    <View style={styles.musclePickerSetsWrap}>
-                      <TextInput
-                        style={[styles.musclePickerSetsInput, { borderColor: col?.bar ?? Colors.accent }]}
-                        keyboardType="number-pad"
-                        value={selectedMuscles[group.id]}
-                        onChangeText={(val) => updateMuscleSets(group.id, val)}
-                        selectTextOnFocus
-                      />
-                      <Text style={[styles.musclePickerSetsUnit, { color: col?.badgeText ?? Colors.accent }]}>sets</Text>
-                    </View>
-                  )}
+                    {isChosen && (
+                      <View style={styles.musclePickerSetsWrap}>
+                        <TextInput
+                          style={[styles.musclePickerSetsInput, { borderColor: col?.bar ?? Colors.accent }]}
+                          keyboardType="number-pad"
+                          value={selectedMuscles[group.id]}
+                          onChangeText={(val) => updateMuscleSets(group.id, val)}
+                          selectTextOnFocus
+                        />
+                        <Text style={[styles.musclePickerSetsUnit, { color: col?.badgeText ?? Colors.accent }]}>sets</Text>
+                      </View>
+                    )}
+                  </View>
 
                   {isChosen && (() => {
                     const groupExercises = exercisesByMuscleGroup[group.id] || [];
@@ -1111,70 +1113,70 @@ export default function WeeklyPlanScreen() {
                             size={14}
                             style={!pickerOpen ? styles.exercisePickerToggleIconCollapsed : undefined}
                           />
-                          <Text style={styles.exercisePickerToggleLabel}>
+                          <Text style={styles.exercisePickerToggleLabel} numberOfLines={1}>
                             Bài tập cụ thể (tuỳ chọn){chosenExerciseId ? ` — ${exerciseNameById[chosenExerciseId] ?? ''}` : ''}
                           </Text>
                         </TouchableOpacity>
 
                         {pickerOpen && (
-                          <View style={styles.musclePickerList}>
-                            {groupExercises.length === 0 ? (
-                              <Text style={styles.mutedHint}>Nhóm cơ này chưa có bài tập nào.</Text>
-                            ) : (
-                              <>
-                                <TouchableOpacity
-                                  style={[styles.exercisePickerChip, chosenExerciseId === null && styles.exercisePickerChipActive]}
-                                  onPress={() => setMuscleExercise(group.id, null)}
-                                >
-                                  <Text style={[styles.exercisePickerChipText, chosenExerciseId === null && styles.exercisePickerChipTextActive]}>
-                                    Không chọn cụ thể (mọi bài của nhóm)
-                                  </Text>
-                                </TouchableOpacity>
+                          groupExercises.length === 0 ? (
+                            <Text style={styles.mutedHint}>Nhóm cơ này chưa có bài tập nào.</Text>
+                          ) : (
+                            <View style={styles.exerciseChipWrap}>
+                              <TouchableOpacity
+                                style={[styles.exercisePickerChip, chosenExerciseId === null && styles.exercisePickerChipActive]}
+                                onPress={() => setMuscleExercise(group.id, null)}
+                              >
+                                <Text style={[styles.exercisePickerChipText, chosenExerciseId === null && styles.exercisePickerChipTextActive]}>
+                                  Không chọn cụ thể
+                                </Text>
+                              </TouchableOpacity>
 
-                                {topLevel.map((ex) => {
-                                  const variants = variantsByParent.get(ex.id) || [];
-                                  const expanded = expandedExerciseVariants.has(ex.id);
-                                  return (
-                                    <View key={ex.id}>
+                              {topLevel.map((ex) => {
+                                const variants = variantsByParent.get(ex.id) || [];
+                                const expanded = expandedExerciseVariants.has(ex.id);
+                                return (
+                                  <View key={ex.id} style={styles.exerciseChipGroup}>
+                                    <TouchableOpacity
+                                      style={[styles.exercisePickerChip, chosenExerciseId === ex.id && styles.exercisePickerChipActive]}
+                                      onPress={() => setMuscleExercise(group.id, ex.id)}
+                                    >
+                                      <Text style={[styles.exercisePickerChipText, chosenExerciseId === ex.id && styles.exercisePickerChipTextActive]}>
+                                        {ex.name}
+                                      </Text>
+                                    </TouchableOpacity>
+
+                                    {variants.length > 0 && (
                                       <TouchableOpacity
-                                        style={[styles.exercisePickerChip, chosenExerciseId === ex.id && styles.exercisePickerChipActive]}
-                                        onPress={() => setMuscleExercise(group.id, ex.id)}
+                                        style={[styles.exercisePickerChip, styles.exerciseVariantsToggleChip]}
+                                        onPress={() => setExpandedExerciseVariants((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(ex.id)) next.delete(ex.id); else next.add(ex.id);
+                                          return next;
+                                        })}
                                       >
-                                        <Text style={[styles.exercisePickerChipText, chosenExerciseId === ex.id && styles.exercisePickerChipTextActive]}>
-                                          {ex.name}
+                                        <Text style={styles.exerciseVariantsToggleText}>
+                                          {expanded ? '▾' : '▸'} {variants.length} biến thể
                                         </Text>
                                       </TouchableOpacity>
+                                    )}
 
-                                      {variants.length > 0 && (
-                                        <TouchableOpacity
-                                          style={styles.exerciseVariantsToggle}
-                                          onPress={() => setExpandedExerciseVariants((prev) => {
-                                            const next = new Set(prev);
-                                            if (next.has(ex.id)) next.delete(ex.id); else next.add(ex.id);
-                                            return next;
-                                          })}
-                                        >
-                                          <Text style={styles.exerciseVariantsToggleText}>Biến thể ({variants.length})</Text>
-                                        </TouchableOpacity>
-                                      )}
-
-                                      {expanded && variants.map((v) => (
-                                        <TouchableOpacity
-                                          key={v.id}
-                                          style={[styles.exercisePickerChip, styles.exercisePickerChipVariant, chosenExerciseId === v.id && styles.exercisePickerChipActive]}
-                                          onPress={() => setMuscleExercise(group.id, v.id)}
-                                        >
-                                          <Text style={[styles.exercisePickerChipText, chosenExerciseId === v.id && styles.exercisePickerChipTextActive]}>
-                                            {v.name}
-                                          </Text>
-                                        </TouchableOpacity>
-                                      ))}
-                                    </View>
-                                  );
-                                })}
-                              </>
-                            )}
-                          </View>
+                                    {expanded && variants.map((v) => (
+                                      <TouchableOpacity
+                                        key={v.id}
+                                        style={[styles.exercisePickerChip, chosenExerciseId === v.id && styles.exercisePickerChipActive]}
+                                        onPress={() => setMuscleExercise(group.id, v.id)}
+                                      >
+                                        <Text style={[styles.exercisePickerChipText, chosenExerciseId === v.id && styles.exercisePickerChipTextActive]}>
+                                          {v.name}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          )
                         )}
                       </View>
                     );
@@ -1499,18 +1501,19 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingVertical: 9, paddingHorizontal: 12,
     backgroundColor: Colors.surface,
   },
-  exercisePickerChipVariant: { marginLeft: 16 },
   exercisePickerChipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '15' },
   exercisePickerChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
   exercisePickerChipTextActive: { color: Colors.accent, fontWeight: '700' },
-  exerciseVariantsToggle: { paddingVertical: 4, paddingLeft: 12, marginBottom: 2 },
+  exerciseChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  exerciseChipGroup: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  exerciseVariantsToggleChip: { backgroundColor: Colors.surfaceElevated },
   exerciseVariantsToggleText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
   musclePickerRow: {
-    flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: Colors.border,
     borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12,
     backgroundColor: Colors.surface,
   },
+  musclePickerMainRow: { flexDirection: 'row', alignItems: 'center' },
   musclePickerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   musclePickerTextWrap: { flex: 1 },
   musclePickerCheck: {
