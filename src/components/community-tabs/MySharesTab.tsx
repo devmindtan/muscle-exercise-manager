@@ -14,10 +14,20 @@ import {
   Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Share2, Trash2, Users, Link as LinkIcon, Globe, X, FolderOpen, Copy } from 'lucide-react-native';
+import {
+  Share2,
+  Trash2,
+  Users,
+  Link as LinkIcon,
+  Globe,
+  X,
+  FolderOpen,
+  Library,
+  Compass,
+} from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
-import { SlidingTabs } from '@/src/components/common/SlidingTabs';
+import { SegmentedSubTabs, SubTabItem } from '@/src/components/common/SegmentedSubTabs';
 import { getWorkoutPlans, WorkoutPlan, WEEK_DAYS, WeekDayKey } from '@/src/services/weeklyPlanService';
 import {
   createPlanShare,
@@ -36,16 +46,15 @@ const DAY_LABEL: Record<string, string> = WEEK_DAYS.reduce((acc, d) => {
   return acc;
 }, {} as Record<string, string>);
 
-const SUB_TABS = [
-  { key: 'mine', label: 'Của tôi' },
-  { key: 'discover', label: 'Khám phá' },
-];
+// Đổi tên: "Của tôi" -> "Giáo án của tôi", "Khám phá" -> "Cộng đồng"
+const TAB_LIBRARY = 'library';
+const TAB_COMMUNITY = 'community';
 
 export function MySharesTab() {
   const { user } = useAuth();
   const userKey = user?.id || 'guest';
 
-  const [activeSubTab, setActiveSubTab] = useState(SUB_TABS[0].key);
+  const [activeSubTab, setActiveSubTab] = useState(TAB_LIBRARY);
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   const [shares, setShares] = useState<PlanShareItem[]>([]);
   const [publicShares, setPublicShares] = useState<PublicPlanShareItem[]>([]);
@@ -154,6 +163,27 @@ export function MySharesTab() {
     return acc;
   }, {});
 
+  const activeShareCount = shares.length;
+
+  const subTabs: SubTabItem[] = [
+    {
+      key: TAB_LIBRARY,
+      label: 'Giáo án của tôi',
+      icon: ({ color, size, strokeWidth }) => (
+        <Library color={color} size={size} strokeWidth={strokeWidth} />
+      ),
+      count: activeShareCount,
+    },
+    {
+      key: TAB_COMMUNITY,
+      label: 'Cộng đồng',
+      icon: ({ color, size, strokeWidth }) => (
+        <Compass color={color} size={size} strokeWidth={strokeWidth} />
+      ),
+      count: publicShares.length,
+    },
+  ];
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -163,20 +193,26 @@ export function MySharesTab() {
     );
   }
 
-  const activeShareCount = shares.length;
-
-  const renderMine = () => (
-    <ScrollView 
+  const renderLibrary = () => (
+    <ScrollView
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
+      }
     >
       <View style={styles.summaryContainer}>
         <Text style={styles.subTabSummary}>
-          {plans.length} kế hoạch tổng hợp · <Text style={{ color: Colors.accent }}>{activeShareCount} đang chia sẻ</Text>
+          {plans.length} kế hoạch tổng hợp ·{' '}
+          <Text style={{ color: Colors.accent }}>{activeShareCount} đang chia sẻ</Text>
         </Text>
       </View>
-      
-      {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View> : null}
+
+      {error ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
 
       {plans.length === 0 ? (
         <View style={styles.emptyState}>
@@ -204,7 +240,7 @@ export function MySharesTab() {
                           <LinkIcon color={Colors.accent} size={14} strokeWidth={2} />
                         )}
                       </View>
-                      
+
                       <View style={{ flex: 1, gap: 2 }}>
                         <Text style={styles.shareCode}>{s.shareCode}</Text>
                         <Text style={styles.shareVisibility}>
@@ -246,10 +282,13 @@ export function MySharesTab() {
     </ScrollView>
   );
 
-  const renderDiscover = () => (
-    <ScrollView 
+  const renderCommunity = () => (
+    <ScrollView
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
+      }
     >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Nhập mã nhận giáo án</Text>
@@ -295,7 +334,11 @@ export function MySharesTab() {
               <View style={styles.publicShareInfo}>
                 <Text style={styles.publicSharePlanName} numberOfLines={1}>{s.planName}</Text>
                 <Text style={styles.publicShareAuthor} numberOfLines={1}>
-                  Tác giả: <Text style={{fontWeight: '600', color: Colors.textSecondary}}>{s.ownerDisplayName || 'Ẩn danh'}</Text> · Mã: {s.shareCode}
+                  Tác giả:{' '}
+                  <Text style={{ fontWeight: '600', color: Colors.textSecondary }}>
+                    {s.ownerDisplayName || 'Ẩn danh'}
+                  </Text>{' '}
+                  · Mã: {s.shareCode}
                 </Text>
               </View>
               <View style={styles.circleArrow}>
@@ -310,16 +353,9 @@ export function MySharesTab() {
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <SlidingTabs
-        tabs={SUB_TABS}
-        activeTab={activeSubTab}
-        onTabChange={setActiveSubTab}
-        headerTopInset={4}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
-        }
-        renderScreen={(key) => (key === 'mine' ? renderMine() : renderDiscover())}
-      />
+      <SegmentedSubTabs tabs={subTabs} activeKey={activeSubTab} onChange={setActiveSubTab} />
+
+      {activeSubTab === TAB_LIBRARY ? renderLibrary() : renderCommunity()}
 
       {/* Xem trước kế hoạch chia sẻ trước khi tải về */}
       <Modal visible={!!previewShareCode} transparent animationType="slide" onRequestClose={closePreview}>
@@ -335,7 +371,8 @@ export function MySharesTab() {
             </TouchableOpacity>
           </View>
           <Text style={styles.previewAuthor}>
-            Người tạo: <Text style={{fontWeight: '600'}}>{previewRows[0]?.owner_display_name || 'Người dùng'}</Text>
+            Người tạo:{' '}
+            <Text style={{ fontWeight: '600' }}>{previewRows[0]?.owner_display_name || 'Người dùng'}</Text>
           </Text>
 
           <ScrollView style={styles.previewScroll} showsVerticalScrollIndicator={true}>
@@ -424,7 +461,7 @@ const styles = StyleSheet.create({
   disabledBtn: { opacity: 0.5 },
   messageBanner: { backgroundColor: Colors.accent + '10', padding: 10, borderRadius: 8, marginVertical: 8 },
   importMessage: { fontSize: 12, color: Colors.accent, fontWeight: '600', textAlign: 'center' },
-  
+
   // Empty states
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 },
   emptyStateMini: { backgroundColor: Colors.surface, padding: 20, borderRadius: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: Colors.border },
@@ -448,7 +485,7 @@ const styles = StyleSheet.create({
   },
   planName: { fontSize: 16, fontWeight: '700', color: Colors.text },
   actionLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600', marginTop: 4 },
-  
+
   // Share rows internal
   shareListContainer: { gap: 8, backgroundColor: Colors.bg + '50', padding: 8, borderRadius: 12 },
   shareRow: {
@@ -460,7 +497,7 @@ const styles = StyleSheet.create({
   shareCode: { fontSize: 14, fontWeight: '700', color: Colors.text, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
   shareVisibility: { fontSize: 11, color: Colors.textMuted },
   revokeBtn: { padding: 6, borderRadius: 8, backgroundColor: Colors.error + '10' },
-  
+
   // Buttons actions
   planActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   shareActionBtn: {
@@ -490,7 +527,7 @@ const styles = StyleSheet.create({
   closeSheetBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
   previewAuthor: { fontSize: 13, color: Colors.textMuted, marginBottom: 16 },
   previewScroll: { maxHeight: 350, marginBottom: 12 },
-  
+
   // Preview components inside modal
   previewDayBlock: { marginBottom: 16 },
   dayLabelBadge: { backgroundColor: Colors.text + '05', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginBottom: 8 },
@@ -507,7 +544,7 @@ const styles = StyleSheet.create({
   setsBadge: { backgroundColor: Colors.accent + '10', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginTop: 2 },
   previewEntrySets: { fontSize: 11, color: Colors.accent, fontWeight: '600' },
   previewEntryNote: { fontSize: 11, color: Colors.textMuted, fontStyle: 'italic', marginTop: 2 },
-  
+
   saveBtn: {
     backgroundColor: Colors.accent, padding: 16, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center', height: 54,
