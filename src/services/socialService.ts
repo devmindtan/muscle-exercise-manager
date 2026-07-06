@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as LocalDB from '@/src/db/localDB';
 import { supabase } from '@/src/lib/supabase';
-import { createMuscleGroup, getMuscleGroups } from '@/src/lib/repository';
+import { createMuscleGroup, getMuscleGroups, createExercise, getExercises } from '@/src/lib/repository';
 import { createWorkoutPlan, upsertWeeklyPlanEntries, WeekDayKey } from '@/src/services/weeklyPlanService';
 
 export type FriendshipStatus = 'pending' | 'accepted' | 'declined';
@@ -31,6 +31,7 @@ export interface PlanShareItem {
   ownerId: string;
   shareCode: string;
   visibility: PlanShareVisibility;
+  isPublic: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,6 +44,18 @@ export interface SharedPlanEntryRow {
   muscle_group_color: string | null;
   sets: number;
   note: string | null;
+  exercise_name: string | null;
+  exercise_notes: string | null;
+  exercise_image_uri: string | null;
+  parent_exercise_name: string | null;
+  owner_display_name: string | null;
+}
+
+export interface PublicPlanShareItem {
+  shareCode: string;
+  planName: string;
+  ownerDisplayName: string | null;
+  createdAt: string;
 }
 
 function generateId() {
@@ -97,14 +110,16 @@ function mapRemoteProfile(row: any): PublicProfile {
 function mapLocalShare(row: LocalDB.LocalPlanShare): PlanShareItem {
   return {
     id: row.id, planId: row.plan_id, ownerId: row.owner_id, shareCode: row.share_code,
-    visibility: row.visibility, createdAt: row.created_at, updatedAt: row.updated_at,
+    visibility: row.visibility, isPublic: !!row.is_public,
+    createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
 function mapRemoteShare(row: any): PlanShareItem {
   return {
     id: row.id, planId: row.plan_id, ownerId: row.owner_id, shareCode: row.share_code,
-    visibility: row.visibility, createdAt: row.created_at, updatedAt: row.updated_at,
+    visibility: row.visibility, isPublic: !!row.is_public,
+    createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
@@ -278,6 +293,7 @@ export async function getMyPlanShares(): Promise<PlanShareItem[]> {
 export async function createPlanShare(
   planId: string,
   visibility: PlanShareVisibility,
+  isPublic: boolean = false,
 ): Promise<PlanShareItem> {
   const userId = await getCurrentUserId();
   const now = new Date().toISOString();
@@ -286,18 +302,18 @@ export async function createPlanShare(
 
   if (Platform.OS === 'web') {
     const { error } = await (supabase as any).from('plan_shares').insert({
-      id, plan_id: planId, owner_id: userId, share_code: shareCode, visibility,
+      id, plan_id: planId, owner_id: userId, share_code: shareCode, visibility, is_public: isPublic,
       created_at: now, updated_at: now,
     });
     if (error) throw error;
   } else {
     await LocalDB.upsertPlanShare({
-      id, plan_id: planId, owner_id: userId, share_code: shareCode, visibility,
+      id, plan_id: planId, owner_id: userId, share_code: shareCode, visibility, is_public: isPublic ? 1 : 0,
       created_at: now, updated_at: now, deleted_at: null, sync_status: 'pending', user_id: userId,
     });
   }
 
-  return { id, planId, ownerId: userId, shareCode, visibility, createdAt: now, updatedAt: now };
+  return { id, planId, ownerId: userId, shareCode, visibility, isPublic, createdAt: now, updatedAt: now };
 }
 
 export async function revokePlanShare(id: string): Promise<void> {
@@ -310,6 +326,22 @@ export async function revokePlanShare(id: string): Promise<void> {
   }
 
   await LocalDB.softDeletePlanShare(id);
+}
+
+// Danh sách chia sẻ công khai — ai cũng xem được mà không cần biết mã
+// trước, chỉ trả share_code + tên kế hoạch + tên tác giả (không lộ
+// plan_id/owner_id thật). Xem chi tiết đầy đủ vẫn phải qua
+// resolveSharedPlan(shareCode) như luồng nhập mã bình thường.
+export async function listPublicPlanShares(): Promise<PublicPlanShareItem[]> {
+  await getCurrentUserId();
+  const { data, error } = await (supabase as any).rpc('list_public_plan_shares');
+  if (error) throw error;
+  return (data || []).map((r: any) => ({
+    shareCode: r.share_code,
+    planName: r.plan_name,
+    ownerDisplayName: r.owner_display_name,
+    createdAt: r.created_at,
+  }));
 }
 
 // ─── Import a shared plan (one-time copy, not a live sync) ─────────────────
@@ -344,7 +376,53 @@ export async function importSharedPlan(shareCode: string): Promise<{
     nameToId.set(String(g.name).trim().toLowerCase(), g.id);
   }
 
-  const entryInputs: { dayKey: WeekDayKey; muscleGroupId: string; sets: number; note?: string | null }[] = [];
+  // Exercises are also per-user data — matched/created by name within the
+  // resolved muscle group, same pattern as muscle groups above. Cache per
+  // muscle group so repeated rows referencing the same exercise across
+  // different days don't create duplicates within one import.
+  const exercisesByGroup = new Map<string, Map<string, { id: string; parent_exercise_id: string | null }>>();
+
+  async function loadExerciseMap(muscleGroupId: string) {
+    let map = exercisesByGroup.get(muscleGroupId);
+    if (map) return map;
+    const rowsForGroup = (await getExercises(muscleGroupId)) as any[];
+    map = new Map();
+    for (const ex of rowsForGroup) {
+      map.set(String(ex.name).trim().toLowerCase(), { id: ex.id, parent_exercise_id: ex.parent_exercise_id ?? null });
+    }
+    exercisesByGroup.set(muscleGroupId, map);
+    return map;
+  }
+
+  async function resolveOrCreateExercise(
+    muscleGroupId: string,
+    name: string,
+    opts: { notes?: string | null; imageUri?: string | null; parentExerciseId?: string | null } = {},
+  ): Promise<string> {
+    const map = await loadExerciseMap(muscleGroupId);
+    const key = name.trim().toLowerCase();
+    const existing = map.get(key);
+    if (existing) return existing.id;
+
+    const created = await createExercise({
+      muscleGroupId,
+      name,
+      notes: opts.notes || undefined,
+      image_uri: opts.imageUri ?? null,
+      parentExerciseId: opts.parentExerciseId ?? null,
+    });
+    const newId = (created as any).id;
+    map.set(key, { id: newId, parent_exercise_id: opts.parentExerciseId ?? null });
+    return newId;
+  }
+
+  const entryInputs: {
+    dayKey: WeekDayKey;
+    muscleGroupId: string;
+    exerciseId?: string | null;
+    sets: number;
+    note?: string | null;
+  }[] = [];
 
   for (const row of rows) {
     const key = row.muscle_group_name.trim().toLowerCase();
@@ -358,9 +436,24 @@ export async function importSharedPlan(shareCode: string): Promise<{
       muscleGroupId = (created as any).id;
       nameToId.set(key, muscleGroupId!);
     }
+
+    let exerciseId: string | null = null;
+    if (row.exercise_name) {
+      let parentExerciseId: string | null = null;
+      if (row.parent_exercise_name) {
+        parentExerciseId = await resolveOrCreateExercise(muscleGroupId!, row.parent_exercise_name);
+      }
+      exerciseId = await resolveOrCreateExercise(muscleGroupId!, row.exercise_name, {
+        notes: row.exercise_notes,
+        imageUri: row.exercise_image_uri,
+        parentExerciseId,
+      });
+    }
+
     entryInputs.push({
       dayKey: row.day_key as WeekDayKey,
       muscleGroupId: muscleGroupId!,
+      exerciseId,
       sets: row.sets,
       note: row.note,
     });

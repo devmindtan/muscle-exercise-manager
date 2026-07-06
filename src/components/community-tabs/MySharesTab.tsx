@@ -1,36 +1,77 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Modal,
+  Pressable,
+  Image,
+  RefreshControl,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Share2, Trash2, Users, Link as LinkIcon } from 'lucide-react-native';
+import { Share2, Trash2, Users, Link as LinkIcon, Globe, X, FolderOpen, Copy } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
-import { getWorkoutPlans, WorkoutPlan } from '@/src/services/weeklyPlanService';
+import { SlidingTabs } from '@/src/components/common/SlidingTabs';
+import { getWorkoutPlans, WorkoutPlan, WEEK_DAYS, WeekDayKey } from '@/src/services/weeklyPlanService';
 import {
   createPlanShare,
   getMyPlanShares,
   importSharedPlan,
-  PlanShareItem,
+  listPublicPlanShares,
+  resolveSharedPlan,
   revokePlanShare,
+  PlanShareItem,
+  PublicPlanShareItem,
+  SharedPlanEntryRow,
 } from '@/src/services/socialService';
+
+const DAY_LABEL: Record<string, string> = WEEK_DAYS.reduce((acc, d) => {
+  acc[d.key] = d.label;
+  return acc;
+}, {} as Record<string, string>);
+
+const SUB_TABS = [
+  { key: 'mine', label: 'Của tôi' },
+  { key: 'discover', label: 'Khám phá' },
+];
 
 export function MySharesTab() {
   const { user } = useAuth();
   const userKey = user?.id || 'guest';
 
+  const [activeSubTab, setActiveSubTab] = useState(SUB_TABS[0].key);
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
   const [shares, setShares] = useState<PlanShareItem[]>([]);
+  const [publicShares, setPublicShares] = useState<PublicPlanShareItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   const [importCode, setImportCode] = useState('');
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+
+  const [previewShareCode, setPreviewShareCode] = useState<string | null>(null);
+  const [previewRows, setPreviewRows] = useState<SharedPlanEntryRow[]>([]);
   const [importBusy, setImportBusy] = useState(false);
   const [importMessage, setImportMessage] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const [nextPlans, nextShares] = await Promise.all([getWorkoutPlans(userKey), getMyPlanShares()]);
+      const [nextPlans, nextShares, nextPublicShares] = await Promise.all([
+        getWorkoutPlans(userKey),
+        getMyPlanShares(),
+        listPublicPlanShares(),
+      ]);
       setPlans(nextPlans);
       setShares(nextShares);
+      setPublicShares(nextPublicShares);
       setError('');
     } catch (e: any) {
       setError(e?.message || 'Không thể tải dữ liệu chia sẻ.');
@@ -41,9 +82,15 @@ export function MySharesTab() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const share = async (planId: string, visibility: 'link' | 'friends') => {
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const share = async (planId: string, visibility: 'link' | 'friends', isPublic: boolean) => {
     try {
-      await createPlanShare(planId, visibility);
+      await createPlanShare(planId, visibility, isPublic);
       await load();
     } catch (e: any) {
       setError(e?.message || 'Không thể tạo link chia sẻ.');
@@ -55,12 +102,38 @@ export function MySharesTab() {
     await load();
   };
 
-  const doImport = async () => {
-    if (!importCode.trim()) return;
-    setImportBusy(true);
-    setImportMessage('');
+  const openPreview = async (shareCode: string) => {
+    const trimmed = shareCode.trim();
+    if (!trimmed) return;
+    setPreviewBusy(true);
+    setPreviewError('');
     try {
-      const result = await importSharedPlan(importCode);
+      const rows = await resolveSharedPlan(trimmed);
+      if (rows.length === 0) {
+        setPreviewError('Không tìm thấy kế hoạch chia sẻ, hoặc bạn không có quyền xem.');
+        return;
+      }
+      setPreviewRows(rows);
+      setPreviewShareCode(trimmed);
+      setImportMessage('');
+    } catch (e: any) {
+      setPreviewError(e?.message || 'Không thể xem trước kế hoạch.');
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewShareCode(null);
+    setPreviewRows([]);
+    setImportMessage('');
+  };
+
+  const confirmImport = async () => {
+    if (!previewShareCode) return;
+    setImportBusy(true);
+    try {
+      const result = await importSharedPlan(previewShareCode);
       setImportMessage(`Đã nhập "${result.planName}" (${result.importedEntries} mục).`);
       setImportCode('');
       await load();
@@ -76,18 +149,110 @@ export function MySharesTab() {
     return acc;
   }, {});
 
+  const previewByDay = previewRows.reduce<Record<string, SharedPlanEntryRow[]>>((acc, row) => {
+    (acc[row.day_key] ??= []).push(row);
+    return acc;
+  }, {});
+
   if (loading) {
     return (
       <View style={styles.center}>
-        <Text style={styles.mutedText}>Đang tải...</Text>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={[styles.mutedText, { marginTop: 12 }]}>Đang tải dữ liệu...</Text>
       </View>
     );
   }
 
-  return (
-    <ScrollView contentContainerStyle={styles.content}>
+  const activeShareCount = shares.length;
+
+  const renderMine = () => (
+    <ScrollView 
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.summaryContainer}>
+        <Text style={styles.subTabSummary}>
+          {plans.length} kế hoạch tổng hợp · <Text style={{ color: Colors.accent }}>{activeShareCount} đang chia sẻ</Text>
+        </Text>
+      </View>
+      
+      {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error}</Text></View> : null}
+
+      {plans.length === 0 ? (
+        <View style={styles.emptyState}>
+          <FolderOpen color={Colors.textMuted} size={40} strokeWidth={1.5} />
+          <Text style={styles.emptyText}>Chưa có kế hoạch nào.</Text>
+          <Text style={styles.emptySubText}>Hãy tạo kế hoạch mới ở tab "Tập luyện" trước nhé!</Text>
+        </View>
+      ) : (
+        plans.map((plan) => {
+          const planShares = sharesByPlan[plan.id] || [];
+          return (
+            <View key={plan.id} style={styles.planCard}>
+              <Text style={styles.planName}>{plan.name}</Text>
+
+              {planShares.length > 0 && (
+                <View style={styles.shareListContainer}>
+                  {planShares.map((s) => (
+                    <View key={s.id} style={styles.shareRow}>
+                      <View style={styles.shareIconBadge}>
+                        {s.isPublic ? (
+                          <Globe color={Colors.accent} size={14} strokeWidth={2} />
+                        ) : s.visibility === 'friends' ? (
+                          <Users color={Colors.accent} size={14} strokeWidth={2} />
+                        ) : (
+                          <LinkIcon color={Colors.accent} size={14} strokeWidth={2} />
+                        )}
+                      </View>
+                      
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.shareCode}>{s.shareCode}</Text>
+                        <Text style={styles.shareVisibility}>
+                          {s.isPublic
+                            ? 'Công khai, ai cũng thấy'
+                            : s.visibility === 'friends'
+                            ? 'Chỉ bạn bè mới xem được'
+                            : 'Yêu cầu mã để truy cập'}
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity style={styles.revokeBtn} onPress={() => revoke(s.id)} activeOpacity={0.7}>
+                        <Trash2 color={Colors.error} size={14} strokeWidth={2} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={styles.actionLabel}>Tùy chọn chia sẻ mới:</Text>
+              <View style={styles.planActions}>
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'link', true)}>
+                  <Globe color={Colors.accent} size={13} strokeWidth={2} />
+                  <Text style={styles.shareActionBtnText}>Công khai</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'link', false)}>
+                  <Share2 color={Colors.accent} size={13} strokeWidth={2} />
+                  <Text style={styles.shareActionBtnText}>Mã bí mật</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'friends', false)}>
+                  <Users color={Colors.accent} size={13} strokeWidth={2} />
+                  <Text style={styles.shareActionBtnText}>Bạn bè</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })
+      )}
+    </ScrollView>
+  );
+
+  const renderDiscover = () => (
+    <ScrollView 
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Nhập kế hoạch bằng mã</Text>
+        <Text style={styles.sectionTitle}>Nhập mã nhận giáo án</Text>
         <View style={styles.importRow}>
           <TextInput
             style={styles.importInput}
@@ -97,100 +262,256 @@ export function MySharesTab() {
             placeholderTextColor={Colors.textMuted}
             autoCapitalize="characters"
           />
-          <TouchableOpacity style={styles.importBtn} onPress={doImport} disabled={importBusy}>
-            <Text style={styles.importBtnText}>{importBusy ? '...' : 'Nhập'}</Text>
+          <TouchableOpacity
+            style={[styles.importBtn, !importCode.trim() && styles.disabledBtn]}
+            onPress={() => openPreview(importCode)}
+            disabled={previewBusy || !importCode.trim()}
+            activeOpacity={0.8}
+          >
+            {previewBusy ? (
+              <ActivityIndicator size="small" color={Colors.bg} />
+            ) : (
+              <Text style={styles.importBtnText}>Xem trước</Text>
+            )}
           </TouchableOpacity>
         </View>
-        {importMessage ? <Text style={styles.importMessage}>{importMessage}</Text> : null}
+        {previewError ? <Text style={styles.errorText}>{previewError}</Text> : null}
       </View>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Chia sẻ kế hoạch của tôi</Text>
-        {plans.length === 0 ? (
-          <Text style={styles.mutedText}>Chưa có kế hoạch nào. Tạo kế hoạch ở tab &quot;Tập luyện&quot; trước.</Text>
+        <Text style={styles.sectionTitle}>Cộng đồng chia sẻ ({publicShares.length})</Text>
+        {publicShares.length === 0 ? (
+          <View style={styles.emptyStateMini}>
+            <Text style={styles.mutedText}>Chưa có kế hoạch công khai nào xuất hiện.</Text>
+          </View>
         ) : (
-          plans.map((plan) => {
-            const planShares = sharesByPlan[plan.id] || [];
-            return (
-              <View key={plan.id} style={styles.planCard}>
-                <Text style={styles.planName}>{plan.name}</Text>
-
-                {planShares.map((s) => (
-                  <View key={s.id} style={styles.shareRow}>
-                    {s.visibility === 'friends' ? (
-                      <Users color={Colors.accent} size={13} strokeWidth={2} />
-                    ) : (
-                      <LinkIcon color={Colors.accent} size={13} strokeWidth={2} />
-                    )}
-                    <Text style={styles.shareCode}>{s.shareCode}</Text>
-                    <Text style={styles.shareVisibility}>
-                      {s.visibility === 'friends' ? 'Chỉ bạn bè' : 'Ai có mã cũng xem được'}
-                    </Text>
-                    <TouchableOpacity style={styles.revokeBtn} onPress={() => revoke(s.id)}>
-                      <Trash2 color={Colors.error} size={13} strokeWidth={2} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-
-                <View style={styles.planActions}>
-                  <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'link')}>
-                    <Share2 color={Colors.accent} size={12} strokeWidth={2} />
-                    <Text style={styles.shareActionBtnText}>Tạo mã công khai</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'friends')}>
-                    <Users color={Colors.accent} size={12} strokeWidth={2} />
-                    <Text style={styles.shareActionBtnText}>Chỉ chia sẻ cho bạn bè</Text>
-                  </TouchableOpacity>
-                </View>
+          publicShares.map((s) => (
+            <TouchableOpacity
+              key={s.shareCode}
+              style={styles.publicShareCard}
+              onPress={() => openPreview(s.shareCode)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.publicShareInfo}>
+                <Text style={styles.publicSharePlanName} numberOfLines={1}>{s.planName}</Text>
+                <Text style={styles.publicShareAuthor} numberOfLines={1}>
+                  Tác giả: <Text style={{fontWeight: '600', color: Colors.textSecondary}}>{s.ownerDisplayName || 'Ẩn danh'}</Text> · Mã: {s.shareCode}
+                </Text>
               </View>
-            );
-          })
+              <View style={styles.circleArrow}>
+                <Globe color={Colors.accent} size={14} strokeWidth={2} />
+              </View>
+            </TouchableOpacity>
+          ))
         )}
       </View>
     </ScrollView>
   );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      <SlidingTabs
+        tabs={SUB_TABS}
+        activeTab={activeSubTab}
+        onTabChange={setActiveSubTab}
+        headerTopInset={4}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
+        }
+        renderScreen={(key) => (key === 'mine' ? renderMine() : renderDiscover())}
+      />
+
+      {/* Xem trước kế hoạch chia sẻ trước khi tải về */}
+      <Modal visible={!!previewShareCode} transparent animationType="slide" onRequestClose={closePreview}>
+        <Pressable style={styles.overlay} onPress={closePreview} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle} numberOfLines={1}>
+              {previewRows[0]?.plan_name || 'Xem trước kế hoạch'}
+            </Text>
+            <TouchableOpacity onPress={closePreview} style={styles.closeSheetBtn}>
+              <X color={Colors.textSecondary} size={18} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.previewAuthor}>
+            Người tạo: <Text style={{fontWeight: '600'}}>{previewRows[0]?.owner_display_name || 'Người dùng'}</Text>
+          </Text>
+
+          <ScrollView style={styles.previewScroll} showsVerticalScrollIndicator={true}>
+            {WEEK_DAYS.map(({ key }) => {
+              const rows = previewByDay[key as WeekDayKey];
+              if (!rows || rows.length === 0) return null;
+              return (
+                <View key={key} style={styles.previewDayBlock}>
+                  <View style={styles.dayLabelBadge}>
+                    <Text style={styles.previewDayLabel}>{DAY_LABEL[key]}</Text>
+                  </View>
+                  {rows.map((row, idx) => (
+                    <View key={idx} style={styles.previewEntryRow}>
+                      {row.exercise_image_uri ? (
+                        <Image source={{ uri: row.exercise_image_uri }} style={styles.previewEntryImg} />
+                      ) : (
+                        <View style={[styles.previewEntryImg, styles.fallbackImgPlaceholder]} />
+                      )}
+                      <View style={styles.previewEntryInfo}>
+                        <Text style={styles.previewEntryMuscle}>{row.muscle_group_name}</Text>
+                        {row.exercise_name ? (
+                          <Text style={styles.previewEntryExercise}>
+                            {row.exercise_name}
+                            {row.parent_exercise_name ? ` (${row.parent_exercise_name})` : ''}
+                          </Text>
+                        ) : null}
+                        <View style={styles.setsBadge}>
+                          <Text style={styles.previewEntrySets}>{row.sets} Sets</Text>
+                        </View>
+                        {row.note ? <Text style={styles.previewEntryNote}>* {row.note}</Text> : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          {importMessage ? (
+            <View style={styles.messageBanner}>
+              <Text style={styles.importMessage}>{importMessage}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.saveBtn, importBusy && styles.saveBtnDisabled]}
+            onPress={confirmImport}
+            disabled={importBusy}
+            activeOpacity={0.8}
+          >
+            {importBusy ? (
+              <ActivityIndicator size="small" color={Colors.bg} />
+            ) : (
+              <Text style={styles.saveBtnText}>Tải giáo án này về máy</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 20, gap: 20 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  content: { padding: 16, gap: 16 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg },
   mutedText: { color: Colors.textMuted, fontSize: 13 },
-  errorText: { color: Colors.error, fontSize: 13 },
-  section: { gap: 10 },
+  errorText: { color: Colors.error, fontSize: 13, fontWeight: '500' },
+  errorBanner: { backgroundColor: Colors.error + '15', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.error + '30' },
+  summaryContainer: { marginBottom: 4 },
+  subTabSummary: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  section: { gap: 12, marginBottom: 8 },
   sectionTitle: {
     fontSize: 12, fontWeight: '700', color: Colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.6,
+    textTransform: 'uppercase', letterSpacing: 1,
   },
   importRow: { flexDirection: 'row', gap: 8 },
   importInput: {
     flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: Colors.text, fontSize: 14,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: Colors.text, fontSize: 14,
   },
   importBtn: {
-    paddingHorizontal: 16, borderRadius: 10, backgroundColor: Colors.accent,
-    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 16, borderRadius: 12, backgroundColor: Colors.accent,
+    alignItems: 'center', justifyContent: 'center', minWidth: 90,
   },
   importBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 13 },
-  importMessage: { fontSize: 12, color: Colors.textSecondary, marginTop: 4 },
-  planCard: {
+  disabledBtn: { opacity: 0.5 },
+  messageBanner: { backgroundColor: Colors.accent + '10', padding: 10, borderRadius: 8, marginVertical: 8 },
+  importMessage: { fontSize: 12, color: Colors.accent, fontWeight: '600', textAlign: 'center' },
+  
+  // Empty states
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 },
+  emptyStateMini: { backgroundColor: Colors.surface, padding: 20, borderRadius: 12, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: Colors.border },
+  emptyText: { fontSize: 15, fontWeight: '600', color: Colors.textSecondary, marginTop: 8 },
+  emptySubText: { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
+
+  // Cards
+  publicShareCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
-    padding: 14, gap: 8,
+    padding: 14, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 }, android: { elevation: 1 } }),
   },
-  planName: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  publicShareInfo: { flex: 1, gap: 4, marginRight: 8 },
+  publicSharePlanName: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  publicShareAuthor: { fontSize: 12, color: Colors.textMuted },
+  circleArrow: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent + '10', alignItems: 'center', justifyContent: 'center' },
+
+  planCard: {
+    backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
+    padding: 16, gap: 12, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 }, android: { elevation: 2 } }),
+  },
+  planName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  actionLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600', marginTop: 4 },
+  
+  // Share rows internal
+  shareListContainer: { gap: 8, backgroundColor: Colors.bg + '50', padding: 8, borderRadius: 12 },
   shareRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: Colors.border,
   },
-  shareCode: { fontSize: 13, fontWeight: '700', color: Colors.accent, fontFamily: 'monospace' },
-  shareVisibility: { fontSize: 10, color: Colors.textMuted, flex: 1 },
-  revokeBtn: { padding: 4 },
+  shareIconBadge: { width: 26, height: 26, borderRadius: 6, backgroundColor: Colors.accent + '15', alignItems: 'center', justifyContent: 'center' },
+  shareCode: { fontSize: 14, fontWeight: '700', color: Colors.text, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  shareVisibility: { fontSize: 11, color: Colors.textMuted },
+  revokeBtn: { padding: 6, borderRadius: 8, backgroundColor: Colors.error + '10' },
+  
+  // Buttons actions
   planActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   shareActionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderWidth: 1, borderColor: Colors.accent + '55', backgroundColor: Colors.accent + '10',
-    borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
   },
-  shareActionBtnText: { fontSize: 11, fontWeight: '600', color: Colors.accent },
+  shareActionBtnText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+
+  // Bottom Sheet Modal
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    maxHeight: '80%',
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+  },
+  sheetHandle: {
+    width: 40, height: 5, borderRadius: 2.5, backgroundColor: Colors.border,
+    alignSelf: 'center', marginVertical: 12,
+  },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, flex: 1, marginRight: 8 },
+  closeSheetBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
+  previewAuthor: { fontSize: 13, color: Colors.textMuted, marginBottom: 16 },
+  previewScroll: { maxHeight: 350, marginBottom: 12 },
+  
+  // Preview components inside modal
+  previewDayBlock: { marginBottom: 16 },
+  dayLabelBadge: { backgroundColor: Colors.text + '05', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginBottom: 8 },
+  previewDayLabel: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  previewEntryRow: {
+    flexDirection: 'row', gap: 12, backgroundColor: Colors.bg,
+    borderRadius: 12, padding: 12, marginBottom: 8, alignItems: 'center',
+  },
+  previewEntryImg: { width: 48, height: 48, borderRadius: 8, backgroundColor: Colors.border },
+  fallbackImgPlaceholder: { borderWidth: 1, borderStyle: 'dashed' },
+  previewEntryInfo: { flex: 1, gap: 2 },
+  previewEntryMuscle: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
+  previewEntryExercise: { fontSize: 14, color: Colors.text, fontWeight: '600' },
+  setsBadge: { backgroundColor: Colors.accent + '10', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginTop: 2 },
+  previewEntrySets: { fontSize: 11, color: Colors.accent, fontWeight: '600' },
+  previewEntryNote: { fontSize: 11, color: Colors.textMuted, fontStyle: 'italic', marginTop: 2 },
+  
+  saveBtn: {
+    backgroundColor: Colors.accent, padding: 16, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', height: 54,
+  },
+  saveBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 15 },
+  saveBtnDisabled: { opacity: 0.6 },
 });

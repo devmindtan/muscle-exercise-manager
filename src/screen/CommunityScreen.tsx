@@ -11,7 +11,7 @@ import { MySharesTab } from '@/src/components/community-tabs/MySharesTab';
 const TABS = [
   { key: 'friends', label: 'Bạn bè' },
   { key: 'discover', label: 'Khám phá' },
-  { key: 'shares', label: 'Chia sẻ của tôi' },
+  { key: 'shares', label: 'Chia sẻ' },
 ];
 
 export default function CommunityScreen() {
