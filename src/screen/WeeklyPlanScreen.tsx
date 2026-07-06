@@ -10,10 +10,12 @@ import {
   TouchableOpacity,
   View,
   AppState,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Check, ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react-native';
-import { getMuscleGroups, getWorkoutLogs } from '@/src/lib/repository';
+import { getMuscleGroups, getWorkoutLogs, getExercises } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import {
@@ -31,9 +33,28 @@ import {
   WeeklyPlanEntry,
   WorkoutPlan,
 } from '@/src/services/weeklyPlanService';
-import { MuscleGroup } from '@/src/types/database';
+import { MuscleGroup, Exercise } from '@/src/types/database';
 
 type MuscleGroupWithCount = MuscleGroup & { exercise_count?: number };
+
+// Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id) lồng dưới bài
+// gốc, cùng cách hiển thị với MuscleDetailScreen, để chọn bài tập cụ thể
+// cho 1 mục kế hoạch.
+function groupExercisesByParent(list: Exercise[]) {
+  const idsInList = new Set(list.map((e) => e.id));
+  const variantsByParent = new Map<string, Exercise[]>();
+  const topLevel: Exercise[] = [];
+  for (const ex of list) {
+    if (ex.parent_exercise_id && idsInList.has(ex.parent_exercise_id)) {
+      const arr = variantsByParent.get(ex.parent_exercise_id) || [];
+      arr.push(ex);
+      variantsByParent.set(ex.parent_exercise_id, arr);
+    } else {
+      topLevel.push(ex);
+    }
+  }
+  return { topLevel, variantsByParent };
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -168,15 +189,30 @@ export default function WeeklyPlanScreen() {
   const [saving, setSaving] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
 
+  // ── Chọn bài tập cụ thể (tuỳ chọn) — theo từng nhóm cơ đã chọn, dùng
+  // chung cho cả tạo hàng loạt (nhiều nhóm cơ/ngày) và sửa 1 mục ──
+  const [exerciseNameById, setExerciseNameById] = useState<Record<string, string>>({});
+  const [exercisesByMuscleGroup, setExercisesByMuscleGroup] = useState<Record<string, Exercise[]>>({});
+  const [selectedExercises, setSelectedExercises] = useState<Record<string, string | null>>({});
+  const [createDayExerciseSelections, setCreateDayExerciseSelections] = useState<
+    Partial<Record<WeekDayKey, Record<string, string | null>>>
+  >({});
+  const [showExercisePickerFor, setShowExercisePickerFor] = useState<Set<string>>(new Set());
+  const [expandedExerciseVariants, setExpandedExerciseVariants] = useState<Set<string>>(new Set());
+
   // ── Data loading ──
 
   const load = useCallback(async () => {
-    const [nextGroups, nextWorkoutPlans] = await Promise.all([
+    const [nextGroups, nextWorkoutPlans, allExercises] = await Promise.all([
       getMuscleGroups() as Promise<MuscleGroupWithCount[]>,
       getWorkoutPlans(userKey),
+      getExercises() as Promise<Exercise[]>,
     ]);
     setGroups(nextGroups);
     setWorkoutPlans(nextWorkoutPlans);
+    setExerciseNameById(
+      allExercises.reduce<Record<string, string>>((acc, ex) => { acc[ex.id] = ex.name; return acc; }, {}),
+    );
 
     const active = nextWorkoutPlans.find((p) => p.isActive) ?? nextWorkoutPlans[0] ?? null;
     setActivePlanId(active?.id ?? null);
@@ -399,6 +435,24 @@ export default function WeeklyPlanScreen() {
       }
       return next;
     });
+    setSelectedExercises((prev) => {
+      if (prev[id] === undefined) return prev;
+      const next = { ...prev };
+      delete next[id];
+      if (!editingId) {
+        setCreateDayExerciseSelections((dayPrev) => ({
+          ...dayPrev,
+          [formDayCreate]: next,
+        }));
+      }
+      return next;
+    });
+    setShowExercisePickerFor((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   const updateMuscleSets = (id: string, val: string) => {
@@ -414,6 +468,38 @@ export default function WeeklyPlanScreen() {
     });
   };
 
+  // Nạp danh sách bài tập của 1 nhóm cơ (dùng chung cho tạo hàng loạt lẫn
+  // sửa 1 mục) — chỉ nạp khi cần (bấm mở picker, hoặc khi mở sửa 1 mục đã
+  // có sẵn bài tập), có cache theo muscleGroupId để không gọi lặp lại.
+  const ensureExercisesForGroup = useCallback(async (muscleGroupId: string) => {
+    if (exercisesByMuscleGroup[muscleGroupId]) return;
+    const rows = (await getExercises(muscleGroupId)) as Exercise[];
+    setExercisesByMuscleGroup((prev) => ({ ...prev, [muscleGroupId]: rows.filter((e) => e.is_active) }));
+  }, [exercisesByMuscleGroup]);
+
+  const setMuscleExercise = (muscleGroupId: string, exerciseId: string | null) => {
+    setSelectedExercises((prev) => {
+      const next = { ...prev, [muscleGroupId]: exerciseId };
+      if (!editingId) {
+        setCreateDayExerciseSelections((dayPrev) => ({
+          ...dayPrev,
+          [formDayCreate]: next,
+        }));
+      }
+      return next;
+    });
+  };
+
+  const toggleExercisePickerFor = (muscleGroupId: string) => {
+    setShowExercisePickerFor((prev) => {
+      const next = new Set(prev);
+      if (next.has(muscleGroupId)) next.delete(muscleGroupId);
+      else next.add(muscleGroupId);
+      return next;
+    });
+    void ensureExercisesForGroup(muscleGroupId);
+  };
+
   const openCreate = () => {
     setEditingId(null);
     setError('');
@@ -422,12 +508,17 @@ export default function WeeklyPlanScreen() {
     setSelectedMuscles({});
     setEditNote('');
     setSelectedCategories(new Set());
+    setSelectedExercises({});
+    setCreateDayExerciseSelections({});
+    setShowExercisePickerFor(new Set());
+    setExpandedExerciseVariants(new Set());
     setShowEditor(true);
   };
 
   const switchCreateDay = (dayKey: WeekDayKey) => {
     setFormDayCreate(dayKey);
     setSelectedMuscles({ ...(createDaySelections[dayKey] || {}) });
+    setSelectedExercises({ ...(createDayExerciseSelections[dayKey] || {}) });
   };
 
   const openEdit = (entry: WeeklyPlanEntry) => {
@@ -438,7 +529,11 @@ export default function WeeklyPlanScreen() {
     setSelectedMuscles({ [entry.muscleGroupId]: String(entry.sets) });
     setEditNote(entry.note || '');
     setSelectedCategories(new Set());
+    setSelectedExercises({ [entry.muscleGroupId]: entry.exerciseId ?? null });
+    setShowExercisePickerFor(entry.exerciseId ? new Set([entry.muscleGroupId]) : new Set());
+    setExpandedExerciseVariants(new Set());
     setShowEditor(true);
+    void ensureExercisesForGroup(entry.muscleGroupId);
   };
 
   const openAddToPlanFromOutside = (muscleGroupId: string, sets: number) => {
@@ -451,6 +546,10 @@ export default function WeeklyPlanScreen() {
     setSelectedMuscles({ [muscleGroupId]: String(Math.max(1, Math.round(sets))) });
     setEditNote('');
     setSelectedCategories(new Set());
+    setSelectedExercises({});
+    setCreateDayExerciseSelections({});
+    setShowExercisePickerFor(new Set());
+    setExpandedExerciseVariants(new Set());
     setShowEditor(true);
   };
 
@@ -475,7 +574,14 @@ export default function WeeklyPlanScreen() {
     try {
       if (editingId) {
         const nextPlans = await upsertWeeklyPlanEntry(
-          { id: editingId, dayKey: formDaySingle, muscleGroupId: muscleIds[0], sets: muscleEntries[0].sets, note: editNote },
+          {
+            id: editingId,
+            dayKey: formDaySingle,
+            muscleGroupId: muscleIds[0],
+            exerciseId: selectedExercises[muscleIds[0]] ?? null,
+            sets: muscleEntries[0].sets,
+            note: editNote,
+          },
           userKey,
           activePlanId,
         );
@@ -485,8 +591,13 @@ export default function WeeklyPlanScreen() {
           ...createDaySelections,
           [formDayCreate]: selectedMuscles,
         };
+        const exerciseSource = {
+          ...createDayExerciseSelections,
+          [formDayCreate]: selectedExercises,
+        };
         const payload = WEEK_DAYS.flatMap(({ key }) => {
           const musclesForDay = source[key] || {};
+          const exercisesForDay = exerciseSource[key] || {};
           return Object.entries(musclesForDay)
             .map(([muscleGroupId, setsRaw]) => {
               const existing = plans.find(
@@ -496,6 +607,7 @@ export default function WeeklyPlanScreen() {
                 id: existing?.id,
                 dayKey: key,
                 muscleGroupId,
+                exerciseId: exercisesForDay[muscleGroupId] ?? null,
                 sets: Number(setsRaw),
                 note: existing?.note || '',
               };
@@ -757,6 +869,9 @@ export default function WeeklyPlanScreen() {
                               <Text style={styles.setsDivider}> / {entry.sets}</Text>
                             </Text>
                           </Text>
+                          {entry.exerciseId && exerciseNameById[entry.exerciseId] ? (
+                            <Text style={styles.muscleNote} numberOfLines={1}>🏋 {exerciseNameById[entry.exerciseId]}</Text>
+                          ) : null}
                           {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
                           <View style={styles.progressTrack}>
                             <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
@@ -832,7 +947,8 @@ export default function WeeklyPlanScreen() {
       {/* ── Editor Sheet ── */}
       <Modal visible={showEditor} transparent animationType="slide" onRequestClose={() => setShowEditor(false)}>
         <Pressable style={styles.overlay} onPress={() => setShowEditor(false)} />
-        <ScrollView style={styles.sheet} keyboardShouldPersistTaps="handled" bounces={false}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheet}>
+        <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{editingId ? 'Sửa kế hoạch' : 'Thêm kế hoạch'}</Text>
@@ -978,6 +1094,91 @@ export default function WeeklyPlanScreen() {
                       <Text style={[styles.musclePickerSetsUnit, { color: col?.badgeText ?? Colors.accent }]}>sets</Text>
                     </View>
                   )}
+
+                  {isChosen && (() => {
+                    const groupExercises = exercisesByMuscleGroup[group.id] || [];
+                    const pickerOpen = showExercisePickerFor.has(group.id);
+                    const chosenExerciseId = selectedExercises[group.id] ?? null;
+                    const { topLevel, variantsByParent } = groupExercisesByParent(groupExercises);
+                    return (
+                      <View style={styles.exercisePickerBlock}>
+                        <TouchableOpacity
+                          style={styles.exercisePickerToggle}
+                          onPress={() => toggleExercisePickerFor(group.id)}
+                        >
+                          <ChevronDown
+                            color={Colors.textMuted}
+                            size={14}
+                            style={!pickerOpen ? styles.exercisePickerToggleIconCollapsed : undefined}
+                          />
+                          <Text style={styles.exercisePickerToggleLabel}>
+                            Bài tập cụ thể (tuỳ chọn){chosenExerciseId ? ` — ${exerciseNameById[chosenExerciseId] ?? ''}` : ''}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {pickerOpen && (
+                          <View style={styles.musclePickerList}>
+                            {groupExercises.length === 0 ? (
+                              <Text style={styles.mutedHint}>Nhóm cơ này chưa có bài tập nào.</Text>
+                            ) : (
+                              <>
+                                <TouchableOpacity
+                                  style={[styles.exercisePickerChip, chosenExerciseId === null && styles.exercisePickerChipActive]}
+                                  onPress={() => setMuscleExercise(group.id, null)}
+                                >
+                                  <Text style={[styles.exercisePickerChipText, chosenExerciseId === null && styles.exercisePickerChipTextActive]}>
+                                    Không chọn cụ thể (mọi bài của nhóm)
+                                  </Text>
+                                </TouchableOpacity>
+
+                                {topLevel.map((ex) => {
+                                  const variants = variantsByParent.get(ex.id) || [];
+                                  const expanded = expandedExerciseVariants.has(ex.id);
+                                  return (
+                                    <View key={ex.id}>
+                                      <TouchableOpacity
+                                        style={[styles.exercisePickerChip, chosenExerciseId === ex.id && styles.exercisePickerChipActive]}
+                                        onPress={() => setMuscleExercise(group.id, ex.id)}
+                                      >
+                                        <Text style={[styles.exercisePickerChipText, chosenExerciseId === ex.id && styles.exercisePickerChipTextActive]}>
+                                          {ex.name}
+                                        </Text>
+                                      </TouchableOpacity>
+
+                                      {variants.length > 0 && (
+                                        <TouchableOpacity
+                                          style={styles.exerciseVariantsToggle}
+                                          onPress={() => setExpandedExerciseVariants((prev) => {
+                                            const next = new Set(prev);
+                                            if (next.has(ex.id)) next.delete(ex.id); else next.add(ex.id);
+                                            return next;
+                                          })}
+                                        >
+                                          <Text style={styles.exerciseVariantsToggleText}>Biến thể ({variants.length})</Text>
+                                        </TouchableOpacity>
+                                      )}
+
+                                      {expanded && variants.map((v) => (
+                                        <TouchableOpacity
+                                          key={v.id}
+                                          style={[styles.exercisePickerChip, styles.exercisePickerChipVariant, chosenExerciseId === v.id && styles.exercisePickerChipActive]}
+                                          onPress={() => setMuscleExercise(group.id, v.id)}
+                                        >
+                                          <Text style={[styles.exercisePickerChipText, chosenExerciseId === v.id && styles.exercisePickerChipTextActive]}>
+                                            {v.name}
+                                          </Text>
+                                        </TouchableOpacity>
+                                      ))}
+                                    </View>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })()}
                 </View>
               );
             })}
@@ -1007,12 +1208,13 @@ export default function WeeklyPlanScreen() {
           </TouchableOpacity>
           <View style={{ height: 24 }} />
         </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Plan manager sheet ── */}
       <Modal visible={showPlanManager} transparent animationType="slide" onRequestClose={() => setShowPlanManager(false)}>
         <Pressable style={styles.overlay} onPress={() => setShowPlanManager(false)} />
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Chọn kế hoạch</Text>
@@ -1096,7 +1298,7 @@ export default function WeeklyPlanScreen() {
             </TouchableOpacity>
           </View>
           <View style={{ height: 24 }} />
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -1287,6 +1489,22 @@ const styles = StyleSheet.create({
   categoryFilterChipTextActive: { color: Colors.accent, fontWeight: '700' },
 
   musclePickerList: { gap: 6, marginBottom: 4 },
+  exercisePickerBlock: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border },
+  exercisePickerToggle: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  exercisePickerToggleIconCollapsed: { transform: [{ rotate: '-90deg' }] },
+  exercisePickerToggleLabel: { color: Colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  mutedHint: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic', paddingVertical: 4 },
+  exercisePickerChip: {
+    borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 10, paddingVertical: 9, paddingHorizontal: 12,
+    backgroundColor: Colors.surface,
+  },
+  exercisePickerChipVariant: { marginLeft: 16 },
+  exercisePickerChipActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '15' },
+  exercisePickerChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  exercisePickerChipTextActive: { color: Colors.accent, fontWeight: '700' },
+  exerciseVariantsToggle: { paddingVertical: 4, paddingLeft: 12, marginBottom: 2 },
+  exerciseVariantsToggleText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
   musclePickerRow: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: Colors.border,

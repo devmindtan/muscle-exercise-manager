@@ -19,6 +19,7 @@ export type WeeklyPlanEntry = {
   id: string;
   dayKey: WeekDayKey;
   muscleGroupId: string;
+  exerciseId: string | null;
   sets: number;
   note: string | null;
   planId: string | null;
@@ -30,6 +31,7 @@ export type WeeklyPlanEntryInput = {
   id?: string;
   dayKey: WeekDayKey;
   muscleGroupId: string;
+  exerciseId?: string | null;
   sets: number;
   note?: string | null;
 };
@@ -77,6 +79,7 @@ function normalizeEntries(value: unknown): WeeklyPlanEntry[] {
         id: String(entry.id),
         dayKey: entry.dayKey as WeekDayKey,
         muscleGroupId: String(entry.muscleGroupId),
+        exerciseId: entry.exerciseId ? String(entry.exerciseId) : null,
         sets: Math.round(numericSets),
         note: entry.note ? String(entry.note) : null,
         planId: entry.planId ? String(entry.planId) : null,
@@ -385,6 +388,7 @@ async function getWebWeeklyPlanEntries(userId?: string | null, planId?: string |
       id: row.id,
       dayKey: row.day_key,
       muscleGroupId: row.muscle_group_id,
+      exerciseId: row.exercise_id ?? null,
       sets: row.sets,
       note: row.note,
       planId: row.plan_id ?? null,
@@ -424,6 +428,7 @@ export async function getWeeklyPlanEntries(userId?: string | null, planId?: stri
     id: row.id,
     dayKey: row.day_key as WeekDayKey,
     muscleGroupId: row.muscle_group_id,
+    exerciseId: row.exercise_id || null,
     sets: Number(row.sets) || 0,
     note: row.note || null,
     planId: row.plan_id || null,
@@ -443,6 +448,7 @@ export async function upsertWeeklyPlanEntry(
     id: input.id || generateId(),
     dayKey: input.dayKey,
     muscleGroupId: input.muscleGroupId,
+    exerciseId: input.exerciseId ?? null,
     sets: Math.max(1, Math.round(input.sets)),
     note: input.note?.trim() || null,
     planId: resolvedPlanId,
@@ -459,6 +465,7 @@ export async function upsertWeeklyPlanEntry(
         user_id: resolvedUserId,
         day_key: nextEntry.dayKey,
         muscle_group_id: nextEntry.muscleGroupId,
+        exercise_id: nextEntry.exerciseId,
         sets: nextEntry.sets,
         note: nextEntry.note,
         plan_id: nextEntry.planId,
@@ -496,6 +503,7 @@ export async function upsertWeeklyPlanEntry(
     id: nextEntry.id,
     day_key: nextEntry.dayKey,
     muscle_group_id: nextEntry.muscleGroupId,
+    exercise_id: nextEntry.exerciseId,
     sets: nextEntry.sets,
     note: nextEntry.note,
     plan_id: resolvedPlanId,
@@ -524,6 +532,7 @@ export async function upsertWeeklyPlanEntries(
     id: input.id || generateId(),
     dayKey: input.dayKey,
     muscleGroupId: input.muscleGroupId,
+    exerciseId: input.exerciseId ?? null,
     sets: Math.max(1, Math.round(input.sets)),
     note: input.note?.trim() || null,
     planId: resolvedPlanId,
@@ -540,6 +549,7 @@ export async function upsertWeeklyPlanEntries(
         user_id: resolvedUserId,
         day_key: nextEntry.dayKey,
         muscle_group_id: nextEntry.muscleGroupId,
+        exercise_id: nextEntry.exerciseId,
         sets: nextEntry.sets,
         note: nextEntry.note,
         plan_id: nextEntry.planId,
@@ -584,6 +594,7 @@ export async function upsertWeeklyPlanEntries(
       id: nextEntry.id,
       day_key: nextEntry.dayKey,
       muscle_group_id: nextEntry.muscleGroupId,
+      exercise_id: nextEntry.exerciseId,
       sets: nextEntry.sets,
       note: nextEntry.note,
       plan_id: resolvedPlanId,
