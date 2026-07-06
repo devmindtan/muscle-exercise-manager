@@ -479,6 +479,7 @@ export async function createExercise(data: {
   name: string;
   notes?: string;
   image_uri?: string | null;
+  parentExerciseId?: string | null;
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
@@ -493,6 +494,7 @@ export async function createExercise(data: {
       notes: data.notes,
       image_uri: data.image_uri ?? null,
       is_active: true,
+      parent_exercise_id: data.parentExerciseId ?? null,
       created_at: now,
       updated_at: now,
       deleted_at: null,
@@ -509,6 +511,7 @@ export async function createExercise(data: {
     notes: data.notes,
     image_uri: data.image_uri ?? null,
     is_active: 1,
+    parent_exercise_id: data.parentExerciseId ?? null,
     created_at: now,
     updated_at: now,
     dirty: 1,
@@ -526,12 +529,14 @@ export async function insertExercise(data: {
   notes?: string | null;
   image_uri?: string | null;
   is_active?: boolean;
+  parent_exercise_id?: string | null;
 }) {
   return createExercise({
     muscleGroupId: data.muscleGroupId || data.muscle_group_id || '',
     name: data.name,
     notes: data.notes || undefined,
     image_uri: data.image_uri ?? null,
+    parentExerciseId: data.parent_exercise_id ?? null,
   });
 }
 

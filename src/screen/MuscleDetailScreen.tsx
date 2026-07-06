@@ -16,7 +16,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Plus, Trash2, X, Pencil } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, X, Pencil, ChevronDown, ChevronRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
 import { uploadImage } from '@/src/services/imageUpload';
@@ -103,8 +103,10 @@ export default function MuscleDetailScreen() {
   const [exName, setExName] = useState('');
   const [exNotes, setExNotes] = useState('');
   const [exImageUri, setExImageUri] = useState('');
+  const [exParentId, setExParentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [exError, setExError] = useState('');
+  const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -124,6 +126,7 @@ export default function MuscleDetailScreen() {
     notes: '',
     image_uri: '',
     muscle_group_id: '',
+    parent_exercise_id: null as string | null,
   });
   const [loadError, setLoadError] = useState('');
 
@@ -315,11 +318,13 @@ export default function MuscleDetailScreen() {
         name: exName.trim(),
         notes: exNotes.trim() || null,
         image_uri: exImageUri.trim() || null,
+        parent_exercise_id: exParentId,
       });
       setShowAddExercise(false);
       setExName('');
       setExNotes('');
       setExImageUri('');
+      setExParentId(null);
       load();
     } catch (e: unknown) {
       setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
@@ -335,8 +340,37 @@ export default function MuscleDetailScreen() {
       notes: exercise.notes || '',
       image_uri: exercise.image_uri || '',
       muscle_group_id: exercise.muscle_group_id,
+      parent_exercise_id: exercise.parent_exercise_id ?? null,
     });
     setShowEditExercise(true);
+  };
+
+  const toggleVariants = (baseId: string) => {
+    setExpandedVariants((prev) => {
+      const next = new Set(prev);
+      if (next.has(baseId)) next.delete(baseId);
+      else next.add(baseId);
+      return next;
+    });
+  };
+
+  // Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id trỏ tới 1 bài
+  // trong cùng danh sách) được lồng dưới bài gốc, thu gọn mặc định. Biến thể
+  // mồ côi (bài gốc bị lọc sang tab khác) vẫn hiện như bài độc lập.
+  const groupExercises = (list: ExerciseWithStats[]) => {
+    const idsInList = new Set(list.map((e) => e.id));
+    const variantsByParent = new Map<string, ExerciseWithStats[]>();
+    const topLevel: ExerciseWithStats[] = [];
+    for (const ex of list) {
+      if (ex.parent_exercise_id && idsInList.has(ex.parent_exercise_id)) {
+        const arr = variantsByParent.get(ex.parent_exercise_id) || [];
+        arr.push(ex);
+        variantsByParent.set(ex.parent_exercise_id, arr);
+      } else {
+        topLevel.push(ex);
+      }
+    }
+    return { topLevel, variantsByParent };
   };
 
   const deleteExercise = () => {
@@ -374,6 +408,7 @@ export default function MuscleDetailScreen() {
         notes: editExerciseForm.notes.trim() || null,
         image_uri: editExerciseForm.image_uri.trim() || null,
         muscle_group_id: editExerciseForm.muscle_group_id,
+        parent_exercise_id: editExerciseForm.parent_exercise_id,
       });
       setShowEditExercise(false);
       setEditingExercise(null);
@@ -494,70 +529,162 @@ export default function MuscleDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        {exTab === 'active' && exercises.filter((e) => !!e.is_active).map((ex) => (
-          <TouchableOpacity
-            key={ex.id}
-            style={styles.exCard}
-            onPress={() => router.push(`/muscles/exercises/${ex.id}` as any)}
-          >
-            {ex.image_uri ? (
-              <Image source={{ uri: ex.image_uri }} style={styles.exImg} />
-            ) : (
-              <View style={[styles.exImgPlaceholder, { backgroundColor: group.color + '20' }]}>
-                <Text style={[styles.exImgText, { color: group.color }]}>
-                  {ex.name[0].toUpperCase()}
-                </Text>
+        {exTab === 'active' && (() => {
+          const { topLevel, variantsByParent } = groupExercises(exercises.filter((e) => !!e.is_active));
+          return topLevel.map((ex) => {
+            const variants = variantsByParent.get(ex.id) || [];
+            const expanded = expandedVariants.has(ex.id);
+            return (
+              <View key={ex.id}>
+                <TouchableOpacity
+                  style={styles.exCard}
+                  onPress={() => router.push(`/muscles/exercises/${ex.id}` as any)}
+                >
+                  {ex.image_uri ? (
+                    <Image source={{ uri: ex.image_uri }} style={styles.exImg} />
+                  ) : (
+                    <View style={[styles.exImgPlaceholder, { backgroundColor: group.color + '20' }]}>
+                      <Text style={[styles.exImgText, { color: group.color }]}>
+                        {ex.name[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.exInfo}>
+                    <Text style={styles.exName}>{ex.name}</Text>
+                    <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
+                    {ex.notes ? (
+                      <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity onPress={() => openEditExercise(ex)} style={styles.exEditIcon}>
+                    <View style={styles.weeklySetsbadge}>
+                      <Text style={styles.weeklySetsBadgeText}>
+                        {(ex.weekly_sets ?? 0) > 0 ? `${ex.weekly_sets}s/w` : '0s/w'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+
+                {variants.length > 0 && (
+                  <TouchableOpacity style={styles.variantsToggle} onPress={() => toggleVariants(ex.id)}>
+                    {expanded ? (
+                      <ChevronDown color={Colors.textMuted} size={14} />
+                    ) : (
+                      <ChevronRight color={Colors.textMuted} size={14} />
+                    )}
+                    <Text style={styles.variantsToggleText}>Biến thể ({variants.length})</Text>
+                  </TouchableOpacity>
+                )}
+
+                {expanded && variants.map((v) => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[styles.exCard, styles.exCardVariant]}
+                    onPress={() => router.push(`/muscles/exercises/${v.id}` as any)}
+                  >
+                    {v.image_uri ? (
+                      <Image source={{ uri: v.image_uri }} style={styles.exImg} />
+                    ) : (
+                      <View style={[styles.exImgPlaceholder, { backgroundColor: group.color + '20' }]}>
+                        <Text style={[styles.exImgText, { color: group.color }]}>
+                          {v.name[0].toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.exInfo}>
+                      <Text style={styles.exName}>{v.name}</Text>
+                      <Text style={styles.exDate}>{formatRelativeDate(v.last_logged_at)}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => openEditExercise(v)} style={styles.exEditIcon}>
+                      <View style={styles.weeklySetsbadge}>
+                        <Text style={styles.weeklySetsBadgeText}>
+                          {(v.weekly_sets ?? 0) > 0 ? `${v.weekly_sets}s/w` : '0s/w'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
-            <View style={styles.exInfo}>
-              <Text style={styles.exName}>{ex.name}</Text>
-              <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
-              {ex.notes ? (
-                <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
-              ) : null}
-            </View>
-            <TouchableOpacity onPress={() => openEditExercise(ex)} style={styles.exEditIcon}>
-              <View style={styles.weeklySetsbadge}>
-                <Text style={styles.weeklySetsBadgeText}>
-                  {(ex.weekly_sets ?? 0) > 0 ? `${ex.weekly_sets}s/w` : '0s/w'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        ))}
+            );
+          });
+        })()}
 
         {exTab === 'disabled' && exercises.filter((e) => !e.is_active).length === 0 && (
           <View style={styles.emptyTab}>
             <Text style={styles.emptyTabText}>Không có bài tập nào bị vô hiệu hoá</Text>
           </View>
         )}
-        {exTab === 'disabled' && exercises.filter((e) => !e.is_active).map((ex) => (
-          <TouchableOpacity
-            key={ex.id}
-            style={[styles.exCard, styles.exCardDisabled]}
-            onPress={() => openEditExercise(ex)}
-          >
-            {ex.image_uri ? (
-              <Image source={{ uri: ex.image_uri }} style={[styles.exImg, styles.disabledImage]} />
-            ) : (
-              <View style={[styles.exImgPlaceholder, { backgroundColor: Colors.border }]}>
-                <Text style={[styles.exImgText, { color: Colors.textMuted }]}>
-                  {ex.name[0].toUpperCase()}
-                </Text>
+        {exTab === 'disabled' && (() => {
+          const { topLevel, variantsByParent } = groupExercises(exercises.filter((e) => !e.is_active));
+          return topLevel.map((ex) => {
+            const variants = variantsByParent.get(ex.id) || [];
+            const expanded = expandedVariants.has(ex.id);
+            return (
+              <View key={ex.id}>
+                <TouchableOpacity
+                  style={[styles.exCard, styles.exCardDisabled]}
+                  onPress={() => openEditExercise(ex)}
+                >
+                  {ex.image_uri ? (
+                    <Image source={{ uri: ex.image_uri }} style={[styles.exImg, styles.disabledImage]} />
+                  ) : (
+                    <View style={[styles.exImgPlaceholder, { backgroundColor: Colors.border }]}>
+                      <Text style={[styles.exImgText, { color: Colors.textMuted }]}>
+                        {ex.name[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.exInfo}>
+                    <Text style={[styles.exName, styles.disabledText]}>{ex.name}</Text>
+                    <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
+                    {ex.notes ? (
+                      <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.exEditIcon}>
+                    <Text style={styles.enableHint}>Bật lại</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {variants.length > 0 && (
+                  <TouchableOpacity style={styles.variantsToggle} onPress={() => toggleVariants(ex.id)}>
+                    {expanded ? (
+                      <ChevronDown color={Colors.textMuted} size={14} />
+                    ) : (
+                      <ChevronRight color={Colors.textMuted} size={14} />
+                    )}
+                    <Text style={styles.variantsToggleText}>Biến thể ({variants.length})</Text>
+                  </TouchableOpacity>
+                )}
+
+                {expanded && variants.map((v) => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[styles.exCard, styles.exCardDisabled, styles.exCardVariant]}
+                    onPress={() => openEditExercise(v)}
+                  >
+                    {v.image_uri ? (
+                      <Image source={{ uri: v.image_uri }} style={[styles.exImg, styles.disabledImage]} />
+                    ) : (
+                      <View style={[styles.exImgPlaceholder, { backgroundColor: Colors.border }]}>
+                        <Text style={[styles.exImgText, { color: Colors.textMuted }]}>
+                          {v.name[0].toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.exInfo}>
+                      <Text style={[styles.exName, styles.disabledText]}>{v.name}</Text>
+                      <Text style={styles.exDate}>{formatRelativeDate(v.last_logged_at)}</Text>
+                    </View>
+                    <View style={styles.exEditIcon}>
+                      <Text style={styles.enableHint}>Bật lại</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
-            <View style={styles.exInfo}>
-              <Text style={[styles.exName, styles.disabledText]}>{ex.name}</Text>
-              <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
-              {ex.notes ? (
-                <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
-              ) : null}
-            </View>
-            <View style={styles.exEditIcon}>
-              <Text style={styles.enableHint}>Bật lại</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+            );
+          });
+        })()}
 
         <TouchableOpacity style={styles.deleteGroupBtn} onPress={deleteGroup}>
           <Trash2 color={Colors.error} size={20} />
@@ -616,6 +743,29 @@ export default function MuscleDetailScreen() {
             {exImageUri ? (
               <Image source={{ uri: exImageUri }} style={styles.previewImage} />
             ) : null}
+
+            <Text style={styles.label}>Là biến thể của (tuỳ chọn)</Text>
+            <View style={styles.muscleGroupPicker}>
+              <TouchableOpacity
+                style={[styles.muscleGroupChip, exParentId === null && { backgroundColor: group.color, borderColor: group.color }]}
+                onPress={() => setExParentId(null)}
+              >
+                <Text style={[styles.muscleGroupChipText, exParentId === null && styles.muscleGroupChipTextActive]}>
+                  Không (bài gốc)
+                </Text>
+              </TouchableOpacity>
+              {exercises.filter((e) => e.is_active && !e.parent_exercise_id).map((base) => (
+                <TouchableOpacity
+                  key={base.id}
+                  style={[styles.muscleGroupChip, exParentId === base.id && { backgroundColor: group.color, borderColor: group.color }]}
+                  onPress={() => setExParentId(base.id)}
+                >
+                  <Text style={[styles.muscleGroupChipText, exParentId === base.id && styles.muscleGroupChipTextActive]}>
+                    {base.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
 
@@ -686,6 +836,31 @@ export default function MuscleDetailScreen() {
             {editExerciseForm.image_uri ? (
               <Image source={{ uri: editExerciseForm.image_uri }} style={styles.previewImage} />
             ) : null}
+
+            <Text style={styles.label}>Là biến thể của (tuỳ chọn)</Text>
+            <View style={styles.muscleGroupPicker}>
+              <TouchableOpacity
+                style={[styles.muscleGroupChip, editExerciseForm.parent_exercise_id === null && { backgroundColor: group.color, borderColor: group.color }]}
+                onPress={() => setEditExerciseForm((f) => ({ ...f, parent_exercise_id: null }))}
+              >
+                <Text style={[styles.muscleGroupChipText, editExerciseForm.parent_exercise_id === null && styles.muscleGroupChipTextActive]}>
+                  Không (bài gốc)
+                </Text>
+              </TouchableOpacity>
+              {exercises
+                .filter((e) => e.is_active && !e.parent_exercise_id && e.id !== editingExercise?.id)
+                .map((base) => (
+                  <TouchableOpacity
+                    key={base.id}
+                    style={[styles.muscleGroupChip, editExerciseForm.parent_exercise_id === base.id && { backgroundColor: group.color, borderColor: group.color }]}
+                    onPress={() => setEditExerciseForm((f) => ({ ...f, parent_exercise_id: base.id }))}
+                  >
+                    <Text style={[styles.muscleGroupChipText, editExerciseForm.parent_exercise_id === base.id && styles.muscleGroupChipTextActive]}>
+                      {base.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </View>
 
             <Text style={styles.label}>Chuyển sang nhóm cơ khác</Text>
             <View style={styles.muscleGroupPicker}>
@@ -1016,6 +1191,16 @@ const styles = StyleSheet.create({
   emptyTabText: { fontSize: 13, color: Colors.textMuted },
   enableHint: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
   exCardDisabled: { opacity: 0.6, borderStyle: 'dashed' },
+  exCardVariant: { marginLeft: 20, marginTop: -4 },
+  variantsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 12,
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  variantsToggleText: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
   disabledImage: { opacity: 0.5 },
   disabledText: { color: Colors.textSecondary },
   disableBtn: {

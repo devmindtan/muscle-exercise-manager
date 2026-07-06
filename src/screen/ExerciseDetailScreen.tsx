@@ -36,6 +36,7 @@ import {
   setExerciseActive,
   softDeleteExercise,
   getMuscleGroups,
+  getExercises,
 } from '@/src/lib/repository';
 import { Exercise, WorkoutLog, MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
@@ -91,12 +92,14 @@ export default function ExerciseDetailScreen() {
     notes: '',
     image_uri: '',
     muscle_group_id: '',
+    parent_exercise_id: null as string | null,
   });
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [editError, setEditError] = useState('');
   const [logFilter, setLogFilter] = useState<'all' | 'notes' | 'no-notes'>('all');
   const [allMuscleGroups, setAllMuscleGroups] = useState<MuscleGroup[]>([]);
+  const [siblingExercises, setSiblingExercises] = useState<Exercise[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -105,7 +108,10 @@ export default function ExerciseDetailScreen() {
       getWorkoutLogs(undefined, undefined, id),
       getMuscleGroups(),
     ]);
-    if (ex) setExercise(ex);
+    if (ex) {
+      setExercise(ex);
+      setSiblingExercises((await getExercises(ex.muscle_group_id)) as Exercise[]);
+    }
     setAllMuscleGroups(groups);
     // Sort mới nhất lên đầu
     setLogs((allLogs as WorkoutLog[]).filter((l) => !l.deleted_at).sort(
@@ -154,6 +160,7 @@ export default function ExerciseDetailScreen() {
       notes: exercise.notes || '',
       image_uri: exercise.image_uri || '',
       muscle_group_id: exercise.muscle_group_id,
+      parent_exercise_id: exercise.parent_exercise_id ?? null,
     });
     setEditError('');
     setEditing(true);
@@ -207,6 +214,7 @@ export default function ExerciseDetailScreen() {
         notes: editForm.notes.trim() || null,
         image_uri: editForm.image_uri.trim() || null,
         muscle_group_id: editForm.muscle_group_id || exercise.muscle_group_id,
+        parent_exercise_id: editForm.parent_exercise_id,
       });
       setEditing(false);
       load();
@@ -251,11 +259,33 @@ export default function ExerciseDetailScreen() {
           )}
           <View style={styles.headerInfo}>
             <Text style={styles.exerciseName}>{exercise.name}</Text>
+            {exercise.parent_exercise_id ? (
+              <Text style={styles.variantOfText}>
+                Biến thể của: {siblingExercises.find((e) => e.id === exercise.parent_exercise_id)?.name || '...'}
+              </Text>
+            ) : null}
             {exercise.notes ? (
               <Text style={styles.notes}>{exercise.notes}</Text>
             ) : null}
           </View>
         </View>
+
+        {!exercise.parent_exercise_id && siblingExercises.some((e) => e.parent_exercise_id === exercise.id) ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Biến thể</Text>
+            {siblingExercises
+              .filter((e) => e.parent_exercise_id === exercise.id)
+              .map((v) => (
+                <TouchableOpacity
+                  key={v.id}
+                  style={styles.variantRow}
+                  onPress={() => router.push(`/muscles/exercises/${v.id}` as any)}
+                >
+                  <Text style={styles.variantRowText}>{v.name}</Text>
+                </TouchableOpacity>
+              ))}
+          </View>
+        ) : null}
 
         {/* Stats cards */}
         <View style={styles.statsGrid}>
@@ -474,6 +504,31 @@ export default function ExerciseDetailScreen() {
                 <Image source={{ uri: editForm.image_uri }} style={styles.previewImage} />
               </TouchableOpacity>
             ) : null}
+
+            <Text style={styles.label}>Là biến thể của (tuỳ chọn)</Text>
+            <View style={styles.muscleGroupPicker}>
+              <TouchableOpacity
+                style={[styles.muscleGroupChip, editForm.parent_exercise_id === null && styles.muscleGroupChipSelected]}
+                onPress={() => setEditForm((f) => ({ ...f, parent_exercise_id: null }))}
+              >
+                <Text style={[styles.muscleGroupChipText, editForm.parent_exercise_id === null && styles.muscleGroupChipTextActive]}>
+                  Không (bài gốc)
+                </Text>
+              </TouchableOpacity>
+              {siblingExercises
+                .filter((e) => e.is_active && !e.parent_exercise_id && e.id !== exercise.id)
+                .map((base) => (
+                  <TouchableOpacity
+                    key={base.id}
+                    style={[styles.muscleGroupChip, editForm.parent_exercise_id === base.id && styles.muscleGroupChipSelected]}
+                    onPress={() => setEditForm((f) => ({ ...f, parent_exercise_id: base.id }))}
+                  >
+                    <Text style={[styles.muscleGroupChipText, editForm.parent_exercise_id === base.id && styles.muscleGroupChipTextActive]}>
+                      {base.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </View>
 
             <Text style={styles.label}>Chuyển sang nhóm cơ khác</Text>
             <View style={styles.muscleGroupPicker}>
@@ -913,6 +968,18 @@ const styles = StyleSheet.create({
   },
   muscleGroupChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
   muscleGroupChipTextActive: { color: Colors.bg, fontWeight: '700' },
+  muscleGroupChipSelected: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  variantOfText: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
+  variantRow: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  variantRowText: { fontSize: 14, color: Colors.text, fontWeight: '600' },
 
   statCardHeader: {
     flexDirection: 'row',

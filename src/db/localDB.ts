@@ -35,6 +35,7 @@ export type LocalWeeklyPlanEntry = {
   id: string;
   day_key: string;
   muscle_group_id: string;
+  exercise_id: string | null;
   sets: number;
   note: string | null;
   plan_id: string | null;
@@ -149,6 +150,7 @@ export type LocalPlanShare = {
   owner_id: string;
   share_code: string;
   visibility: PlanShareVisibility;
+  is_public: 0 | 1;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -224,6 +226,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       notes TEXT,
       image_uri TEXT,
       is_active INTEGER DEFAULT 1,
+      parent_exercise_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       dirty INTEGER DEFAULT 0,
@@ -278,6 +281,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       id TEXT PRIMARY KEY,
       day_key TEXT NOT NULL,
       muscle_group_id TEXT NOT NULL,
+      exercise_id TEXT,
       sets INTEGER NOT NULL,
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -425,6 +429,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       owner_id TEXT NOT NULL,
       share_code TEXT NOT NULL,
       visibility TEXT NOT NULL DEFAULT 'link',
+      is_public INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       deleted_at TEXT,
@@ -465,6 +470,7 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'exercises', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'exercises', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'exercises', 'is_active', 'INTEGER DEFAULT 1');
+  await ensureColumn(database, 'exercises', 'parent_exercise_id', 'TEXT');
 
   await ensureColumn(database, 'workout_logs', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
@@ -481,6 +487,9 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'weekly_plan_entries', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
   await ensureColumn(database, 'weekly_plan_entries', 'plan_id', 'TEXT');
+  await ensureColumn(database, 'weekly_plan_entries', 'exercise_id', 'TEXT');
+
+  await ensureColumn(database, 'plan_shares', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
 
   await database.execAsync(
     `CREATE TABLE IF NOT EXISTS workout_plans (
@@ -786,14 +795,15 @@ export async function upsertExercise(exercise: LocalExercise) {
   const dirty = exercise.dirty ?? 0;
   const deleted = exercise.deleted ?? 0;
   await database.runAsync(
-    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
       muscle_group_id = COALESCE(excluded.muscle_group_id, muscle_group_id),
       name = COALESCE(excluded.name, name),
       notes = COALESCE(excluded.notes, notes),
       image_uri = COALESCE(excluded.image_uri, image_uri),
       is_active = COALESCE(excluded.is_active, is_active),
+      parent_exercise_id = excluded.parent_exercise_id,
       updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
@@ -804,6 +814,7 @@ export async function upsertExercise(exercise: LocalExercise) {
       exercise.notes || null,
       exercise.image_uri || null,
       exercise.is_active ? 1 : 0,
+      exercise.parent_exercise_id ?? null,
       exercise.created_at,
       exercise.updated_at || new Date().toISOString(),
       dirty,
@@ -1131,11 +1142,12 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
   const deleted = entry.deleted ?? 0;
 
   await database.runAsync(
-    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, sets, note, plan_id, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, exercise_id, sets, note, plan_id, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        day_key = excluded.day_key,
        muscle_group_id = excluded.muscle_group_id,
+       exercise_id = excluded.exercise_id,
        sets = excluded.sets,
        note = excluded.note,
        plan_id = COALESCE(excluded.plan_id, plan_id),
@@ -1146,6 +1158,7 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
       entry.id,
       entry.day_key,
       entry.muscle_group_id,
+      entry.exercise_id || null,
       Math.max(1, Math.round(entry.sets)),
       entry.note || null,
       entry.plan_id || null,
@@ -1876,19 +1889,20 @@ export async function getPlanShares(): Promise<LocalPlanShare[]> {
 export async function upsertPlanShare(row: LocalPlanShare): Promise<void> {
   const database = await getDatabase();
   await database.runAsync(
-    `INSERT INTO plan_shares (id, plan_id, owner_id, share_code, visibility, created_at, updated_at, deleted_at, sync_status, user_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO plan_shares (id, plan_id, owner_id, share_code, visibility, is_public, created_at, updated_at, deleted_at, sync_status, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        plan_id = excluded.plan_id,
        owner_id = excluded.owner_id,
        share_code = excluded.share_code,
        visibility = excluded.visibility,
+       is_public = excluded.is_public,
        updated_at = excluded.updated_at,
        deleted_at = excluded.deleted_at,
        sync_status = excluded.sync_status,
        user_id = excluded.user_id`,
     [
-      row.id, row.plan_id, row.owner_id, row.share_code, row.visibility,
+      row.id, row.plan_id, row.owner_id, row.share_code, row.visibility, row.is_public ? 1 : 0,
       row.created_at, row.updated_at || new Date().toISOString(),
       row.deleted_at ?? null, row.sync_status || 'pending', row.user_id ?? null,
     ]

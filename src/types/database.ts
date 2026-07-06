@@ -40,6 +40,7 @@ export type Database = {
           notes?: string | null;
           image_uri?: string | null;
           is_active?: boolean;
+          parent_exercise_id?: string | null;
           created_at?: string;
         };
         Update: {
@@ -47,6 +48,7 @@ export type Database = {
           notes?: string | null;
           image_uri?: string | null;
           is_active?: boolean;
+          parent_exercise_id?: string | null;
         };
         Relationships: [
           {
@@ -158,6 +160,7 @@ export type Database = {
           id?: string;
           day_key: string;
           muscle_group_id: string;
+          exercise_id?: string | null;
           sets: number;
           note?: string | null;
           created_at?: string;
@@ -165,6 +168,7 @@ export type Database = {
         Update: {
           day_key?: string;
           muscle_group_id?: string;
+          exercise_id?: string | null;
           sets?: number;
           note?: string | null;
         };
@@ -243,6 +247,7 @@ export type Exercise = {
   notes: string | null;
   image_uri: string | null;
   is_active: boolean;
+  parent_exercise_id: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -309,6 +314,7 @@ export type WeeklyPlanEntry = {
   id: string;
   day_key: string;
   muscle_group_id: string;
+  exercise_id: string | null;
   sets: number;
   note: string | null;
   created_at: string;

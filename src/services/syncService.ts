@@ -142,6 +142,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           notes: exercise.notes,
           image_uri: exercise.image_uri,
           is_active: typeof exercise.is_active === 'boolean' ? exercise.is_active : !!exercise.is_active,
+          parent_exercise_id: exercise.parent_exercise_id ?? null,
           deleted_at: isDeleted ? new Date().toISOString() : null,
         }) as any);
         if (error) {
@@ -321,6 +322,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           user_id: userId,
           day_key: plan.day_key,
           muscle_group_id: plan.muscle_group_id,
+          exercise_id: plan.exercise_id ?? null,
           sets: plan.sets,
           note: plan.note,
           plan_id: plan.plan_id,
@@ -793,7 +795,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       try {
         const { error } = await (supabase as any).from('plan_shares').upsert({
           id: s.id, plan_id: s.plan_id, owner_id: s.owner_id, share_code: s.share_code,
-          visibility: s.visibility, created_at: s.created_at, updated_at: s.updated_at,
+          visibility: s.visibility, is_public: !!s.is_public,
+          created_at: s.created_at, updated_at: s.updated_at,
           deleted_at: s.deleted_at ?? null,
         }, { onConflict: 'id' });
         if (error) throw error;
