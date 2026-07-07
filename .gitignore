@@ -43,3 +43,12 @@ android
 *.zip
 tmp/*
 tmp/
+.temp/
+.temp/*
+
+# claude code local overrides (personal permission settings, not shared config)
+.claude/settings.local.json
+
+# graphify: machine-local paths, not portable across clones/machines
+graphify-out/.graphify_python
+graphify-out/.graphify_root

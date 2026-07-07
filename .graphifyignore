@@ -1,0 +1,8 @@
+# .graphifyignore
+*.md
+*.txt
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
