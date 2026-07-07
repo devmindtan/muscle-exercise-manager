@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Plus, Target, X } from 'lucide-react-native';
@@ -705,7 +706,8 @@ export default function BodyMetricsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadingText}>Đang tải chỉ số...</Text>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Đang tải chỉ số...</Text>
       </View>
     );
   }

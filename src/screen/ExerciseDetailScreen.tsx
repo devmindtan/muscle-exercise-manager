@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -228,7 +229,8 @@ export default function ExerciseDetailScreen() {
   if (!exercise) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadText}>Đang tải...</Text>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={[styles.loadText, { marginTop: 12 }]}>Đang tải...</Text>
       </View>
     );
   }

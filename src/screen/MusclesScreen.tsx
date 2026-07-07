@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -226,7 +227,8 @@ export default function MusclesScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadingText}>Đang tải nhóm cơ...</Text>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Đang tải nhóm cơ...</Text>
       </View>
     );
   }

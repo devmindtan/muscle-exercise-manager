@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import Svg, {
   Path,
   Line,
@@ -669,7 +669,8 @@ export function CardioHistoryTabSection({
   if (historyLoading) {
     return (
       <View style={s.emptyCard}>
-        <Text style={s.emptyText}>Đang tải lịch sử...</Text>
+        <ActivityIndicator color={Colors.accent} />
+        <Text style={[s.emptyText, { marginTop: 10 }]}>Đang tải lịch sử...</Text>
       </View>
     );
   }

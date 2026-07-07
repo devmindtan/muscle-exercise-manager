@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, Image, ActivityIndicator } from 'react-native';
 import { Check, ChevronDown, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExercises } from '@/src/lib/repository';
@@ -116,7 +116,10 @@ export function ExercisePickerSheet({
 
         <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
           {loading ? (
-            <Text style={styles.mutedHint}>Đang tải bài tập...</Text>
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator color={Colors.accent} />
+              <Text style={[styles.mutedHint, { marginTop: 8 }]}>Đang tải bài tập...</Text>
+            </View>
           ) : exercises.length === 0 ? (
             <Text style={styles.mutedHint}>Nhóm cơ này chưa có bài tập nào.</Text>
           ) : (
@@ -221,6 +224,7 @@ const styles = StyleSheet.create({
   clearAllBtn: { alignSelf: 'flex-start', marginBottom: 8, paddingVertical: 2 },
   clearAllText: { fontSize: 12, color: Colors.error, fontWeight: '600' },
   mutedHint: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', paddingVertical: 12, textAlign: 'center' },
+  loadingWrap: { alignItems: 'center', paddingVertical: 12 },
   listWrap: { gap: 6, paddingBottom: 4 },
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

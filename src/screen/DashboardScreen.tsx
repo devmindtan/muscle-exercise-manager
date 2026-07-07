@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
@@ -291,7 +291,8 @@ export default function DashboardScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadingText}>Đang tải...</Text>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Đang tải...</Text>
       </View>
     );
   }

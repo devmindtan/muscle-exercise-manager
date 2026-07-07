@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Search, UserPlus, Lock } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
@@ -122,7 +122,10 @@ export function DiscoverTab() {
 
       <View style={styles.list}>
         {loading ? (
-          <Text style={styles.mutedText}>Đang tải...</Text>
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={Colors.accent} />
+            <Text style={[styles.mutedText, { marginTop: 12 }]}>Đang tải...</Text>
+          </View>
         ) : (
           <>
             {results.map((profile) => {
@@ -209,6 +212,7 @@ const styles = StyleSheet.create({
   searchBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 13 },
   errorText: { color: Colors.error, fontSize: 13 },
   mutedText: { color: Colors.textMuted, fontSize: 13 },
+  center: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
   list: { gap: 10 },
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

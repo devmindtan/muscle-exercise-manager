@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, ScrollView, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserPlus, Check, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
@@ -81,7 +81,8 @@ export function FriendsTab() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <Text style={styles.mutedText}>Đang tải...</Text>
+        <ActivityIndicator size="large" color={Colors.accent} />
+        <Text style={[styles.mutedText, { marginTop: 12 }]}>Đang tải...</Text>
       </View>
     );
   }

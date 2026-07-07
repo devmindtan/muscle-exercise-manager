@@ -12,6 +12,7 @@ import {
   Platform,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -439,7 +440,8 @@ export default function MuscleDetailScreen() {
   if (!group) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadText}>{loadError || 'Đang tải...'}</Text>
+        {!loadError && <ActivityIndicator size="large" color={Colors.accent} />}
+        <Text style={[styles.loadText, !loadError && { marginTop: 12 }]}>{loadError || 'Đang tải...'}</Text>
       </View>
     );
   }
