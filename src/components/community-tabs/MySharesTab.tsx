@@ -71,6 +71,8 @@ export function MySharesTab() {
   const [importBusy, setImportBusy] = useState(false);
   const [importMessage, setImportMessage] = useState('');
 
+  const [shareMenuForPlanId, setShareMenuForPlanId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       const [nextPlans, nextShares, nextPublicShares] = await Promise.all([
@@ -103,6 +105,8 @@ export function MySharesTab() {
       await load();
     } catch (e: any) {
       setError(e?.message || 'Không thể tạo link chia sẻ.');
+    } finally {
+      setShareMenuForPlanId(null);
     }
   };
 
@@ -225,56 +229,37 @@ export function MySharesTab() {
           const planShares = sharesByPlan[plan.id] || [];
           return (
             <View key={plan.id} style={styles.planCard}>
-              <Text style={styles.planName}>{plan.name}</Text>
+              <View style={styles.planCardHeader}>
+                <Text style={styles.planName} numberOfLines={1}>{plan.name}</Text>
+                <TouchableOpacity
+                  style={styles.shareMenuBtn}
+                  onPress={() => setShareMenuForPlanId(plan.id)}
+                  activeOpacity={0.7}
+                >
+                  <Share2 color={Colors.accent} size={13} strokeWidth={2} />
+                  <Text style={styles.shareMenuBtnText}>Chia sẻ</Text>
+                </TouchableOpacity>
+              </View>
 
               {planShares.length > 0 && (
-                <View style={styles.shareListContainer}>
+                <View style={styles.shareChipsRow}>
                   {planShares.map((s) => (
-                    <View key={s.id} style={styles.shareRow}>
-                      <View style={styles.shareIconBadge}>
-                        {s.isPublic ? (
-                          <Globe color={Colors.accent} size={14} strokeWidth={2} />
-                        ) : s.visibility === 'friends' ? (
-                          <Users color={Colors.accent} size={14} strokeWidth={2} />
-                        ) : (
-                          <LinkIcon color={Colors.accent} size={14} strokeWidth={2} />
-                        )}
-                      </View>
-
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.shareCode}>{s.shareCode}</Text>
-                        <Text style={styles.shareVisibility}>
-                          {s.isPublic
-                            ? 'Công khai, ai cũng thấy'
-                            : s.visibility === 'friends'
-                            ? 'Chỉ bạn bè mới xem được'
-                            : 'Yêu cầu mã để truy cập'}
-                        </Text>
-                      </View>
-
-                      <TouchableOpacity style={styles.revokeBtn} onPress={() => revoke(s.id)} activeOpacity={0.7}>
-                        <Trash2 color={Colors.error} size={14} strokeWidth={2} />
+                    <View key={s.id} style={styles.shareChip}>
+                      {s.isPublic ? (
+                        <Globe color={Colors.accent} size={12} strokeWidth={2} />
+                      ) : s.visibility === 'friends' ? (
+                        <Users color={Colors.accent} size={12} strokeWidth={2} />
+                      ) : (
+                        <LinkIcon color={Colors.accent} size={12} strokeWidth={2} />
+                      )}
+                      <Text style={styles.shareChipCode}>{s.shareCode}</Text>
+                      <TouchableOpacity onPress={() => revoke(s.id)} hitSlop={8}>
+                        <X color={Colors.error} size={12} strokeWidth={2.5} />
                       </TouchableOpacity>
                     </View>
                   ))}
                 </View>
               )}
-
-              <Text style={styles.actionLabel}>Tùy chọn chia sẻ mới:</Text>
-              <View style={styles.planActions}>
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'link', true)}>
-                  <Globe color={Colors.accent} size={13} strokeWidth={2} />
-                  <Text style={styles.shareActionBtnText}>Công khai</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'link', false)}>
-                  <Share2 color={Colors.accent} size={13} strokeWidth={2} />
-                  <Text style={styles.shareActionBtnText}>Mã bí mật</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => share(plan.id, 'friends', false)}>
-                  <Users color={Colors.accent} size={13} strokeWidth={2} />
-                  <Text style={styles.shareActionBtnText}>Bạn bè</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           );
         })
@@ -431,6 +416,55 @@ export function MySharesTab() {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Menu chọn kiểu chia sẻ mới — thay cho 3 nút luôn hiện trên mỗi thẻ,
+          giữ thẻ kế hoạch gọn khi có nhiều kế hoạch. */}
+      <Modal
+        visible={!!shareMenuForPlanId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShareMenuForPlanId(null)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setShareMenuForPlanId(null)} />
+        <View style={styles.shareMenuSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.shareMenuTitle}>Chia sẻ kế hoạch</Text>
+          <TouchableOpacity
+            style={styles.shareMenuOption}
+            onPress={() => shareMenuForPlanId && share(shareMenuForPlanId, 'link', true)}
+            activeOpacity={0.7}
+          >
+            <Globe color={Colors.accent} size={16} strokeWidth={2} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareMenuOptionTitle}>Công khai</Text>
+              <Text style={styles.shareMenuOptionSub}>Ai cũng thấy trong danh sách cộng đồng</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.shareMenuOption}
+            onPress={() => shareMenuForPlanId && share(shareMenuForPlanId, 'link', false)}
+            activeOpacity={0.7}
+          >
+            <Share2 color={Colors.accent} size={16} strokeWidth={2} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareMenuOptionTitle}>Mã bí mật</Text>
+              <Text style={styles.shareMenuOptionSub}>Chỉ ai có mã mới xem/tải được</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.shareMenuOption}
+            onPress={() => shareMenuForPlanId && share(shareMenuForPlanId, 'friends', false)}
+            activeOpacity={0.7}
+          >
+            <Users color={Colors.accent} size={16} strokeWidth={2} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareMenuOptionTitle}>Bạn bè</Text>
+              <Text style={styles.shareMenuOptionSub}>Chỉ bạn bè đã kết nối mới xem được</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={{ height: 12 }} />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -480,32 +514,45 @@ const styles = StyleSheet.create({
   circleArrow: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent + '10', alignItems: 'center', justifyContent: 'center' },
 
   planCard: {
-    backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.border,
-    padding: 16, gap: 12, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 }, android: { elevation: 2 } }),
+    backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 14, paddingVertical: 12, gap: 8,
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2 }, android: { elevation: 1 } }),
   },
-  planName: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  actionLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600', marginTop: 4 },
-
-  // Share rows internal
-  shareListContainer: { gap: 8, backgroundColor: Colors.bg + '50', padding: 8, borderRadius: 12 },
-  shareRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: Colors.border,
+  planCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  planName: { fontSize: 14, fontWeight: '700', color: Colors.text, flex: 1 },
+  shareMenuBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderColor: Colors.accent + '40', backgroundColor: Colors.accent + '10',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
   },
-  shareIconBadge: { width: 26, height: 26, borderRadius: 6, backgroundColor: Colors.accent + '15', alignItems: 'center', justifyContent: 'center' },
-  shareCode: { fontSize: 14, fontWeight: '700', color: Colors.text, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  shareVisibility: { fontSize: 11, color: Colors.textMuted },
-  revokeBtn: { padding: 6, borderRadius: 8, backgroundColor: Colors.error + '10' },
+  shareMenuBtnText: { fontSize: 11, fontWeight: '700', color: Colors.accent },
 
-  // Buttons actions
-  planActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  shareActionBtn: {
+  // Share chips — 1 dòng gọn/mã, thay vì thẻ đầy đủ như trước
+  shareChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  shareChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: Colors.bg, borderRadius: 8, borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 8, paddingVertical: 5,
   },
-  shareActionBtnText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  shareChipCode: {
+    fontSize: 12, fontWeight: '700', color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+
+  // Menu chọn kiểu chia sẻ (bottom sheet nhỏ)
+  shareMenuSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 20, paddingBottom: 12,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+  },
+  shareMenuTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 8 },
+  shareMenuOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  shareMenuOptionTitle: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  shareMenuOptionSub: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
 
   // Bottom Sheet Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
