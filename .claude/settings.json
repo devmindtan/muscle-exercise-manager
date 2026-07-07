@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "/home/devmindtan/.local/bin/graphify hook-guard search"
+          },
+          {
+            "type": "command",
+            "command": "jq -cn '{hookSpecificOutput:{hookEventName:\"PreToolUse\",additionalContext:\"CodeGraph is indexed for this repo (.codegraph/codegraph.db, live daemon). Before grepping, run `codegraph explore \\\"<question>\\\"` (or the codegraph_explore MCP tool) for symbol-level lookups — faster/cheaper than raw grep. Use graphify query for broader cross-file/architecture questions instead.\"}}'"
           }
         ]
       },
@@ -16,6 +20,10 @@
           {
             "type": "command",
             "command": "/home/devmindtan/.local/bin/graphify hook-guard read"
+          },
+          {
+            "type": "command",
+            "command": "jq -cn '{hookSpecificOutput:{hookEventName:\"PreToolUse\",additionalContext:\"CodeGraph is indexed for this repo (.codegraph/codegraph.db, live daemon). Before reading raw files, run `codegraph explore \\\"<symbol or question>\\\"` (or the codegraph_explore MCP tool) to get source + call graph in one shot. Use graphify query/explain/path for architecture-level questions. Only read raw files after being oriented, or to modify/debug specific lines.\"}}'"
           }
         ]
       }
