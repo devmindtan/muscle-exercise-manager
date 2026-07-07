@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, Image } from 'react-native';
 import { Check, ChevronDown, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExercises } from '@/src/lib/repository';
@@ -29,21 +29,37 @@ interface ExercisePickerSheetProps {
   muscleGroupId: string | null;
   muscleGroupName?: string;
   tone?: MuscleTone;
-  chosenExerciseId: string | null;
-  onPick: (exerciseId: string | null) => void;
-  onClose: () => void;
+  /** Có thể chọn nhiều bài tập cho cùng 1 nhóm cơ. */
+  chosenExerciseIds: string[];
+  onToggle: (exerciseId: string) => void;
+  onClearAll: () => void;
+  onDone: () => void;
 }
 
-// Bottom sheet riêng để chọn bài tập/biến thể cụ thể cho 1 nhóm cơ đã chọn
-// trong kế hoạch — tách khỏi PlanEditorSheet để tránh chèn ép layout của
+function ExerciseThumb({ ex, tone }: { ex: Exercise; tone?: MuscleTone }) {
+  if (ex.image_uri) {
+    return <Image source={{ uri: ex.image_uri }} style={styles.thumb} />;
+  }
+  return (
+    <View style={[styles.thumbPlaceholder, { backgroundColor: (tone?.bar ?? Colors.accent) + '22' }]}>
+      <Text style={[styles.thumbPlaceholderText, { color: tone?.bar ?? Colors.accent }]}>
+        {ex.name[0]?.toUpperCase() ?? '?'}
+      </Text>
+    </View>
+  );
+}
+
+// Bottom sheet riêng để chọn (nhiều) bài tập/biến thể cụ thể cho 1 nhóm cơ đã
+// chọn trong kế hoạch — tách khỏi PlanEditorSheet để tránh chèn ép layout của
 // danh sách chọn nhóm cơ (mỗi nhóm cơ chỉ có 1 dòng trigger gọn).
 export function ExercisePickerSheet({
   muscleGroupId,
   muscleGroupName,
   tone,
-  chosenExerciseId,
-  onPick,
-  onClose,
+  chosenExerciseIds,
+  onToggle,
+  onClearAll,
+  onDone,
 }: ExercisePickerSheetProps) {
   const [exercisesByGroup, setExercisesByGroup] = useState<Record<string, Exercise[]>>({});
   const [loading, setLoading] = useState(false);
@@ -71,63 +87,57 @@ export function ExercisePickerSheet({
 
   const exercises = muscleGroupId ? exercisesByGroup[muscleGroupId] || [] : [];
   const { topLevel, variantsByParent } = groupExercisesByParent(exercises);
+  const hasSelection = chosenExerciseIds.length > 0;
 
   return (
-    <Modal visible={!!muscleGroupId} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose} />
+    <Modal visible={!!muscleGroupId} transparent animationType="slide" onRequestClose={onDone}>
+      <Pressable style={styles.overlay} onPress={onDone} />
       <View style={styles.sheet}>
         <View style={styles.sheetHandle} />
         <View style={styles.sheetHeader}>
           <View style={styles.titleWrap}>
             <Text style={styles.sheetTitle} numberOfLines={1}>Chọn bài tập</Text>
             {muscleGroupName ? (
-              <Text style={styles.subtitle} numberOfLines={1}>{muscleGroupName}</Text>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {muscleGroupName} · có thể chọn nhiều bài
+              </Text>
             ) : null}
           </View>
-          <TouchableOpacity onPress={onClose}>
+          <TouchableOpacity onPress={onDone}>
             <X color={Colors.textSecondary} size={20} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+        {hasSelection && (
+          <TouchableOpacity style={styles.clearAllBtn} onPress={onClearAll}>
+            <Text style={styles.clearAllText}>Bỏ chọn tất cả ({chosenExerciseIds.length})</Text>
+          </TouchableOpacity>
+        )}
+
+        <ScrollView style={{ maxHeight: 400 }} keyboardShouldPersistTaps="handled">
           {loading ? (
             <Text style={styles.mutedHint}>Đang tải bài tập...</Text>
           ) : exercises.length === 0 ? (
             <Text style={styles.mutedHint}>Nhóm cơ này chưa có bài tập nào.</Text>
           ) : (
             <View style={styles.listWrap}>
-              <TouchableOpacity
-                style={[styles.optionRow, chosenExerciseId === null && styles.optionRowActive]}
-                onPress={() => onPick(null)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.optionText, chosenExerciseId === null && styles.optionTextActive]}>
-                  Không chọn cụ thể
-                </Text>
-                {chosenExerciseId === null && (
-                  <Check color={tone?.badgeText ?? Colors.accent} size={16} strokeWidth={2.5} />
-                )}
-              </TouchableOpacity>
-
               {topLevel.map((ex) => {
                 const variants = variantsByParent.get(ex.id) || [];
                 const expanded = expandedVariants.has(ex.id);
-                const isChosen = chosenExerciseId === ex.id;
+                const isChosen = chosenExerciseIds.includes(ex.id);
                 return (
                   <View key={ex.id}>
                     <View style={[styles.optionRow, isChosen && styles.optionRowActive]}>
                       <TouchableOpacity
                         style={styles.optionMain}
-                        onPress={() => onPick(ex.id)}
+                        onPress={() => onToggle(ex.id)}
                         activeOpacity={0.7}
                       >
+                        <ExerciseThumb ex={ex} tone={tone} />
                         <Text style={[styles.optionText, isChosen && styles.optionTextActive]} numberOfLines={2}>
                           {ex.name}
                         </Text>
                       </TouchableOpacity>
-                      {isChosen && (
-                        <Check color={tone?.badgeText ?? Colors.accent} size={16} strokeWidth={2.5} />
-                      )}
                       {variants.length > 0 && (
                         <TouchableOpacity
                           style={styles.variantToggle}
@@ -146,23 +156,27 @@ export function ExercisePickerSheet({
                           />
                         </TouchableOpacity>
                       )}
+                      <View style={[styles.checkbox, isChosen && styles.checkboxActive]}>
+                        {isChosen && <Check color={Colors.bg} size={14} strokeWidth={3} />}
+                      </View>
                     </View>
 
                     {expanded && variants.map((v) => {
-                      const vChosen = chosenExerciseId === v.id;
+                      const vChosen = chosenExerciseIds.includes(v.id);
                       return (
                         <TouchableOpacity
                           key={v.id}
                           style={[styles.variantRow, vChosen && styles.optionRowActive]}
-                          onPress={() => onPick(v.id)}
+                          onPress={() => onToggle(v.id)}
                           activeOpacity={0.7}
                         >
+                          <ExerciseThumb ex={v} tone={tone} />
                           <Text style={[styles.variantText, vChosen && styles.optionTextActive]} numberOfLines={2}>
                             {v.name}
                           </Text>
-                          {vChosen && (
-                            <Check color={tone?.badgeText ?? Colors.accent} size={15} strokeWidth={2.5} />
-                          )}
+                          <View style={[styles.checkbox, vChosen && styles.checkboxActive]}>
+                            {vChosen && <Check color={Colors.bg} size={13} strokeWidth={3} />}
+                          </View>
                         </TouchableOpacity>
                       );
                     })}
@@ -172,6 +186,12 @@ export function ExercisePickerSheet({
             </View>
           )}
         </ScrollView>
+
+        <TouchableOpacity style={styles.doneBtn} onPress={onDone}>
+          <Text style={styles.doneBtnText}>
+            {hasSelection ? `Xong (${chosenExerciseIds.length} bài đã chọn)` : 'Xong (không chọn cụ thể)'}
+          </Text>
+        </TouchableOpacity>
         <View style={{ height: 24 }} />
       </View>
     </Modal>
@@ -193,22 +213,32 @@ const styles = StyleSheet.create({
     alignSelf: 'center', marginBottom: 12, opacity: 0.4,
   },
   sheetHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
   },
   titleWrap: { flex: 1, minWidth: 0, marginRight: 8 },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
   subtitle: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  clearAllBtn: { alignSelf: 'flex-start', marginBottom: 8, paddingVertical: 2 },
+  clearAllText: { fontSize: 12, color: Colors.error, fontWeight: '600' },
   mutedHint: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', paddingVertical: 12, textAlign: 'center' },
   listWrap: { gap: 6, paddingBottom: 4 },
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 14, backgroundColor: Colors.surface,
+    paddingVertical: 8, paddingHorizontal: 10, backgroundColor: Colors.surface,
   },
   optionRowActive: { borderColor: Colors.accent, backgroundColor: Colors.accent + '12' },
-  optionMain: { flex: 1 },
-  optionText: { fontSize: 14, color: Colors.text, fontWeight: '500' },
+  optionMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  optionText: { flex: 1, fontSize: 14, color: Colors.text, fontWeight: '500' },
   optionTextActive: { color: Colors.accent, fontWeight: '700' },
+  thumb: { width: 36, height: 36, borderRadius: 8 },
+  thumbPlaceholder: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  thumbPlaceholderText: { fontSize: 14, fontWeight: '700' },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg,
+  },
+  checkboxActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   variantToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8,
@@ -217,10 +247,15 @@ const styles = StyleSheet.create({
   variantToggleText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
   variantChevronCollapsed: { transform: [{ rotate: '-90deg' }] },
   variantRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
     marginTop: 6, marginLeft: 20,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
-    paddingVertical: 10, paddingHorizontal: 12, backgroundColor: Colors.surface,
+    paddingVertical: 8, paddingHorizontal: 10, backgroundColor: Colors.surface,
   },
   variantText: { flex: 1, fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  doneBtn: {
+    marginTop: 12, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, backgroundColor: Colors.accent,
+  },
+  doneBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 14 },
 });
