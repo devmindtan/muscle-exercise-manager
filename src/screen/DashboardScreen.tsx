@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -137,6 +137,10 @@ export default function DashboardScreen() {
   const [progressTab, setProgressTab] = useState<ProgressTab>('pending');
   const [weekKey, setWeekKey] = useState(getWeekKey());
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'history'>('overview');
+  // Chỉ true trong lần load đầu tiên — các lần load() sau (do focus lại màn
+  // hình hoặc do 1 lượt sync nền hoàn tất) chạy ngầm, không bật lại
+  // historyLoading để tránh tab "Lịch sử" chớp về màn hình loading liên tục.
+  const hasLoadedHistoryRef = useRef(false);
 
   // Total target sets across all muscle groups
   const totalTargetSets = useMemo(
@@ -145,6 +149,7 @@ export default function DashboardScreen() {
   );
 
   const load = useCallback(async () => {
+    const isInitialHistoryLoad = !hasLoadedHistoryRef.current;
     try {
       const { start, end } = getWeekRange();
       const result = await getMuscleGroupsWithWeeklyStats(start, end);
@@ -155,40 +160,67 @@ export default function DashboardScreen() {
       const volume = await getMonthlyVolume(mStart, mEnd);
       setMonthlyVolume(volume);
 
-      setHistoryLoading(true);
+      if (isInitialHistoryLoad) setHistoryLoading(true);
       const weekPeriods = Array.from({ length: 5 }, (_, idx) => getWeekRangeByOffset(4 - idx));
       const monthPeriods = Array.from({ length: 5 }, (_, idx) => getMonthRangeByOffset(4 - idx));
 
-      const [weeklyLogsByPeriod, monthlyLogsByPeriod] = await Promise.all([
-        Promise.all(weekPeriods.map((period) => getWorkoutLogs(period.start, period.end))),
-        Promise.all(monthPeriods.map((period) => getWorkoutLogs(period.start, period.end))),
-      ]);
+      // FIX: trước đây gọi getWorkoutLogs() riêng cho từng kỳ (10 query mỗi
+      // lần focus màn hình). Khoảng 5 tháng đã bao trùm khoảng 5 tuần, nên
+      // chỉ cần 1 query phủ toàn bộ khoảng rộng nhất rồi bucket lại theo
+      // từng kỳ ngay trên client (so sánh chuỗi ISO là đủ vì cùng định dạng).
+      const allPeriodBounds = [...weekPeriods, ...monthPeriods];
+      const overallStart = allPeriodBounds.reduce(
+        (min, p) => (p.start < min ? p.start : min),
+        allPeriodBounds[0].start,
+      );
+      const overallEnd = allPeriodBounds.reduce(
+        (max, p) => (p.end > max ? p.end : max),
+        allPeriodBounds[0].end,
+      );
+      const allLogs = (await getWorkoutLogs(overallStart, overallEnd)) as any[];
+      const logsInPeriod = (start: string, end: string) =>
+        allLogs.filter((log) => log.logged_at >= start && log.logged_at <= end);
 
-      const nextWeekly = weekPeriods.map((period, index) => ({
-        key: period.key,
-        label: period.label,
-        title: period.title,
-        sets: sumSets(weeklyLogsByPeriod[index] as any[]),
-        reps: sumReps(weeklyLogsByPeriod[index] as any[]),
-        volume: sumVolume(weeklyLogsByPeriod[index] as any[]),
-        isCurrent: period.isCurrent,
-      }));
-      const nextMonthly = monthPeriods.map((period, index) => ({
-        key: period.key,
-        label: period.label,
-        title: period.title,
-        sets: sumSets(monthlyLogsByPeriod[index] as any[]),
-        reps: sumReps(monthlyLogsByPeriod[index] as any[]),
-        volume: sumVolume(monthlyLogsByPeriod[index] as any[]),
-        isCurrent: period.isCurrent,
-      }));
+      const nextWeekly = weekPeriods.map((period) => {
+        const periodLogs = logsInPeriod(period.start, period.end);
+        return {
+          key: period.key,
+          label: period.label,
+          title: period.title,
+          sets: sumSets(periodLogs),
+          reps: sumReps(periodLogs),
+          volume: sumVolume(periodLogs),
+          isCurrent: period.isCurrent,
+        };
+      });
+      const nextMonthly = monthPeriods.map((period) => {
+        const periodLogs = logsInPeriod(period.start, period.end);
+        return {
+          key: period.key,
+          label: period.label,
+          title: period.title,
+          sets: sumSets(periodLogs),
+          reps: sumReps(periodLogs),
+          volume: sumVolume(periodLogs),
+          isCurrent: period.isCurrent,
+        };
+      });
 
       setWeeklyHistory(nextWeekly);
       setMonthlyHistory(nextMonthly);
-      setSelectedWeekKey(nextWeekly[nextWeekly.length - 1]?.key ?? null);
-      setSelectedMonthKey(nextMonthly[nextMonthly.length - 1]?.key ?? null);
+      // Giữ nguyên lựa chọn hiện tại của người dùng nếu vẫn còn tồn tại
+      // trong dữ liệu mới — chỉ nhảy về kỳ mới nhất khi chưa chọn gì hoặc
+      // lựa chọn cũ không còn (tránh việc tự nhảy về "Hiện tại" mỗi khi
+      // nền tự sync trong lúc người dùng đang xem 1 tuần/tháng cũ).
+      setSelectedWeekKey((prev) =>
+        prev && nextWeekly.some((w) => w.key === prev) ? prev : (nextWeekly[nextWeekly.length - 1]?.key ?? null),
+      );
+      setSelectedMonthKey((prev) =>
+        prev && nextMonthly.some((m) => m.key === prev) ? prev : (nextMonthly[nextMonthly.length - 1]?.key ?? null),
+      );
     } finally {
-      setHistoryLoading(false);
+      if (isInitialHistoryLoad) setHistoryLoading(false);
+      hasLoadedHistoryRef.current = true;
       setLoading(false);
     }
   }, []);

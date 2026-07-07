@@ -387,10 +387,13 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
 
     // ─── 2. PULL: kéo dữ liệu về từ remote ─────────────────────────────────
     //
-    // FIX: muscle_groups, exercises, muscle_goals luôn pull mỗi lần sync
-    // vì chúng nhỏ và cần đồng bộ cross-device realtime.
-    // workout_logs & body_measurements chỉ pull lần đầu (isFirstSync) vì
-    // lượng data lớn — sau đó dùng push-only để tránh tốn bandwidth.
+    // FIX: muscle_groups, exercises, muscle_goals luôn pull toàn bộ mỗi lần
+    // sync vì chúng nhỏ và cần đồng bộ cross-device realtime.
+    // workout_logs & body_measurements pull toàn bộ ở lần đầu (isFirstSync),
+    // các lần sau chỉ pull incremental (updated_at > lastSyncStored) để vừa
+    // rẻ vừa vẫn thấy được thay đổi từ thiết bị khác — trước đây các lần
+    // sau hoàn toàn không pull, khiến log/InBody ghi ở thiết bị khác không
+    // bao giờ về được thiết bị này.
 
     // Muscle groups — luôn pull
     try {
@@ -467,78 +470,94 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       errors.push(`Error pulling muscle goals: ${e.message}`);
     }
 
-    // Workout logs & body measurements — chỉ pull lần đầu (isFirstSync)
-    if (isFirstSync) {
-      try {
-        const { data: remoteLogs, error: logError } = await supabase
-          .from('workout_logs')
-          .select('*')
-          .eq('user_id', userId)
-          .order('updated_at', { ascending: false });
+    // Workout logs — pull toàn bộ ở lần đầu, incremental (updated_at > cutoff)
+    // ở các lần sau. markMissingWorkoutLogsDeleted chỉ chính xác khi có đủ
+    // toàn bộ tập kết quả (full pull) — với incremental, việc xoá đã được
+    // truyền qua field deleted_at của chính dòng đó (upsert bên dưới tự set
+    // deleted = 1), nên KHÔNG được gọi markMissing* ở nhánh incremental,
+    // nếu không sẽ đánh dấu nhầm hàng loạt bản ghi local chưa đổi thành đã xoá.
+    try {
+      let workoutLogsQuery = supabase
+        .from('workout_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+      if (!isFirstSync && lastSyncStored) {
+        workoutLogsQuery = workoutLogsQuery.gt('updated_at', lastSyncStored);
+      }
+      const { data: remoteLogs, error: logError } = await workoutLogsQuery;
 
-        if (logError) {
-          errors.push(`Failed to fetch workout logs: ${logError.message}`);
-        } else if (remoteLogs && Array.isArray(remoteLogs)) {
-          for (const log of remoteLogs) {
-            const logData = log as any;
-            await LocalDB.upsertWorkoutLog({
-              ...logData,
-              dirty: 0,
-              deleted: logData.deleted_at ? 1 : 0,
-            });
-          }
+      if (logError) {
+        errors.push(`Failed to fetch workout logs: ${logError.message}`);
+      } else if (remoteLogs && Array.isArray(remoteLogs)) {
+        for (const log of remoteLogs) {
+          const logData = log as any;
+          await LocalDB.upsertWorkoutLog({
+            ...logData,
+            dirty: 0,
+            deleted: logData.deleted_at ? 1 : 0,
+          });
+        }
+        if (isFirstSync) {
           await LocalDB.markMissingWorkoutLogsDeleted(remoteLogs.map((row: any) => row.id));
         }
-      } catch (e: any) {
-        errors.push(`Error pulling workout logs: ${e.message}`);
       }
+    } catch (e: any) {
+      errors.push(`Error pulling workout logs: ${e.message}`);
+    }
 
-      try {
-        const { data: remoteMeasurements, error: measurementError } = await supabase
-          .from('body_measurements')
-          .select('*')
-          .eq('user_id', userId)
-          .order('updated_at', { ascending: false });
+    // Body measurements — cùng chiến lược full-then-incremental như trên.
+    try {
+      let bodyMeasurementsQuery = supabase
+        .from('body_measurements')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+      if (!isFirstSync && lastSyncStored) {
+        bodyMeasurementsQuery = bodyMeasurementsQuery.gt('updated_at', lastSyncStored);
+      }
+      const { data: remoteMeasurements, error: measurementError } = await bodyMeasurementsQuery;
 
-        if (measurementError) {
-          errors.push(`Failed to fetch body measurements: ${measurementError.message}`);
-        } else if (remoteMeasurements && Array.isArray(remoteMeasurements)) {
-          const expandedRemoteMeasurementIds: string[] = [];
-          for (const measurement of remoteMeasurements) {
-            const measurementData = measurement as any;
-            const metricsJson = measurementData.metrics_json as Record<string, { value: number; unit: string }> | null;
-            if (metricsJson && typeof metricsJson === 'object') {
-              for (const [metricKey, metricValue] of Object.entries(metricsJson)) {
-                const localId = `${measurementData.id}::${metricKey}`;
-                expandedRemoteMeasurementIds.push(localId);
-                await LocalDB.upsertBodyMeasurement({
-                  id: localId,
-                  metric_key: metricKey,
-                  value: Number((metricValue as any)?.value ?? 0),
-                  unit: (metricValue as any)?.unit || '',
-                  note: measurementData.note,
-                  source: 'manual_inbody',
-                  measured_at: measurementData.measured_at,
-                  created_at: measurementData.created_at,
-                  updated_at: measurementData.updated_at,
-                  dirty: 0,
-                  deleted: measurementData.deleted_at ? 1 : 0,
-                } as any);
-              }
-              continue;
+      if (measurementError) {
+        errors.push(`Failed to fetch body measurements: ${measurementError.message}`);
+      } else if (remoteMeasurements && Array.isArray(remoteMeasurements)) {
+        const expandedRemoteMeasurementIds: string[] = [];
+        for (const measurement of remoteMeasurements) {
+          const measurementData = measurement as any;
+          const metricsJson = measurementData.metrics_json as Record<string, { value: number; unit: string }> | null;
+          if (metricsJson && typeof metricsJson === 'object') {
+            for (const [metricKey, metricValue] of Object.entries(metricsJson)) {
+              const localId = `${measurementData.id}::${metricKey}`;
+              expandedRemoteMeasurementIds.push(localId);
+              await LocalDB.upsertBodyMeasurement({
+                id: localId,
+                metric_key: metricKey,
+                value: Number((metricValue as any)?.value ?? 0),
+                unit: (metricValue as any)?.unit || '',
+                note: measurementData.note,
+                source: 'manual_inbody',
+                measured_at: measurementData.measured_at,
+                created_at: measurementData.created_at,
+                updated_at: measurementData.updated_at,
+                dirty: 0,
+                deleted: measurementData.deleted_at ? 1 : 0,
+              } as any);
             }
-            expandedRemoteMeasurementIds.push(measurementData.id);
-            await LocalDB.upsertBodyMeasurement({
-              ...measurementData,
-              dirty: 0,
-              deleted: measurementData.deleted_at ? 1 : 0,
-            });
+            continue;
           }
+          expandedRemoteMeasurementIds.push(measurementData.id);
+          await LocalDB.upsertBodyMeasurement({
+            ...measurementData,
+            dirty: 0,
+            deleted: measurementData.deleted_at ? 1 : 0,
+          });
+        }
+        if (isFirstSync) {
           await LocalDB.markMissingBodyMeasurementsDeleted(expandedRemoteMeasurementIds);
         }
-      } catch (e: any) {
-        errors.push(`Error pulling body measurements: ${e.message}`);
       }
+    } catch (e: any) {
+      errors.push(`Error pulling body measurements: ${e.message}`);
     }
 
     // Weekly plan — luôn pull mỗi lần (cross-device realtime)
@@ -915,9 +934,17 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
 
     try {
       const stillPendingLogs = new Set((await LocalDB.getPendingNutritionLogs()).map((l) => l.id));
-      const { data: remoteLogs, error } = await (supabase as any)
+      // FIX: bảng này trước đây luôn giới hạn 500 dòng mới nhất theo logged_at
+      // mỗi lần sync, nghĩa là dữ liệu cũ hơn 500 dòng không bao giờ đồng bộ
+      // được sang thiết bị khác. Đổi sang cùng chiến lược full-lần-đầu +
+      // incremental (updated_at > cutoff) như workout_logs/body_measurements.
+      let nutritionLogsQuery = (supabase as any)
         .from('nutrition_logs').select('*').eq('user_id', userId)
-        .order('logged_at', { ascending: false }).limit(500);
+        .order('logged_at', { ascending: false });
+      if (!isFirstSync && lastSyncStored) {
+        nutritionLogsQuery = nutritionLogsQuery.gt('updated_at', lastSyncStored);
+      }
+      const { data: remoteLogs, error } = await nutritionLogsQuery;
       if (error) throw error;
       for (const r of (remoteLogs ?? [])) {
         if (stillPendingLogs.has(r.id)) continue;

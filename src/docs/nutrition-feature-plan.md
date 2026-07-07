@@ -1,7 +1,7 @@
 # Kế hoạch: Tính năng Dinh dưỡng
 
 **Ngày lên kế hoạch:** 2026-06-29  
-**Trạng thái:** Chưa bắt đầu
+**Trạng thái:** Đã hoàn thành — xem tab "Dinh dưỡng" (`src/components/nutrition/`), migration `20260629000000_add_nutrition_tables.sql`. Tài liệu này giữ lại làm bối cảnh thiết kế ban đầu.
 
 ---
 

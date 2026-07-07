@@ -209,6 +209,240 @@ export type Database = {
         };
         Relationships: [];
       };
+      workout_plans: {
+        Row: WorkoutPlan;
+        Insert: {
+          id?: string;
+          name: string;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          name?: string;
+          is_active?: boolean;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+        };
+        Relationships: [];
+      };
+      profiles: {
+        Row: Profile;
+        Insert: {
+          id?: string;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          bio?: string | null;
+          is_private?: boolean;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          display_name?: string | null;
+          avatar_url?: string | null;
+          bio?: string | null;
+          is_private?: boolean;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      friendships: {
+        Row: Friendship;
+        Insert: {
+          id?: string;
+          requester_id: string;
+          addressee_id: string;
+          status?: 'pending' | 'accepted' | 'declined';
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+        };
+        Update: {
+          status?: 'pending' | 'accepted' | 'declined';
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      plan_shares: {
+        Row: PlanShare;
+        Insert: {
+          id?: string;
+          plan_id: string;
+          owner_id: string;
+          share_code: string;
+          visibility?: 'link' | 'friends';
+          is_public?: boolean;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+        };
+        Update: {
+          visibility?: 'link' | 'friends';
+          is_public?: boolean;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'plan_shares_plan_id_fkey';
+            columns: ['plan_id'];
+            isOneToOne: false;
+            referencedRelation: 'workout_plans';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      nutrition_nutrient_configs: {
+        Row: NutrientConfig;
+        Insert: {
+          id?: string;
+          key: string;
+          label: string;
+          unit?: string;
+          is_enabled?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          label?: string;
+          unit?: string;
+          is_enabled?: boolean;
+          display_order?: number;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      nutrition_foods: {
+        Row: NutritionFood;
+        Insert: {
+          id?: string;
+          name: string;
+          brand?: string | null;
+          serving_size?: number;
+          serving_unit?: string;
+          nutrients_json?: Record<string, number>;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          name?: string;
+          brand?: string | null;
+          serving_size?: number;
+          serving_unit?: string;
+          nutrients_json?: Record<string, number>;
+          note?: string | null;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      nutrition_logs: {
+        Row: NutritionLog;
+        Insert: {
+          id?: string;
+          food_id?: string | null;
+          food_name: string;
+          quantity?: number;
+          nutrients_json?: Record<string, number>;
+          meal_type?: 'morning' | 'noon' | 'evening' | 'snack';
+          note?: string | null;
+          logged_at?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          food_name?: string;
+          quantity?: number;
+          nutrients_json?: Record<string, number>;
+          meal_type?: 'morning' | 'noon' | 'evening' | 'snack';
+          note?: string | null;
+          logged_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'nutrition_logs_food_id_fkey';
+            columns: ['food_id'];
+            isOneToOne: false;
+            referencedRelation: 'nutrition_foods';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      nutrition_goals: {
+        Row: NutritionGoal;
+        Insert: {
+          id?: string;
+          nutrient_key: string;
+          target_value: number;
+          unit?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
+        };
+        Update: {
+          target_value?: number;
+          unit?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      nutrition_tdee_settings: {
+        Row: TdeeSettings;
+        Insert: {
+          id?: string;
+          bmr_method?: 'katch_mccardl' | 'mifflin' | 'custom';
+          custom_bmr?: number | null;
+          bmr_pct?: number;
+          neat_pct?: number;
+          tef_pct?: number;
+          eat_pct?: number;
+          protein_multiplier?: number;
+          goal_type?: 'cut' | 'maintain' | 'bulk';
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          bmr_method?: 'katch_mccardl' | 'mifflin' | 'custom';
+          custom_bmr?: number | null;
+          bmr_pct?: number;
+          neat_pct?: number;
+          tef_pct?: number;
+          eat_pct?: number;
+          protein_multiplier?: number;
+          goal_type?: 'cut' | 'maintain' | 'bulk';
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -391,5 +625,72 @@ export type NutritionGoal = {
   updated_at: string;
   deleted_at: string | null;
   sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type WorkoutPlan = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+export type Profile = {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  is_private: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+// Note: friendships has no user_id column — ownership is expressed via
+// requester_id/addressee_id instead (see migration 20260704000002).
+export type Friendship = {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+};
+
+// Note: plan_shares has no user_id column — ownership is expressed via
+// owner_id instead (see migration 20260704000002 / 20260706100000).
+export type PlanShare = {
+  id: string;
+  plan_id: string;
+  owner_id: string;
+  share_code: string;
+  visibility: 'link' | 'friends';
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+};
+
+export type TdeeSettings = {
+  id: string;
+  bmr_method: 'katch_mccardl' | 'mifflin' | 'custom';
+  custom_bmr: number | null;
+  bmr_pct: number;
+  neat_pct: number;
+  tef_pct: number;
+  eat_pct: number;
+  protein_multiplier: number;
+  goal_type: 'cut' | 'maintain' | 'bulk';
+  created_at: string;
+  updated_at: string;
   user_id: string | null;
 };
