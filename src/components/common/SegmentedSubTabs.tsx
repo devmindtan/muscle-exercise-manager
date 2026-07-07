@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,18 +32,30 @@ type Props = {
  */
 export function SegmentedSubTabs({ tabs, activeKey, onChange }: Props) {
   const activeIndex = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
-  const containerWidth = useRef(0);
+  // Phải là state (không phải ref) — onLayout chỉ chạy 1 lần lúc mount, nếu
+  // dùng ref thì component không re-render nên viên pill (điều kiện
+  // segmentWidth > 0 bên dưới) không bao giờ được vẽ ở lần mount đầu tiên,
+  // chỉ hiện ra sau khi có re-render khác xảy ra (vd bấm đổi tab).
+  const [containerWidth, setContainerWidth] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
+  const hasMeasuredRef = useRef(false);
 
   const segmentWidth =
-    containerWidth.current > 0
-      ? (containerWidth.current - TRACK_PADDING * 2) / tabs.length
+    containerWidth > 0
+      ? (containerWidth - TRACK_PADDING * 2) / tabs.length
       : 0;
 
   useEffect(() => {
     if (segmentWidth <= 0) return;
+    const toValue = activeIndex * segmentWidth;
+    // Lần đo đầu tiên: đặt thẳng vị trí, không animate từ 0 tới đó.
+    if (!hasMeasuredRef.current) {
+      hasMeasuredRef.current = true;
+      translateX.setValue(toValue);
+      return;
+    }
     Animated.spring(translateX, {
-      toValue: activeIndex * segmentWidth,
+      toValue,
       useNativeDriver: true,
       speed: 20,
       bounciness: 6,
@@ -52,10 +64,8 @@ export function SegmentedSubTabs({ tabs, activeKey, onChange }: Props) {
 
   const onLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width;
-    if (w !== containerWidth.current) {
-      containerWidth.current = w;
-      const nextSeg = (w - TRACK_PADDING * 2) / tabs.length;
-      translateX.setValue(activeIndex * nextSeg);
+    if (w !== containerWidth) {
+      setContainerWidth(w);
     }
   };
 
