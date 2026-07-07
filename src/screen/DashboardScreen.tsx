@@ -11,6 +11,7 @@ import type { ProgressTab } from '../components/dashboard-tabs/OverviewTab';
 import { SlidingTabs } from '@/src/components/common/SlidingTabs';
 import { RectTabBar } from '@/src/components/common/RectTabBar';
 import { SyncStatusChip } from '@/src/components/SyncStatusChip';
+import { useSync } from '@/src/context/SyncContext';
 import { Colors } from '@/src/constants/colors';
 
 function getWeekRange() {
@@ -121,6 +122,7 @@ function sumVolume(logs: any[]) {
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
+  const { lastSyncAt } = useSync();
   const [stats, setStats] = useState<WeekStat[]>([]);
   const [totalSets, setTotalSets] = useState(0);
   const [monthlyVolume, setMonthlyVolume] = useState(0);
@@ -196,6 +198,15 @@ export default function DashboardScreen() {
       load();
     }, [load]),
   );
+
+  // FIX: đăng nhập lần đầu, sync ban đầu (kéo dữ liệu từ Supabase về SQLite
+  // local) chạy song song và xong SAU khi useFocusEffect ở trên đã load xong
+  // (lúc đó local DB còn trống) — nếu không lắng nghe sự kiện sync xong thì
+  // màn hình sẽ đứng im với dữ liệu trống cho tới khi người dùng focus lại
+  // (chuyển tab đi rồi quay lại). Load lại mỗi khi có 1 lượt sync hoàn tất.
+  useEffect(() => {
+    if (lastSyncAt) load();
+  }, [lastSyncAt, load]);
 
   useEffect(() => {
     const interval = setInterval(() => {
