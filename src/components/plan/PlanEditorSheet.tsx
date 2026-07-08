@@ -21,8 +21,9 @@ import {
   WeekDayKey,
   WeeklyPlanEntry,
 } from '@/src/services/weeklyPlanService';
-import { MuscleGroup } from '@/src/types/database';
+import { MuscleGroup, Exercise } from '@/src/types/database';
 import { ExercisePickerSheet } from './ExercisePickerSheet';
+import { ExerciseThumb } from './ExerciseThumb';
 
 type MuscleGroupWithCount = MuscleGroup & { exercise_count?: number };
 
@@ -44,6 +45,7 @@ interface PlanEditorSheetProps {
   weeklyActualSetsByMuscle: Record<string, number>;
   weekProgressLoading: boolean;
   exerciseNameById: Record<string, string>;
+  exerciseById: Record<string, Exercise>;
   userKey: string;
   activePlanId: string | null;
 }
@@ -110,6 +112,7 @@ export function PlanEditorSheet({
   weeklyActualSetsByMuscle,
   weekProgressLoading,
   exerciseNameById,
+  exerciseById,
   userKey,
   activePlanId,
 }: PlanEditorSheetProps) {
@@ -629,6 +632,9 @@ export function PlanEditorSheet({
                       <View style={styles.exerciseSetsBreakdown}>
                         {chosenExerciseIds.map((exId) => (
                           <View key={exId} style={styles.exerciseSetsBreakdownRow}>
+                            {exerciseById[exId] ? (
+                              <ExerciseThumb ex={exerciseById[exId]} tone={col} size={26} />
+                            ) : null}
                             <Text style={styles.exerciseSetsBreakdownName} numberOfLines={1}>
                               {exerciseNameById[exId] || 'Bài tập'}
                             </Text>

@@ -10,13 +10,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ChevronDown, Plus } from 'lucide-react-native';
+import { ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs, getExercises } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
 import { getGroupTone } from '@/src/lib/planTone';
 import { PlanEditorSheet, PlanEditorRequest } from '@/src/components/plan/PlanEditorSheet';
 import { PlanManagerSheet } from '@/src/components/plan/PlanManagerSheet';
+import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
 import {
   deleteWeeklyPlanEntry,
   getWeeklyPlanEntries,
@@ -120,6 +121,7 @@ export default function WeeklyPlanScreen() {
   const [dayProgressLoading, setDayProgressLoading] = useState(false);
   const [weekProgressLoading, setWeekProgressLoading] = useState(false);
   const [exerciseNameById, setExerciseNameById] = useState<Record<string, string>>({});
+  const [exerciseById, setExerciseById] = useState<Record<string, Exercise>>({});
 
   const [selectedDay, setSelectedDay] = useState<WeekDayKey>(todayKey ?? 'mon');
   const selectedDayRef = useRef<WeekDayKey>(todayKey ?? 'mon');
@@ -139,6 +141,9 @@ export default function WeeklyPlanScreen() {
     setWorkoutPlans(nextWorkoutPlans);
     setExerciseNameById(
       allExercises.reduce<Record<string, string>>((acc, ex) => { acc[ex.id] = ex.name; return acc; }, {}),
+    );
+    setExerciseById(
+      allExercises.reduce<Record<string, Exercise>>((acc, ex) => { acc[ex.id] = ex; return acc; }, {}),
     );
 
     const active = nextWorkoutPlans.find((p) => p.isActive) ?? nextWorkoutPlans[0] ?? null;
@@ -452,12 +457,10 @@ export default function WeeklyPlanScreen() {
                     const pct = totalSets > 0 ? Math.min(actualSets / totalSets, 1) : 0;
                     const done = actualSets >= totalSets && totalSets > 0;
                     const doneAccent = done ? Colors.success : col.bar;
-                    const hasMultiple = group.entries.length > 1;
-                    const singleEntry = group.entries[0];
                     return (
-                      <View key={group.muscleGroupId} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
-                        <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
-                        <View style={styles.muscleInfo}>
+                      <View key={group.muscleGroupId} style={[styles.muscleCard, !isLast && { marginBottom: 10 }]}>
+                        <View style={styles.muscleCardHeader}>
+                          <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
                           <Text style={styles.muscleName} numberOfLines={1}>
                             {muscleNameById[group.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
                             <Text style={[styles.setsNow, done && { color: Colors.success }]}>
@@ -465,53 +468,62 @@ export default function WeeklyPlanScreen() {
                               <Text style={styles.setsDivider}> / {totalSets}</Text>
                             </Text>
                           </Text>
-                          {!hasMultiple && singleEntry.exerciseId && exerciseNameById[singleEntry.exerciseId] ? (
-                            <Text style={styles.muscleNote} numberOfLines={1}>🏋 {exerciseNameById[singleEntry.exerciseId]}</Text>
-                          ) : null}
-                          {!hasMultiple && singleEntry.note ? (
-                            <Text style={styles.muscleNote} numberOfLines={1}>{singleEntry.note}</Text>
-                          ) : null}
-                          {hasMultiple && (
-                            <View style={styles.exerciseSubList}>
-                              {group.entries.map((entry) => (
-                                <View key={entry.id} style={styles.exerciseSubRow}>
-                                  <View style={styles.exerciseSubInfo}>
-                                    <Text style={styles.exerciseSubName} numberOfLines={1}>
-                                      🏋 {entry.exerciseId && exerciseNameById[entry.exerciseId]
-                                        ? exerciseNameById[entry.exerciseId]
-                                        : 'Chưa chọn bài'}
-                                      <Text style={styles.exerciseSubSets}> · {entry.sets} sets</Text>
-                                    </Text>
-                                    {entry.note ? (
-                                      <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
-                                    ) : null}
-                                  </View>
-                                  <TouchableOpacity style={styles.exerciseSubDeleteBtn} onPress={() => remove(entry.id)} hitSlop={8}>
-                                    <Text style={styles.exerciseSubDeleteText}>Xoá</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              ))}
-                            </View>
-                          )}
-                          <View style={styles.progressTrack}>
-                            <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
-                          </View>
+                          <TouchableOpacity
+                            style={styles.cardEditBtn}
+                            onPress={() => openEdit(group.entries[0])}
+                            hitSlop={8}
+                          >
+                            <Pencil color={Colors.textSecondary} size={15} strokeWidth={2} />
+                          </TouchableOpacity>
                         </View>
-                        <View style={styles.entryRight}>
+
+                        <View style={styles.muscleCardStatusRow}>
                           {done
                             ? <Text style={[styles.doneChip, { color: Colors.success }]}>✓ xong</Text>
                             : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
                           }
-                          <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(singleEntry)}>
-                              <Text style={styles.actionEditText}>Sửa</Text>
-                            </TouchableOpacity>
-                            {!hasMultiple && (
-                              <TouchableOpacity style={styles.actionDelete} onPress={() => remove(singleEntry.id)}>
-                                <Text style={styles.actionDeleteText}>Xoá</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
+                        </View>
+
+                        <View style={styles.progressTrack}>
+                          <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
+                        </View>
+
+                        <View style={styles.exerciseSubList}>
+                          {group.entries.map((entry) => {
+                            const ex = entry.exerciseId ? exerciseById[entry.exerciseId] : null;
+                            return (
+                              <View key={entry.id} style={styles.exerciseSubRow}>
+                                {ex ? (
+                                  <ExerciseThumb ex={ex} tone={col} size={30} />
+                                ) : (
+                                  <View style={[styles.exerciseSubThumbEmpty, { borderColor: col.badgeBorder }]} />
+                                )}
+                                <View style={styles.exerciseSubInfo}>
+                                  <View style={styles.exerciseSubNameRow}>
+                                    <Text style={styles.exerciseSubName} numberOfLines={1}>
+                                      {ex?.name ?? 'Chưa chọn bài tập'}
+                                    </Text>
+                                    {ex?.exercise_type ? (
+                                      <View style={[styles.exerciseTypeTag, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
+                                        <Text style={[styles.exerciseTypeTagText, { color: col.badgeText }]}>
+                                          {ex.exercise_type === 'compound' ? 'C' : 'I'}
+                                        </Text>
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                  {entry.note ? (
+                                    <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
+                                  ) : null}
+                                </View>
+                                <View style={styles.exerciseSubSetsPill}>
+                                  <Text style={styles.exerciseSubSetsPillText}>{entry.sets}</Text>
+                                </View>
+                                <TouchableOpacity style={styles.exerciseSubDeleteBtn} onPress={() => remove(entry.id)} hitSlop={8}>
+                                  <Trash2 color={Colors.error} size={14} strokeWidth={2} />
+                                </TouchableOpacity>
+                              </View>
+                            );
+                          })}
                         </View>
                       </View>
                     );
@@ -577,6 +589,7 @@ export default function WeeklyPlanScreen() {
         weeklyActualSetsByMuscle={weeklyActualSetsByMuscle}
         weekProgressLoading={weekProgressLoading}
         exerciseNameById={exerciseNameById}
+        exerciseById={exerciseById}
         userKey={userKey}
         activePlanId={activePlanId}
       />
@@ -680,46 +693,54 @@ const styles = StyleSheet.create({
 
   muscleList: {},
   daySections: { gap: 10 },
-  muscleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
+
+  // Thẻ nhóm cơ — 1 card riêng biệt/nhóm cơ, luôn hiện danh sách bài tập con
+  // bên dưới dù có 1 hay nhiều bài (nhất quán, không rẽ nhánh theo số lượng).
+  muscleCard: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 14,
+    backgroundColor: Colors.surface, padding: 12,
   },
-  muscleRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
+  muscleCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardEditBtn: {
+    width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surfaceElevated, flexShrink: 0,
+  },
+  muscleCardStatusRow: { alignItems: 'flex-end', marginTop: 2, marginBottom: 6 },
   entryDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   muscleInfo: { flex: 1, minWidth: 0 },
-  muscleName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 4 },
+  muscleName: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: '700', color: Colors.text },
   muscleNote: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
 
-  // Danh sách bài tập con lồng trong 1 thẻ nhóm cơ (khi có >= 2 bài tập)
-  exerciseSubList: { gap: 4, marginBottom: 4 },
+  // Danh sách bài tập con lồng trong 1 thẻ nhóm cơ
+  exerciseSubList: { gap: 6, marginTop: 8 },
   exerciseSubRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6,
+    backgroundColor: Colors.bg, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
+  },
+  exerciseSubThumbEmpty: {
+    width: 30, height: 30, borderRadius: 7, borderWidth: 1, borderStyle: 'dashed',
   },
   exerciseSubInfo: { flex: 1, minWidth: 0 },
-  exerciseSubName: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
-  exerciseSubSets: { fontSize: 11, fontWeight: '400', color: Colors.textMuted },
+  exerciseSubNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  exerciseSubName: { flexShrink: 1, fontSize: 12.5, color: Colors.text, fontWeight: '600' },
   exerciseSubNote: { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginTop: 1 },
-  exerciseSubDeleteBtn: { paddingHorizontal: 6, paddingVertical: 3 },
-  exerciseSubDeleteText: { fontSize: 10, fontWeight: '600', color: Colors.error },
+  exerciseTypeTag: {
+    width: 16, height: 16, borderRadius: 4, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  exerciseTypeTagText: { fontSize: 9, fontWeight: '700' },
+  exerciseSubSetsPill: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+    backgroundColor: Colors.surfaceElevated, flexShrink: 0,
+  },
+  exerciseSubSetsPillText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
+  exerciseSubDeleteBtn: { padding: 4 },
   progressTrack: { height: 3, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
-  entryRight: { alignItems: 'flex-end', gap: 3, flexShrink: 0 },
   setsNow: { fontSize: 13, fontWeight: '700', color: Colors.text },
   setsDivider: { fontSize: 11, fontWeight: '400', color: Colors.textMuted },
   setsWeekTarget: { fontSize: 10, color: Colors.textMuted },
   doneChip: { fontSize: 10, fontWeight: '700' },
-  actionRow: { flexDirection: 'row', gap: 5, marginTop: 4 },
-  actionEdit: {
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
-    borderColor: Colors.border, backgroundColor: Colors.surfaceElevated,
-  },
-  actionEditText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
-  actionDelete: {
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1,
-    borderColor: Colors.error + '44', backgroundColor: Colors.error + '10',
-  },
-  actionDeleteText: { fontSize: 11, fontWeight: '600', color: Colors.error },
 
   outOfPlanBox: {
     marginHorizontal: 16, padding: 12, borderRadius: 14, borderWidth: 1,

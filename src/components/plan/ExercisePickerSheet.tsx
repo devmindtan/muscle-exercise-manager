@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator } from 'react-native';
 import { Check, ChevronDown, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExercises } from '@/src/lib/repository';
 import { MuscleTone } from '@/src/lib/planTone';
 import { Exercise } from '@/src/types/database';
+import { ExerciseThumb } from './ExerciseThumb';
 
 // Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id) lồng dưới bài
 // gốc, để chọn bài tập cụ thể cho 1 mục kế hoạch.
@@ -34,19 +35,6 @@ interface ExercisePickerSheetProps {
   onToggle: (exerciseId: string) => void;
   onClearAll: () => void;
   onDone: () => void;
-}
-
-function ExerciseThumb({ ex, tone }: { ex: Exercise; tone?: MuscleTone }) {
-  if (ex.image_uri) {
-    return <Image source={{ uri: ex.image_uri }} style={styles.thumb} />;
-  }
-  return (
-    <View style={[styles.thumbPlaceholder, { backgroundColor: (tone?.bar ?? Colors.accent) + '22' }]}>
-      <Text style={[styles.thumbPlaceholderText, { color: tone?.bar ?? Colors.accent }]}>
-        {ex.name[0]?.toUpperCase() ?? '?'}
-      </Text>
-    </View>
-  );
 }
 
 // Bottom sheet riêng để chọn (nhiều) bài tập/biến thể cụ thể cho 1 nhóm cơ đã
@@ -235,9 +223,6 @@ const styles = StyleSheet.create({
   optionMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   optionText: { flex: 1, fontSize: 14, color: Colors.text, fontWeight: '500' },
   optionTextActive: { color: Colors.accent, fontWeight: '700' },
-  thumb: { width: 36, height: 36, borderRadius: 8 },
-  thumbPlaceholder: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  thumbPlaceholderText: { fontSize: 14, fontWeight: '700' },
   checkbox: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: Colors.border,
     alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg,
