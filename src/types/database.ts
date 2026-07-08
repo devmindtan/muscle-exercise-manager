@@ -20,6 +20,10 @@ export type Database = {
           image_uri?: string | null;
           category?: string | null;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
         };
         Update: {
           name?: string;
@@ -28,6 +32,9 @@ export type Database = {
           target_sets_per_month?: number;
           image_uri?: string | null;
           category?: string | null;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
         };
         Relationships: [];
       };
@@ -42,6 +49,10 @@ export type Database = {
           is_active?: boolean;
           parent_exercise_id?: string | null;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
         };
         Update: {
           name?: string;
@@ -49,6 +60,9 @@ export type Database = {
           image_uri?: string | null;
           is_active?: boolean;
           parent_exercise_id?: string | null;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
         };
         Relationships: [
           {
@@ -72,6 +86,10 @@ export type Database = {
           note?: string | null;
           logged_at?: string;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
         };
         Update: {
           sets?: number;
@@ -79,6 +97,9 @@ export type Database = {
           weight?: number | null;
           note?: string | null;
           logged_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
         };
         Relationships: [
           {
@@ -98,28 +119,25 @@ export type Database = {
         ];
       };
       body_measurements: {
-        Row: BodyMeasurement;
+        Row: BodyMeasurementJsonbRow;
         Insert: {
           id?: string;
-          metric_key: string;
-          value: number;
-          unit: string;
-          record_type?: string;
-          metrics_json?: Json | null;
-          note?: string | null;
-          source?: string | null;
           measured_at?: string;
+          note?: string | null;
+          metrics_json?: Json;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
         };
         Update: {
-          metric_key?: string;
-          value?: number;
-          unit?: string;
-          record_type?: string;
-          metrics_json?: Json | null;
-          note?: string | null;
-          source?: string | null;
           measured_at?: string;
+          note?: string | null;
+          metrics_json?: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
         };
         Relationships: [];
       };
@@ -135,6 +153,10 @@ export type Database = {
           target_date?: string | null;
           note?: string | null;
           created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
+          user_id?: string | null;
         };
         Update: {
           metric_key?: string;
@@ -143,6 +165,9 @@ export type Database = {
           unit?: string;
           target_date?: string | null;
           note?: string | null;
+          updated_at?: string;
+          deleted_at?: string | null;
+          sync_status?: 'pending' | 'synced' | 'failed';
         };
         Relationships: [
           {
@@ -511,6 +536,25 @@ export type MuscleGroupWithStats = MuscleGroup & {
   monthly_sets: number;
 };
 
+// Raw Supabase row for body_measurements: after the JSONB migration
+// (supabase/migrations/20260524133000_simplify_body_measurements_jsonb_schema.sql)
+// metric_key/value/unit/record_type/source no longer exist as columns —
+// everything lives in metrics_json, one row per measured_at.
+export type BodyMeasurementJsonbRow = {
+  id: string;
+  measured_at: string;
+  note: string | null;
+  metrics_json: Json;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+// App-facing shape: one row per metric, flattened from metrics_json on the
+// web path (see flattenWebBodyMeasurementRows) and stored this way natively
+// in local SQLite (see LocalBodyMeasurement in src/db/localDB.ts).
 export type BodyMeasurement = {
   id: string;
   metric_key: string;

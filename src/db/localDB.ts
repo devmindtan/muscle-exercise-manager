@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Database } from '@/src/types/database';
+import { Database, BodyMeasurement } from '@/src/types/database';
 
 export type LocalMuscleGroup = Database['public']['Tables']['muscle_groups']['Row'] & {
   dirty?: 0 | 1;
@@ -21,7 +21,9 @@ export type LocalWorkoutLog = Database['public']['Tables']['workout_logs']['Row'
   deleted?: 0 | 1;
 };
 
-export type LocalBodyMeasurement = Database['public']['Tables']['body_measurements']['Row'] & {
+// Local SQLite keeps the pre-JSONB-migration shape (one row per metric),
+// unlike the Supabase body_measurements table — see BodyMeasurementJsonbRow.
+export type LocalBodyMeasurement = BodyMeasurement & {
   dirty?: 0 | 1;
   deleted?: 0 | 1;
 };
@@ -583,7 +585,7 @@ export async function initializeDatabase() {
 // Muscle Groups
 export async function getMuscleGroups() {
   const database = await getDatabase();
-  const result = await database.getAllAsync<LocalMuscleGroup>(
+  const result = await database.getAllAsync<LocalMuscleGroup & { exercise_count: number }>(
     `SELECT mg.*, COALESCE(ec.exercise_count, 0) AS exercise_count
      FROM muscle_groups mg
      LEFT JOIN (

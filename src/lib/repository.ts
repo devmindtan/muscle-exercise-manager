@@ -198,7 +198,7 @@ export async function getMuscleGroupsWithWeeklyStats(startDate: string, endDate:
       .reduce((sum, log) => sum + (log.sets || 0), 0);
     const targetSets = group.target_sets_per_week || 10;
     const progress = targetSets > 0 ? weeklySets / targetSets : 0;
-    const exerciseCount = Number((group as any).exercise_count || 0);
+    const exerciseCount = Number(group.exercise_count || 0);
 
     return {
       id: group.id,
@@ -241,7 +241,7 @@ export async function getMuscleGroups() {
       .order('updated_at', { ascending: false });
 
     if (error) throw error;
-    return (data || []) as any[];
+    return data || [];
   }
 
   return LocalDB.getMuscleGroups();
@@ -259,7 +259,7 @@ export async function getMuscleGroupById(id: string) {
       .maybeSingle();
 
     if (error) throw error;
-    return data as any;
+    return data;
   }
 
   return LocalDB.getMuscleGroupById(id);
@@ -290,9 +290,9 @@ export async function createMuscleGroup(data: {
       image_uri: null,
       deleted_at: null,
     };
-    const { error } = await supabase.from('muscle_groups').insert(payload as any);
+    const { error } = await supabase.from('muscle_groups').insert(payload);
     if (error) throw error;
-    return payload as any;
+    return payload;
   }
 
   const group: any = {
@@ -334,7 +334,7 @@ export async function updateMuscleGroup(id: string, data: Partial<any>) {
     const payload = {
       ...data,
       updated_at: new Date().toISOString(),
-    } as any;
+    };
 
     const { error } = await supabase
       .from('muscle_groups')
@@ -379,7 +379,7 @@ export async function deleteMuscleGroup(id: string) {
 
     const groupRes = await supabase
       .from('muscle_groups')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id)
       .eq('user_id', userId)
       .is('deleted_at', null)
@@ -394,13 +394,13 @@ export async function deleteMuscleGroup(id: string) {
     const [exRes, logRes] = await Promise.allSettled([
       supabase
         .from('exercises')
-        .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+        .update({ deleted_at: deletedAt, updated_at: deletedAt })
         .eq('user_id', userId)
         .eq('muscle_group_id', id)
         .is('deleted_at', null),
       supabase
         .from('workout_logs')
-        .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+        .update({ deleted_at: deletedAt, updated_at: deletedAt })
         .eq('user_id', userId)
         .eq('muscle_group_id', id)
         .is('deleted_at', null),
@@ -450,7 +450,7 @@ export async function getExercises(muscleGroupId?: string) {
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data || []) as any[];
+    return data || [];
   }
 
   return LocalDB.getExercises(muscleGroupId);
@@ -468,7 +468,7 @@ export async function getExerciseById(id: string) {
       .maybeSingle();
 
     if (error) throw error;
-    return data as any;
+    return data;
   }
 
   return LocalDB.getExerciseById(id);
@@ -499,9 +499,9 @@ export async function createExercise(data: {
       updated_at: now,
       deleted_at: null,
     };
-    const { error } = await supabase.from('exercises').insert(row as any);
+    const { error } = await supabase.from('exercises').insert(row);
     if (error) throw error;
-    return row as any;
+    return row;
   }
 
   const exercise: any = {
@@ -553,7 +553,7 @@ export async function getActiveExercises(muscleGroupId: string) {
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return (data || []) as any[];
+    return data || [];
   }
 
   return LocalDB.getActiveExercises(muscleGroupId);
@@ -603,7 +603,7 @@ export async function setExerciseActive(id: string, isActive: boolean) {
     const userId = await getWebUserIdOrThrow();
     const { error } = await supabase
       .from('exercises')
-      .update({ is_active: isActive, updated_at: new Date().toISOString() } as any)
+      .update({ is_active: isActive, updated_at: new Date().toISOString() })
       .eq('id', id)
       .eq('user_id', userId)
       .is('deleted_at', null);
@@ -646,7 +646,7 @@ export async function updateExercise(id: string, data: Partial<any>) {
     const payload = {
       ...data,
       updated_at: new Date().toISOString(),
-    } as any;
+    };
 
     const { error } = await supabase
       .from('exercises')
@@ -683,7 +683,7 @@ export async function deleteExercise(id: string) {
 
     const { data: deletedRows, error } = await supabase
       .from('exercises')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id)
       .eq('user_id', userId)
       .is('deleted_at', null)
@@ -731,7 +731,7 @@ export async function getWorkoutLogs(startDate?: string, endDate?: string, exerc
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data || []) as any[];
+    return data || [];
   }
 
   return LocalDB.getWorkoutLogs(startDate, endDate, exerciseId);
@@ -770,9 +770,9 @@ export async function createWorkoutLog(data: any) {
       updated_at: now,
       deleted_at: null,
     };
-    const { error } = await supabase.from('workout_logs').insert(row as any);
+    const { error } = await supabase.from('workout_logs').insert(row);
     if (error) throw error;
-    return row as any;
+    return row;
   }
 
   const log: any = {
@@ -897,7 +897,7 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
     if (findError) throw findError;
 
     if (existingRow) {
-      const currentJson = ((existingRow as any).metrics_json || {}) as Record<string, { value: number; unit: string }>;
+      const currentJson = (existingRow.metrics_json || {}) as Record<string, { value: number; unit: string }>;
       const nextJson = {
         ...currentJson,
         [data.metricKey]: {
@@ -912,7 +912,7 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
           metrics_json: nextJson,
           note: data.note ?? existingRow.note ?? null,
           updated_at: now,
-        } as any)
+        })
         .eq('id', existingRow.id)
         .eq('user_id', userId);
 
@@ -931,7 +931,7 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
         deleted_at: null,
         sync_status: existingRow.sync_status,
         user_id: userId,
-      } as any;
+      };
     }
 
     const insertedRow = {
@@ -948,10 +948,10 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
       created_at: now,
       updated_at: now,
       deleted_at: null,
-      sync_status: 'pending',
+      sync_status: 'pending' as const,
     };
 
-    const { error: insertError } = await supabase.from('body_measurements').insert(insertedRow as any);
+    const { error: insertError } = await supabase.from('body_measurements').insert(insertedRow);
     if (insertError) throw insertError;
 
     return {
@@ -967,7 +967,7 @@ export async function createBodyMeasurement(data: BodyMeasurementInput) {
       deleted_at: null,
       sync_status: 'pending',
       user_id: userId,
-    } as any;
+    };
   }
 
   const measurement: any = {
@@ -1007,7 +1007,7 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
       if (findError) throw findError;
       if (!parentRow) throw new Error('InBody record not found');
 
-      const currentJson = ((parentRow as any).metrics_json || {}) as Record<string, { value: number; unit: string }>;
+      const currentJson = (parentRow.metrics_json || {}) as Record<string, { value: number; unit: string }>;
       const previousMetric = currentJson[metricKey] || { value: 0, unit: '' };
       const nextJson = {
         ...currentJson,
@@ -1022,10 +1022,9 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
         .update({
           metrics_json: nextJson,
           note: data.note ?? parentRow.note,
-          source: data.source ?? parentRow.source,
           measured_at: data.measuredAt ?? parentRow.measured_at,
           updated_at: now,
-        } as any)
+        })
         .eq('id', parentId)
         .eq('user_id', userId);
 
@@ -1037,7 +1036,7 @@ export async function updateBodyMeasurement(id: string, data: BodyMeasurementUpd
       note: data.note,
       measured_at: data.measuredAt,
       updated_at: now,
-    } as any;
+    };
 
     const { error } = await supabase
       .from('body_measurements')
@@ -1074,7 +1073,7 @@ export async function deleteInBodyRecord(measuredAt: string) {
     const deletedAt = new Date().toISOString();
     const { data: deletedRows, error } = await supabase
       .from('body_measurements')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('user_id', userId)
       .eq('measured_at', measuredAt)
       .is('deleted_at', null)
@@ -1101,7 +1100,7 @@ export async function getMuscleGoals() {
       .order('target_date', { ascending: true, nullsFirst: false });
 
     if (error) throw error;
-    return (data || []) as any[];
+    return data || [];
   }
 
   return LocalDB.getMuscleGoals();
@@ -1126,9 +1125,9 @@ export async function createMuscleGoal(data: MuscleGoalInput) {
       updated_at: now,
       deleted_at: null,
     };
-    const { error } = await supabase.from('muscle_goals').insert(row as any);
+    const { error } = await supabase.from('muscle_goals').insert(row);
     if (error) throw error;
-    return row as any;
+    return row;
   }
 
   const goal: any = {
@@ -1163,7 +1162,7 @@ export async function updateMuscleGoal(id: string, data: MuscleGoalUpdateInput) 
       target_date: data.targetDate,
       note: data.note,
       updated_at: now,
-    } as any;
+    };
 
     const { error } = await supabase
       .from('muscle_goals')
@@ -1204,7 +1203,7 @@ export async function deleteMuscleGoal(id: string) {
 
     const { data: deletedRows, error } = await supabase
       .from('muscle_goals')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id)
       .eq('user_id', userId)
       .is('deleted_at', null)
@@ -1342,7 +1341,7 @@ export async function updateWorkoutLog(id: string, data: Partial<any>) {
     const payload = {
       ...data,
       updated_at: new Date().toISOString(),
-    } as any;
+    };
 
     const { data: updatedRows, error } = await supabase
       .from('workout_logs')
@@ -1383,7 +1382,7 @@ export async function deleteWorkoutLog(id: string) {
 
     const { data: deletedRows, error } = await supabase
       .from('workout_logs')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id)
       .eq('user_id', userId)
       .is('deleted_at', null)
@@ -1508,7 +1507,7 @@ export async function insertCardioLog(data: {
         updated_at: now,
         deleted_at: null,
       };
-      const { error } = await supabase.from('cardio_logs').insert(row as any);
+      const { error } = await supabase.from('cardio_logs').insert(row);
       if (error) throw error;
     } catch (err: any) {
       const message = String(err?.message || err || 'Unknown error');
@@ -1558,7 +1557,7 @@ export async function softDeleteCardioLog(id: string): Promise<void> {
     const deletedAt = new Date().toISOString();
     const { error } = await supabase
       .from('cardio_logs')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id)
       .eq('user_id', userId)
       .is('deleted_at', null);
@@ -1638,7 +1637,7 @@ export async function getNutrientConfigs(): Promise<NutrientConfigItem[]> {
         await seedDefaultNutrientConfigs();
         return getNutrientConfigs();
       }
-      return (data as any[]).map((r) => ({
+      return data.map((r) => ({
         id: r.id, key: r.key, label: r.label, unit: r.unit,
         is_enabled: r.is_enabled, display_order: r.display_order,
       }));
@@ -1685,7 +1684,7 @@ async function seedDefaultNutrientConfigs(): Promise<void> {
         const { error } = await supabase.from('nutrition_nutrient_configs').insert({
           id, user_id: userId, ...cfg, is_enabled: cfg.is_enabled,
           created_at: now, updated_at: now, deleted_at: null,
-        } as any);
+        });
         if (error) throw error;
       } catch (err) {
         console.error('seedDefaultNutrientConfigs failed:', err);
@@ -1709,7 +1708,7 @@ export async function saveNutrientConfig(config: NutrientConfigItem): Promise<vo
       id: config.id, user_id: userId, key: config.key, label: config.label,
       unit: config.unit, is_enabled: config.is_enabled,
       display_order: config.display_order, updated_at: now,
-    } as any);
+    });
     return;
   }
   await LocalDB.upsertNutrientConfig({
@@ -1765,7 +1764,7 @@ export async function createNutritionFood(data: {
       nutrients_json: data.nutrients_json, note: data.note || null,
       created_at: now, updated_at: now, deleted_at: null,
     };
-    const { error } = await supabase.from('nutrition_foods').insert(row as any);
+    const { error } = await supabase.from('nutrition_foods').insert(row);
     if (error) throw error;
     return { id, name: data.name, brand: data.brand || null, serving_size: data.serving_size, serving_unit: data.serving_unit, nutrients_json: data.nutrients_json, note: data.note || null };
   }
@@ -1791,7 +1790,7 @@ export async function updateNutritionFood(id: string, data: Partial<{
   const now = new Date().toISOString();
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    await supabase.from('nutrition_foods').update({ ...data, updated_at: now } as any)
+    await supabase.from('nutrition_foods').update({ ...data, updated_at: now })
       .eq('id', id).eq('user_id', userId).is('deleted_at', null);
     return;
   }
@@ -1818,7 +1817,7 @@ export async function deleteNutritionFood(id: string): Promise<void> {
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
     await supabase.from('nutrition_foods')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id).eq('user_id', userId).is('deleted_at', null);
     return;
   }
@@ -1874,7 +1873,7 @@ export async function createNutritionLog(data: {
       meal_type: data.meal_type, note: data.note,
       logged_at: data.logged_at, created_at: now, updated_at: now, deleted_at: null,
     };
-    const { error } = await supabase.from('nutrition_logs').insert(row as any);
+    const { error } = await supabase.from('nutrition_logs').insert(row);
     if (error) throw error;
     return;
   }
@@ -1891,7 +1890,7 @@ export async function deleteNutritionLog(id: string): Promise<void> {
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
     await supabase.from('nutrition_logs')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('id', id).eq('user_id', userId).is('deleted_at', null);
     return;
   }
@@ -1935,7 +1934,7 @@ export async function saveNutritionGoal(data: {
       id, user_id: userId, nutrient_key: data.nutrient_key,
       target_value: data.target_value, unit: data.unit,
       updated_at: now, deleted_at: null,
-    } as any, { onConflict: 'id' });
+    }, { onConflict: 'id' });
     return;
   }
 
@@ -2013,7 +2012,7 @@ export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<voi
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
     await supabase.from('nutrition_goals')
-      .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
+      .update({ deleted_at: deletedAt, updated_at: deletedAt })
       .eq('nutrient_key', nutrientKey).eq('user_id', userId).is('deleted_at', null);
     return;
   }
@@ -2090,7 +2089,7 @@ export async function saveTdeeSettings(s: TdeeSettingsItem): Promise<void> {
       const userId = await getWebUserIdOrThrow();
       const { error } = await supabase.from('nutrition_tdee_settings').upsert({
         ...s, user_id: userId, created_at: now, updated_at: now,
-      } as any);
+      });
       if (error) throw error;
     } catch (err) {
       console.error('saveTdeeSettings failed:', err);
