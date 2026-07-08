@@ -24,6 +24,8 @@ import {
   FolderOpen,
   Library,
   Compass,
+  Download,
+  Upload,
 } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
@@ -32,7 +34,7 @@ import { getWorkoutPlans, WorkoutPlan, WEEK_DAYS, WeekDayKey } from '@/src/servi
 import {
   createPlanShare,
   getMyPlanShares,
-  importSharedPlan,
+  importPlanEntries,
   listPublicPlanShares,
   resolveSharedPlan,
   revokePlanShare,
@@ -40,6 +42,12 @@ import {
   PublicPlanShareItem,
   SharedPlanEntryRow,
 } from '@/src/services/socialService';
+import {
+  exportWorkoutPlan,
+  pickAndReadJsonFile,
+  parsePlanExportFile,
+  saveAndShareJson,
+} from '@/src/services/planExportImportService';
 
 const DAY_LABEL: Record<string, string> = WEEK_DAYS.reduce((acc, d) => {
   acc[d.key] = d.label;
@@ -72,6 +80,8 @@ export function MySharesTab() {
   const [importMessage, setImportMessage] = useState('');
 
   const [shareMenuForPlanId, setShareMenuForPlanId] = useState<string | null>(null);
+  const [exportingPlanId, setExportingPlanId] = useState<string | null>(null);
+  const [fileImportBusy, setFileImportBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -143,10 +153,10 @@ export function MySharesTab() {
   };
 
   const confirmImport = async () => {
-    if (!previewShareCode) return;
+    if (previewRows.length === 0) return;
     setImportBusy(true);
     try {
-      const result = await importSharedPlan(previewShareCode);
+      const result = await importPlanEntries(previewRows, previewRows[0]?.plan_name || 'Kế hoạch đã nhập');
       setImportMessage(`Đã nhập "${result.planName}" (${result.importedEntries} mục).`);
       setImportCode('');
       await load();
@@ -154,6 +164,34 @@ export function MySharesTab() {
       setImportMessage(e?.message || 'Không thể nhập kế hoạch.');
     } finally {
       setImportBusy(false);
+    }
+  };
+
+  const exportPlan = async (plan: WorkoutPlan) => {
+    setExportingPlanId(plan.id);
+    try {
+      const json = await exportWorkoutPlan(userKey, plan.id, plan.name);
+      await saveAndShareJson(json, plan.name);
+    } catch (e: any) {
+      setError(e?.message || 'Không thể xuất file kế hoạch.');
+    } finally {
+      setExportingPlanId(null);
+    }
+  };
+
+  const importFromFile = async () => {
+    setFileImportBusy(true);
+    setPreviewError('');
+    try {
+      const json = await pickAndReadJsonFile();
+      if (!json) return;
+      const { entries } = parsePlanExportFile(json);
+      setImportMessage('');
+      setPreviewRows(entries);
+    } catch (e: any) {
+      setPreviewError(e?.message || 'Không thể đọc file kế hoạch.');
+    } finally {
+      setFileImportBusy(false);
     }
   };
 
@@ -232,6 +270,21 @@ export function MySharesTab() {
               <View style={styles.planCardHeader}>
                 <Text style={styles.planName} numberOfLines={1}>{plan.name}</Text>
                 <TouchableOpacity
+                  style={styles.exportPlanBtn}
+                  onPress={() => exportPlan(plan)}
+                  disabled={exportingPlanId === plan.id}
+                  activeOpacity={0.7}
+                >
+                  {exportingPlanId === plan.id ? (
+                    <ActivityIndicator size="small" color={Colors.textSecondary} />
+                  ) : (
+                    <>
+                      <Download color={Colors.textSecondary} size={13} strokeWidth={2} />
+                      <Text style={styles.exportPlanBtnText}>Xuất file</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.shareMenuBtn}
                   onPress={() => setShareMenuForPlanId(plan.id)}
                   activeOpacity={0.7}
@@ -300,6 +353,28 @@ export function MySharesTab() {
           </TouchableOpacity>
         </View>
         {previewError ? <Text style={styles.errorText}>{previewError}</Text> : null}
+
+        <View style={styles.orDivider}>
+          <View style={styles.orDividerLine} />
+          <Text style={styles.orDividerText}>hoặc</Text>
+          <View style={styles.orDividerLine} />
+        </View>
+
+        <TouchableOpacity
+          style={styles.fileImportBtn}
+          onPress={importFromFile}
+          disabled={fileImportBusy}
+          activeOpacity={0.8}
+        >
+          {fileImportBusy ? (
+            <ActivityIndicator size="small" color={Colors.accent} />
+          ) : (
+            <>
+              <Upload color={Colors.accent} size={14} strokeWidth={2} />
+              <Text style={styles.fileImportBtnText}>Nhập từ file JSON</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
@@ -343,7 +418,7 @@ export function MySharesTab() {
       {activeSubTab === TAB_LIBRARY ? renderLibrary() : renderCommunity()}
 
       {/* Xem trước kế hoạch chia sẻ trước khi tải về */}
-      <Modal visible={!!previewShareCode} transparent animationType="slide" onRequestClose={closePreview}>
+      <Modal visible={previewRows.length > 0} transparent animationType="slide" onRequestClose={closePreview}>
         <Pressable style={styles.overlay} onPress={closePreview} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
@@ -495,6 +570,15 @@ const styles = StyleSheet.create({
   disabledBtn: { opacity: 0.5 },
   messageBanner: { backgroundColor: Colors.accent + '10', padding: 10, borderRadius: 8, marginVertical: 8 },
   importMessage: { fontSize: 12, color: Colors.accent, fontWeight: '600', textAlign: 'center' },
+  orDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  orDividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  orDividerText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  fileImportBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1, borderColor: Colors.accent + '40', backgroundColor: Colors.accent + '10',
+    borderRadius: 12, paddingVertical: 12,
+  },
+  fileImportBtnText: { fontSize: 13, fontWeight: '700', color: Colors.accent },
 
   // Empty states
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 },
@@ -526,6 +610,12 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
   },
   shareMenuBtnText: { fontSize: 11, fontWeight: '700', color: Colors.accent },
+  exportPlanBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bg,
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  exportPlanBtnText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
 
   // Share chips — 1 dòng gọn/mã, thay vì thẻ đầy đủ như trước
   shareChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

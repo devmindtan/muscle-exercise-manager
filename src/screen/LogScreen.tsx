@@ -12,15 +12,25 @@ import { Download, Dumbbell, Flame } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import StrengthTab from '../components/log-tabs/StrengthTab';
 import CardioTab from '../components/log-tabs/CardioTab';
+import { exportMuscleGroupsAndExercises, saveAndShareJson } from '@/src/services/planExportImportService';
 
 type LogMode = 'strength' | 'cardio';
 
 export default function LogScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<LogMode>('strength');
+  const [exporting, setExporting] = useState(false);
 
-  const exportDatabase = useCallback(() => {
-    Alert.alert('Thông báo', 'Chức năng xuất dữ liệu sẽ được bổ sung sau.');
+  const exportDatabase = useCallback(async () => {
+    setExporting(true);
+    try {
+      const json = await exportMuscleGroupsAndExercises();
+      await saveAndShareJson(json, 'nhom-co-va-bai-tap');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể xuất dữ liệu nhóm cơ và bài tập.');
+    } finally {
+      setExporting(false);
+    }
   }, []);
 
   return (
@@ -32,9 +42,9 @@ export default function LogScreen() {
         {/* ── Header ── */}
         <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
           <Text style={styles.title}>Ghi lại</Text>
-          <TouchableOpacity style={styles.exportBtn} onPress={exportDatabase} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.exportBtn} onPress={exportDatabase} disabled={exporting} activeOpacity={0.7}>
             <Download color={Colors.textSecondary} size={14} strokeWidth={2} />
-            <Text style={styles.exportBtnText}>Xuất</Text>
+            <Text style={styles.exportBtnText}>{exporting ? 'Đang xuất...' : 'Xuất'}</Text>
           </TouchableOpacity>
         </View>
 

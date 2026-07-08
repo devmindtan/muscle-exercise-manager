@@ -363,9 +363,24 @@ export async function importSharedPlan(shareCode: string): Promise<{
   if (rows.length === 0) {
     throw new Error('Không tìm thấy kế hoạch chia sẻ, hoặc bạn không có quyền xem.');
   }
+  return importPlanEntries(rows, rows[0].plan_name);
+}
+
+// Lõi dùng chung cho mọi nguồn kế hoạch (mã chia sẻ, file JSON tự xuất...) —
+// nhận sẵn danh sách rows đã resolve, không quan tâm rows đến từ đâu.
+export async function importPlanEntries(
+  rows: SharedPlanEntryRow[],
+  planName: string,
+): Promise<{
+  planId: string;
+  planName: string;
+  importedEntries: number;
+}> {
+  if (rows.length === 0) {
+    throw new Error('Không có dữ liệu kế hoạch nào để nhập.');
+  }
 
   const userId = await getCurrentUserId();
-  const planName = rows[0].plan_name;
 
   // Muscle groups are per-user data — match the shared entries to the
   // importer's own muscle groups by name, creating new ones when no match
