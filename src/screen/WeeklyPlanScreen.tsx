@@ -458,7 +458,7 @@ export default function WeeklyPlanScreen() {
                     const done = actualSets >= totalSets && totalSets > 0;
                     const doneAccent = done ? Colors.success : col.bar;
                     return (
-                      <View key={group.muscleGroupId} style={[styles.muscleCard, !isLast && { marginBottom: 10 }]}>
+                      <View key={group.muscleGroupId} style={[styles.muscleCard, !isLast && { marginBottom: 8 }]}>
                         <View style={styles.muscleCardHeader}>
                           <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
                           <Text style={styles.muscleName} numberOfLines={1}>
@@ -468,20 +468,18 @@ export default function WeeklyPlanScreen() {
                               <Text style={styles.setsDivider}> / {totalSets}</Text>
                             </Text>
                           </Text>
+                          <View style={[styles.statusPill, done && styles.statusPillDone]}>
+                            <Text style={[styles.statusPillText, done && { color: Colors.success }]}>
+                              {done ? '✓ xong' : `${targetSets}s/tuần`}
+                            </Text>
+                          </View>
                           <TouchableOpacity
                             style={styles.cardEditBtn}
                             onPress={() => openEdit(group.entries[0])}
                             hitSlop={8}
                           >
-                            <Pencil color={Colors.textSecondary} size={15} strokeWidth={2} />
+                            <Pencil color={Colors.textSecondary} size={14} strokeWidth={2} />
                           </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.muscleCardStatusRow}>
-                          {done
-                            ? <Text style={[styles.doneChip, { color: Colors.success }]}>✓ xong</Text>
-                            : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
-                          }
                         </View>
 
                         <View style={styles.progressTrack}>
@@ -532,38 +530,30 @@ export default function WeeklyPlanScreen() {
               )}
 
               {outOfPlanEntries.length > 0 && (
-                <View style={styles.outOfPlanBox}>
+                <View style={styles.outOfPlanSection}>
                   <View style={styles.outOfPlanHeader}>
                     <Text style={styles.outOfPlanTitle}>Ngoài kế hoạch</Text>
-                    <Text style={styles.outOfPlanSub}>Các nhóm cơ đã tập nhưng chưa có trong lịch hôm nay</Text>
+                    <Text style={styles.outOfPlanSub}>Đã tập nhưng chưa có trong lịch hôm nay</Text>
                   </View>
-                  <View style={styles.outOfPlanList}>
-                    {outOfPlanEntries.map((item, idx) => {
-                      const isLast = idx === outOfPlanEntries.length - 1;
-                      return (
-                        <View key={item.muscleGroupId} style={[styles.outOfPlanRow, !isLast && styles.outOfPlanRowBorder]}>
-                          <View style={[styles.entryDot, { backgroundColor: Colors.warning }]} />
-                          <View style={styles.muscleInfo}>
-                            <Text style={styles.muscleName} numberOfLines={1}>
-                              {muscleNameById[item.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
-                              <Text style={styles.outOfPlanStatus}>ngoài kế hoạch</Text>
-                            </Text>
-                            <Text style={styles.muscleNote} numberOfLines={1}>
-                              {dayProgressLoading ? '…' : item.actualSets} sets đã tập
-                            </Text>
-                          </View>
-                          <View style={styles.outOfPlanActions}>
-                            <TouchableOpacity
-                              style={styles.outOfPlanAddBtn}
-                              onPress={() => openAddToPlanFromOutside(item.muscleGroupId, item.actualSets)}
-                            >
-                              <Text style={styles.outOfPlanAddBtnText}>Đưa vào kế hoạch</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
+                  {outOfPlanEntries.map((item, idx) => (
+                    <View key={item.muscleGroupId} style={[styles.outOfPlanCard, idx > 0 && { marginTop: 8 }]}>
+                      <View style={[styles.entryDot, { backgroundColor: Colors.warning }]} />
+                      <View style={styles.muscleInfo}>
+                        <Text style={styles.muscleName} numberOfLines={1}>
+                          {muscleNameById[item.muscleGroupId] ?? 'Nhóm cơ đã xoá'}
+                        </Text>
+                        <Text style={styles.muscleNote} numberOfLines={1}>
+                          {dayProgressLoading ? '…' : item.actualSets} sets đã tập
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.outOfPlanAddBtn}
+                        onPress={() => openAddToPlanFromOutside(item.muscleGroupId, item.actualSets)}
+                      >
+                        <Text style={styles.outOfPlanAddBtnText}>Thêm vào KH</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
               )}
             </View>
@@ -617,7 +607,7 @@ const styles = StyleSheet.create({
   content: { paddingBottom: 40 },
 
   header: {
-    paddingHorizontal: 20, paddingBottom: 16,
+    paddingHorizontal: 20, paddingBottom: 14,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
   },
   headerTitleWrap: { flex: 1, minWidth: 0 },
@@ -629,11 +619,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
   },
 
-  statsRow: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginBottom: 16 },
+  statsRow: { flexDirection: 'row', gap: 8, marginHorizontal: 20, marginBottom: 14 },
   statCard: {
     flex: 1, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 14,
+    paddingVertical: 10, paddingHorizontal: 12,
   },
   statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 3 },
   statValue: { fontSize: 24, fontWeight: '700', color: Colors.text, lineHeight: 30 },
@@ -665,7 +655,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, overflow: 'hidden',
   },
   dayDetailHeader: {
-    paddingHorizontal: 16, paddingVertical: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   dayDetailHeaderToday: {
@@ -692,27 +682,32 @@ const styles = StyleSheet.create({
   dayAddInlineText: { fontSize: 12, fontWeight: '600', color: Colors.accent },
 
   muscleList: {},
-  daySections: { gap: 10 },
+  daySections: { gap: 8, paddingHorizontal: 12, paddingVertical: 12 },
 
   // Thẻ nhóm cơ — 1 card riêng biệt/nhóm cơ, luôn hiện danh sách bài tập con
   // bên dưới dù có 1 hay nhiều bài (nhất quán, không rẽ nhánh theo số lượng).
   muscleCard: {
     borderWidth: 1, borderColor: Colors.border, borderRadius: 14,
-    backgroundColor: Colors.surface, padding: 12,
+    backgroundColor: Colors.surface, padding: 10,
   },
-  muscleCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardEditBtn: {
-    width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+  muscleCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  statusPill: {
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999,
     backgroundColor: Colors.surfaceElevated, flexShrink: 0,
   },
-  muscleCardStatusRow: { alignItems: 'flex-end', marginTop: 2, marginBottom: 6 },
+  statusPillDone: { backgroundColor: Colors.success + '18' },
+  statusPillText: { fontSize: 10, fontWeight: '700', color: Colors.textMuted },
+  cardEditBtn: {
+    width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surfaceElevated, flexShrink: 0,
+  },
   entryDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   muscleInfo: { flex: 1, minWidth: 0 },
   muscleName: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: '700', color: Colors.text },
   muscleNote: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
 
   // Danh sách bài tập con lồng trong 1 thẻ nhóm cơ
-  exerciseSubList: { gap: 6, marginTop: 8 },
+  exerciseSubList: { gap: 5, marginTop: 8 },
   exerciseSubRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.bg, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
@@ -742,20 +737,19 @@ const styles = StyleSheet.create({
   setsWeekTarget: { fontSize: 10, color: Colors.textMuted },
   doneChip: { fontSize: 10, fontWeight: '700' },
 
-  outOfPlanBox: {
-    marginHorizontal: 16, padding: 12, borderRadius: 14, borderWidth: 1,
-    borderColor: Colors.warning + '44', backgroundColor: Colors.warning + '10',
-  },
+  // "Ngoài kế hoạch" — đồng bộ theo kiểu card của danh sách chính, chỉ đổi
+  // tông màu cảnh báo (warning) để phân biệt ngữ nghĩa "chưa nằm trong kế hoạch".
+  outOfPlanSection: {},
   outOfPlanHeader: { marginBottom: 8 },
   outOfPlanTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
   outOfPlanSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  outOfPlanList: { gap: 8 },
-  outOfPlanRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
-  outOfPlanRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.warning + '20', paddingBottom: 10 },
-  outOfPlanStatus: { fontSize: 10, fontWeight: '700', color: Colors.warning },
-  outOfPlanActions: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
+  outOfPlanCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderWidth: 1, borderColor: Colors.warning + '35', backgroundColor: Colors.warning + '0c',
+    borderRadius: 12, paddingHorizontal: 10, paddingVertical: 9,
+  },
   outOfPlanAddBtn: {
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: Colors.warning,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: Colors.warning, flexShrink: 0,
   },
   outOfPlanAddBtnText: { fontSize: 11, fontWeight: '700', color: Colors.bg },
 
