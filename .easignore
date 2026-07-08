@@ -1,1 +1,4 @@
 .codegraph/
+android/
+ios/
+tmp/

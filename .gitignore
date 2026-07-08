@@ -41,6 +41,7 @@ eas.json
 android/*
 android
 *.zip
+*.tar.gz
 tmp/*
 tmp/
 .temp/
