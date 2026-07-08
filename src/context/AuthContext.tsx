@@ -122,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // If user changed, clear local data
           if (previousUserId && previousUserId !== newUserId) {
-            console.log(`User switched from ${previousUserId} to ${newUserId}, clearing local data`);
+            if (__DEV__) console.log(`User switched from ${previousUserId} to ${newUserId}, clearing local data`);
             await LocalDB.clearAllLocalData();
             await AsyncStorage.removeItem('last_sync_time'); // Reset sync timer for new user
           }
@@ -161,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // If user changed, clear local data
         if (previousUserId && previousUserId !== newUserId) {
-          console.log(`User switched from ${previousUserId} to ${newUserId}, clearing local data`);
+          if (__DEV__) console.log(`User switched from ${previousUserId} to ${newUserId}, clearing local data`);
           await LocalDB.clearAllLocalData();
           await AsyncStorage.removeItem('last_sync_time'); // Reset sync timer for new user
         }

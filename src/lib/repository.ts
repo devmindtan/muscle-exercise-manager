@@ -1627,7 +1627,7 @@ export async function getNutrientConfigs(): Promise<NutrientConfigItem[]> {
   if (Platform.OS === 'web') {
     try {
       const userId = await getWebUserIdOrThrow();
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('nutrition_nutrient_configs')
         .select('*')
         .eq('user_id', userId)
@@ -1682,11 +1682,14 @@ async function seedDefaultNutrientConfigs(): Promise<void> {
     if (Platform.OS === 'web') {
       try {
         const userId = await getWebUserIdOrThrow();
-        await (supabase as any).from('nutrition_nutrient_configs').insert({
+        const { error } = await supabase.from('nutrition_nutrient_configs').insert({
           id, user_id: userId, ...cfg, is_enabled: cfg.is_enabled,
           created_at: now, updated_at: now, deleted_at: null,
         } as any);
-      } catch {}
+        if (error) throw error;
+      } catch (err) {
+        console.error('seedDefaultNutrientConfigs failed:', err);
+      }
     } else {
       await LocalDB.upsertNutrientConfig({
         id, key: cfg.key, label: cfg.label, unit: cfg.unit,
@@ -1702,7 +1705,7 @@ export async function saveNutrientConfig(config: NutrientConfigItem): Promise<vo
   const now = new Date().toISOString();
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    await (supabase as any).from('nutrition_nutrient_configs').upsert({
+    await supabase.from('nutrition_nutrient_configs').upsert({
       id: config.id, user_id: userId, key: config.key, label: config.label,
       unit: config.unit, is_enabled: config.is_enabled,
       display_order: config.display_order, updated_at: now,
@@ -1720,7 +1723,7 @@ export async function saveNutrientConfig(config: NutrientConfigItem): Promise<vo
 export async function getNutritionFoods(): Promise<NutritionFoodItem[]> {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('nutrition_foods')
       .select('*')
       .eq('user_id', userId)
@@ -1762,7 +1765,7 @@ export async function createNutritionFood(data: {
       nutrients_json: data.nutrients_json, note: data.note || null,
       created_at: now, updated_at: now, deleted_at: null,
     };
-    const { error } = await (supabase as any).from('nutrition_foods').insert(row as any);
+    const { error } = await supabase.from('nutrition_foods').insert(row as any);
     if (error) throw error;
     return { id, name: data.name, brand: data.brand || null, serving_size: data.serving_size, serving_unit: data.serving_unit, nutrients_json: data.nutrients_json, note: data.note || null };
   }
@@ -1788,7 +1791,7 @@ export async function updateNutritionFood(id: string, data: Partial<{
   const now = new Date().toISOString();
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    await (supabase as any).from('nutrition_foods').update({ ...data, updated_at: now } as any)
+    await supabase.from('nutrition_foods').update({ ...data, updated_at: now } as any)
       .eq('id', id).eq('user_id', userId).is('deleted_at', null);
     return;
   }
@@ -1814,7 +1817,7 @@ export async function deleteNutritionFood(id: string): Promise<void> {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
-    await (supabase as any).from('nutrition_foods')
+    await supabase.from('nutrition_foods')
       .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
       .eq('id', id).eq('user_id', userId).is('deleted_at', null);
     return;
@@ -1825,7 +1828,7 @@ export async function deleteNutritionFood(id: string): Promise<void> {
 export async function getNutritionLogsForDate(dateStr: string): Promise<NutritionLogItem[]> {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('nutrition_logs')
       .select('*')
       .eq('user_id', userId)
@@ -1871,7 +1874,7 @@ export async function createNutritionLog(data: {
       meal_type: data.meal_type, note: data.note,
       logged_at: data.logged_at, created_at: now, updated_at: now, deleted_at: null,
     };
-    const { error } = await (supabase as any).from('nutrition_logs').insert(row as any);
+    const { error } = await supabase.from('nutrition_logs').insert(row as any);
     if (error) throw error;
     return;
   }
@@ -1887,7 +1890,7 @@ export async function deleteNutritionLog(id: string): Promise<void> {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
-    await (supabase as any).from('nutrition_logs')
+    await supabase.from('nutrition_logs')
       .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
       .eq('id', id).eq('user_id', userId).is('deleted_at', null);
     return;
@@ -1898,7 +1901,7 @@ export async function deleteNutritionLog(id: string): Promise<void> {
 export async function getNutritionGoals(): Promise<NutritionGoalItem[]> {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('nutrition_goals')
       .select('*')
       .eq('user_id', userId)
@@ -1928,7 +1931,7 @@ export async function saveNutritionGoal(data: {
 
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    await (supabase as any).from('nutrition_goals').upsert({
+    await supabase.from('nutrition_goals').upsert({
       id, user_id: userId, nutrient_key: data.nutrient_key,
       target_value: data.target_value, unit: data.unit,
       updated_at: now, deleted_at: null,
@@ -1961,9 +1964,12 @@ export async function deleteNutrientConfig(id: string): Promise<void> {
   if (Platform.OS === 'web') {
     try {
       const userId = await getWebUserIdOrThrow();
-      await (supabase as any).from('nutrition_nutrient_configs')
+      const { error } = await supabase.from('nutrition_nutrient_configs')
         .delete().eq('id', id).eq('user_id', userId);
-    } catch {}
+      if (error) throw error;
+    } catch (err) {
+      console.error('deleteNutrientConfig failed:', err);
+    }
     return;
   }
   await LocalDB.deleteNutrientConfig(id);
@@ -1975,7 +1981,7 @@ export async function getNutritionLogsForDateRange(
   if (Platform.OS === 'web') {
     try {
       const userId = await getWebUserIdOrThrow();
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('nutrition_logs')
         .select('*')
         .eq('user_id', userId)
@@ -2006,7 +2012,7 @@ export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<voi
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
     const deletedAt = new Date().toISOString();
-    await (supabase as any).from('nutrition_goals')
+    await supabase.from('nutrition_goals')
       .update({ deleted_at: deletedAt, updated_at: deletedAt } as any)
       .eq('nutrient_key', nutrientKey).eq('user_id', userId).is('deleted_at', null);
     return;
@@ -2043,7 +2049,7 @@ export async function getTdeeSettings(): Promise<TdeeSettingsItem> {
   if (Platform.OS === 'web') {
     try {
       const userId = await getWebUserIdOrThrow();
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from('nutrition_tdee_settings')
         .select('*')
         .eq('user_id', userId)
@@ -2058,7 +2064,9 @@ export async function getTdeeSettings(): Promise<TdeeSettingsItem> {
           goal_type: r.goal_type,
         };
       }
-    } catch {}
+    } catch (err) {
+      console.error('getTdeeSettings failed:', err);
+    }
     return { id: generateUUID(), ...DEFAULT_TDEE_SETTINGS };
   }
 
@@ -2080,10 +2088,13 @@ export async function saveTdeeSettings(s: TdeeSettingsItem): Promise<void> {
   if (Platform.OS === 'web') {
     try {
       const userId = await getWebUserIdOrThrow();
-      await (supabase as any).from('nutrition_tdee_settings').upsert({
+      const { error } = await supabase.from('nutrition_tdee_settings').upsert({
         ...s, user_id: userId, created_at: now, updated_at: now,
       } as any);
-    } catch {}
+      if (error) throw error;
+    } catch (err) {
+      console.error('saveTdeeSettings failed:', err);
+    }
     return;
   }
   await LocalDB.upsertTdeeSettings({
@@ -2108,9 +2119,16 @@ export async function syncNutritionToCloud(): Promise<NutritionSyncResult> {
   let synced = 0;
   const errors: string[] = [];
 
-  const push = async (table: string, row: Record<string, unknown>) => {
+  type NutritionTable =
+    | 'nutrition_nutrient_configs'
+    | 'nutrition_foods'
+    | 'nutrition_logs'
+    | 'nutrition_goals'
+    | 'nutrition_tdee_settings';
+
+  const push = async (table: NutritionTable, row: Record<string, unknown>) => {
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from(table)
         .upsert({ ...row, user_id: userId }, { onConflict: 'id' });
       if (error) throw error;
@@ -2233,7 +2251,7 @@ export interface ProfileItem {
 export async function getMyProfile(): Promise<ProfileItem | null> {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('user_id', userId)
@@ -2273,7 +2291,7 @@ export async function saveProfile(data: {
   if (Platform.OS === 'web') {
     const userId = await getWebUserIdOrThrow();
     const id = existing?.id || generateUUID();
-    const { error } = await (supabase as any).from('profiles').upsert({
+    const { error } = await supabase.from('profiles').upsert({
       id, user_id: userId, display_name: next.display_name, avatar_url: next.avatar_url,
       bio: next.bio, is_private: next.is_private, updated_at: now,
     }, { onConflict: 'id' });
