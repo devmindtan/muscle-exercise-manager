@@ -14,10 +14,14 @@
 
 ## Tính năng chính
 
-- **Weekly Plan** — lập kế hoạch theo ngày và nhóm cơ, theo dõi tiến độ sets thực tế so với mục tiêu; hiển thị nhóm cơ ngoài kế hoạch và thêm nhanh vào ngày hiện tại.
+- **Weekly Plan** — lập kế hoạch theo ngày và nhóm cơ, chọn bài tập/biến thể cụ thể cho từng ô, theo dõi tiến độ sets thực tế so với mục tiêu; hiển thị nhóm cơ ngoài kế hoạch và thêm nhanh vào ngày hiện tại.
 - **Dashboard** — tổng quan sets tuần (actual/target), khối lượng tháng, trạng thái từng nhóm cơ (hoàn thành / chưa đủ / vượt mục tiêu).
-- **Body Metrics** — nhập tay hoặc quét, UI tab rõ ràng, dễ bảo trì.
-- **Workout Log** — thêm, sửa, xoá theo từng bài tập; hỗ trợ soft delete.
+- **Dinh dưỡng** — log thức ăn theo ngày, TDEE calculator tích hợp InBody, cấu hình dưỡng chất linh hoạt, biểu đồ tuần.
+- **Body Metrics** — nhập tay hoặc quét, goal tracking, biểu đồ lịch sử.
+- **Workout Log** — ghi Strength và Cardio, thêm/sửa/xoá theo từng bài tập, hỗ trợ soft delete.
+- **Biến thể bài tập** — nhóm bài tập gốc/biến thể, chọn đúng biến thể muốn tập trong kế hoạch.
+- **Chia sẻ & Cộng đồng** — nhiều kế hoạch tập, chia sẻ công khai/bạn bè/mã bí mật, kết bạn, xem hoạt động qua activity heatmap.
+- **Xuất / Nhập JSON** — xuất kế hoạch tập hoặc toàn bộ thư viện nhóm cơ + bài tập ra file JSON để phân tích/cải thiện, nhập lại kế hoạch đã cải thiện.
 - **Offline-first** — toàn bộ dữ liệu lưu local bằng SQLite, đồng bộ Supabase khi có mạng, dirty sync ổn định.
 - **Ảnh minh hoạ** — upload lên MinIO, đồng bộ tự động khi online.
 
@@ -80,10 +84,12 @@ npm run build:web
 
 ## Releases
 
-| Tag | Trạng thái |
-|-----|------------|
-| `v1.0.1-preview` | Latest |
-| `v1.0.0-preview` | Stable |
+| Phiên bản | Trạng thái | Ghi chú |
+|-----------|------------|---------|
+| v1.0.4 | Latest | [Release notes](src/docs/release-preview-v1.0.4.md) |
+| v1.0.3 | — | [Release notes](src/docs/release-preview-v1.0.3.md) |
+| `v1.0.1-preview` | Tag | — |
+| `v1.0.0-preview` | Tag | — |
 
 ---
 
