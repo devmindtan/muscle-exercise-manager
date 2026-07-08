@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ChevronDown, Plus, Pencil, Trash2 } from 'lucide-react-native';
+import { ChevronDown, Plus, Pencil, Trash2, Flame } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs, getExercises } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
@@ -38,6 +38,22 @@ type MuscleGroupCard = {
   entries: WeeklyPlanEntry[];
   totalSets: number;
 };
+
+// ─── Signature palette (bảng điểm phòng gym) ─────────────────────────────────
+// Ink + chalk-lime: nền tối như bảng phấn trong phòng gym, điểm nhấn màu
+// "chalk lime" cho phần trọng tâm / được chọn (accent chính), và xanh lá
+// riêng (GREEN) dành cho trạng thái "đã hoàn thành" — tách biệt 2 ý nghĩa để
+// không bị lẫn màu. Không đụng tới Colors global để không phá vỡ theme các
+// màn khác.
+const INK = '#0E1210';
+const INK_RAISED = '#161C19';
+const CHALK = '#F3F6EF';
+const LIME = '#D6FF3F';
+const LIME_DIM = 'rgba(214,255,63,0.16)';
+// Xanh lá cho trạng thái "đã hoàn thành" — khác với LIME (màu nhấn chính)
+const GREEN = '#34D399';
+const GREEN_DIM = 'rgba(52,211,153,0.16)';
+const HAIRLINE = 'rgba(243,246,239,0.10)';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -78,7 +94,7 @@ function getTodayKey(): WeekDayKey | null {
 }
 
 function formatShortDate(d: Date) {
-  return `${d.getDate()} tháng ${d.getMonth() + 1}`;
+  return `${d.getDate()} thg ${d.getMonth() + 1}`;
 }
 
 function getDayBounds(dayKey: WeekDayKey) {
@@ -260,6 +276,7 @@ export default function WeeklyPlanScreen() {
     [weeklyActualSetsByMuscle],
   );
   const activeDays = useMemo(() => new Set(plans.map((p) => p.dayKey)).size, [plans]);
+  const weekPct = totalWeeklySets > 0 ? Math.min(totalWeeklyActualSets / totalWeeklySets, 1) : 0;
 
   const byDay = useMemo(() => {
     const map: Record<WeekDayKey, WeeklyPlanEntry[]> = {} as any;
@@ -331,8 +348,8 @@ export default function WeeklyPlanScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={Colors.accent} />
-        <Text style={[styles.loadingText, { marginTop: 12 }]}>Đang tải kế hoạch...</Text>
+        <ActivityIndicator size="large" color={LIME} />
+        <Text style={[styles.loadingText, { marginTop: 12 }]}>Đang tải bảng điểm...</Text>
       </View>
     );
   }
@@ -343,46 +360,52 @@ export default function WeeklyPlanScreen() {
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={LIME} />}
       >
-        {/* ── Header ── */}
-        <View style={[styles.header, { paddingTop: 12 }]}>
-          <View style={styles.headerTitleWrap}>
-            <TouchableOpacity style={styles.planSelector} onPress={() => setShowPlanManager(true)} activeOpacity={0.7}>
-              <Text style={styles.title} numberOfLines={1}>{activePlanName}</Text>
-              <ChevronDown color={Colors.textMuted} size={20} strokeWidth={2.2} />
+        {/* ── Header: bảng tên vận động viên ── */}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <View style={styles.headerTitleWrap}>
+              <Text style={styles.eyebrow}>KẾ HOẠCH · TUẦN NÀY</Text>
+              <TouchableOpacity style={styles.planSelector} onPress={() => setShowPlanManager(true)} activeOpacity={0.7}>
+                <Text style={styles.title} numberOfLines={1}>{activePlanName}</Text>
+                <ChevronDown color={CHALK} size={20} strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.addBtn} onPress={openCreate} activeOpacity={0.85}>
+              <Plus color={INK} size={20} strokeWidth={3} />
             </TouchableOpacity>
-            <Text style={styles.subtitle}>
-              Chỉ để theo dõi. Bạn vẫn tập linh hoạt theo thực tế.
-              {workoutPlans.length > 1 ? ` · ${workoutPlans.length} kế hoạch` : ''}
-            </Text>
           </View>
-          <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
-            <Plus color={Colors.bg} size={18} strokeWidth={2.5} />
-          </TouchableOpacity>
+          <Text style={styles.subtitle}>
+            Chỉ để theo dõi — bạn vẫn tập linh hoạt theo thực tế.
+            {workoutPlans.length > 1 ? ` · ${workoutPlans.length} kế hoạch` : ''}
+          </Text>
         </View>
 
-        {/* ── Summary stats ── */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Tiến độ sets tuần</Text>
-            <Text style={styles.statValue}>
-              {weekProgressLoading ? '…' : totalWeeklyActualSets}
-              <Text style={styles.statValueSub}> / {totalWeeklySets}</Text>
-            </Text>
-            <Text style={styles.statSub}>đã tập / đã kế hoạch</Text>
+        {/* ── Scoreboard: tiến độ tuần dạng bảng điểm lớn ── */}
+        <View style={styles.scoreboard}>
+          <View style={styles.scoreboardTopRow}>
+            <Flame color={LIME} size={14} strokeWidth={2.5} />
+            <Text style={styles.scoreboardLabel}>TỔNG SETS TUẦN NÀY</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Ngày tập</Text>
-            <Text style={styles.statValue}>
-              {activeDays}
-              <Text style={styles.statValueSub}> / 7</Text>
+          <View style={styles.scoreboardBigRow}>
+            <Text style={styles.scoreboardBig}>
+              {weekProgressLoading ? '—' : totalWeeklyActualSets}
             </Text>
-            <Text style={styles.statSub}>đã lên kế hoạch</Text>
+            <Text style={styles.scoreboardBigSlash}>/</Text>
+            <Text style={styles.scoreboardBigTarget}>{totalWeeklySets}</Text>
+          </View>
+          <View style={styles.scoreboardTrack}>
+            <View style={[styles.scoreboardFill, { width: `${Math.round(weekPct * 100)}%` }]} />
+          </View>
+          <View style={styles.scoreboardFooterRow}>
+            <Text style={styles.scoreboardFooterText}>{Math.round(weekPct * 100)}% hoàn thành</Text>
+            <View style={styles.scoreboardDivider} />
+            <Text style={styles.scoreboardFooterText}>{activeDays}/7 ngày có lịch</Text>
           </View>
         </View>
 
-        {/* ── Day picker strip ── */}
+        {/* ── Day picker: dải thẻ vuông bo góc theo tuần ── */}
         <ScrollView
           ref={dayScrollRef}
           horizontal
@@ -397,21 +420,30 @@ export default function WeeklyPlanScreen() {
             return (
               <TouchableOpacity
                 key={day.key}
-                style={[styles.dayBtn, isSelected && styles.dayBtnActive, !isSelected && isToday && styles.dayBtnToday]}
+                style={[
+                  styles.dayPlate,
+                  hasEntries && styles.dayPlateLoaded,
+                  isSelected && styles.dayPlateActive,
+                  !isSelected && isToday && styles.dayPlateToday,
+                ]}
                 onPress={() => {
                   selectedDayRef.current = day.key;
                   setSelectedDay(day.key);
                   void loadDayProgress(day.key);
                 }}
-                activeOpacity={0.7}
+                activeOpacity={0.75}
               >
-                <Text style={[styles.dayAbbr, isSelected && styles.dayAbbrActive, !isSelected && isToday && styles.dayAbbrToday]}>
+                <Text
+                  style={[styles.dayPlateAbbr, isSelected && styles.dayPlateAbbrActive]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {day.label}
                 </Text>
-                <Text style={[styles.dayNum, isSelected && styles.dayNumActive, !isSelected && isToday && styles.dayNumToday]}>
+                <Text style={[styles.dayPlateNum, isSelected && styles.dayPlateNumActive]}>
                   {date.getDate()}
                 </Text>
-                <View style={[styles.dayDot, hasEntries ? (isSelected ? styles.dayDotActiveHas : styles.dayDotHas) : styles.dayDotEmpty]} />
+                {isToday && !isSelected ? <View style={styles.dayPlateTodayDot} /> : null}
               </TouchableOpacity>
             );
           })}
@@ -419,20 +451,21 @@ export default function WeeklyPlanScreen() {
 
         {/* ── Selected day detail ── */}
         <View style={styles.dayDetail}>
-          <View style={[styles.dayDetailHeader, selectedDay === todayKey && styles.dayDetailHeaderToday]}>
+          <View style={styles.dayDetailHeader}>
             <View style={styles.dayDetailTitleRow}>
-              <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay]}</Text>
+              <View style={styles.dayDetailTick} />
+              <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay].toUpperCase()}</Text>
               {selectedDay === todayKey && (
                 <View style={styles.todayBadge}>
-                  <Text style={styles.todayBadgeText}>Hôm nay</Text>
+                  <Text style={styles.todayBadgeText}>HÔM NAY</Text>
                 </View>
               )}
             </View>
             <Text style={styles.dayDetailDate}>
               {formatShortDate(selectedDate)}
               {setsPerDay[selectedDay] > 0
-                ? ` · ${dayProgressLoading ? '…' : dayActualTotal}/${setsPerDay[selectedDay]} sets`
-                : ` · ${dayProgressLoading ? '…' : dayActualTotal} sets`}
+                ? `  ·  ${dayProgressLoading ? '…' : dayActualTotal}/${setsPerDay[selectedDay]} sets`
+                : `  ·  ${dayProgressLoading ? '…' : dayActualTotal} sets`}
             </Text>
           </View>
 
@@ -440,7 +473,7 @@ export default function WeeklyPlanScreen() {
             <View style={styles.dayRestRow}>
               <Text style={styles.dayRestText}>Nghỉ ngơi — chưa có lịch tập</Text>
               <TouchableOpacity style={styles.dayAddInline} onPress={openCreate}>
-                <Plus size={12} color={Colors.accent} strokeWidth={2.5} />
+                <Plus size={12} color={LIME} strokeWidth={2.5} />
                 <Text style={styles.dayAddInlineText}>Thêm</Text>
               </TouchableOpacity>
             </View>
@@ -456,72 +489,78 @@ export default function WeeklyPlanScreen() {
                     const totalSets = group.totalSets;
                     const pct = totalSets > 0 ? Math.min(actualSets / totalSets, 1) : 0;
                     const done = actualSets >= totalSets && totalSets > 0;
-                    const doneAccent = done ? Colors.success : col.bar;
+                    // "Xong" dùng GREEN (xanh lá) thay vì LIME để tách biệt với màu nhấn chính
+                    const accent = done ? GREEN : col.bar;
                     return (
-                      <View key={group.muscleGroupId} style={[styles.muscleCard, !isLast && { marginBottom: 8 }]}>
-                        <View style={styles.muscleCardHeader}>
-                          <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
-                          <Text style={styles.muscleName} numberOfLines={1}>
-                            {muscleNameById[group.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
-                            <Text style={[styles.setsNow, done && { color: Colors.success }]}>
-                              {dayProgressLoading ? '…' : actualSets}
-                              <Text style={styles.setsDivider}> / {totalSets}</Text>
+                      <View key={group.muscleGroupId} style={[styles.muscleCard, !isLast && { marginBottom: 10 }]}>
+                        <View style={[styles.muscleCardStripe, { backgroundColor: accent }]} />
+                        <View style={styles.muscleCardBody}>
+                          <View style={styles.muscleCardHeader}>
+                            <Text style={styles.muscleName} numberOfLines={1}>
+                              {(muscleNameById[group.muscleGroupId] ?? 'Nhóm cơ đã xoá').toUpperCase()}
                             </Text>
-                          </Text>
-                          <View style={[styles.statusPill, done && styles.statusPillDone]}>
-                            <Text style={[styles.statusPillText, done && { color: Colors.success }]}>
-                              {done ? '✓ xong' : `${targetSets}s/tuần`}
-                            </Text>
+                            <TouchableOpacity
+                              style={styles.cardEditBtn}
+                              onPress={() => openEdit(group.entries[0])}
+                              hitSlop={8}
+                            >
+                              <Pencil color={CHALK} size={13} strokeWidth={2} />
+                            </TouchableOpacity>
                           </View>
-                          <TouchableOpacity
-                            style={styles.cardEditBtn}
-                            onPress={() => openEdit(group.entries[0])}
-                            hitSlop={8}
-                          >
-                            <Pencil color={Colors.textSecondary} size={14} strokeWidth={2} />
-                          </TouchableOpacity>
-                        </View>
 
-                        <View style={styles.progressTrack}>
-                          <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
-                        </View>
+                          <View style={styles.muscleCardStatsRow}>
+                            <Text style={[styles.setsNow, done && { color: GREEN }]}>
+                              {dayProgressLoading ? '…' : actualSets}
+                              <Text style={styles.setsDivider}> / {totalSets} sets</Text>
+                            </Text>
+                            <View style={[styles.statusPill, done && styles.statusPillDone]}>
+                              <Text style={[styles.statusPillText, done && { color: GREEN }]}>
+                                {done ? '✓ XONG' : `${targetSets} S/TUẦN`}
+                              </Text>
+                            </View>
+                          </View>
 
-                        <View style={styles.exerciseSubList}>
-                          {group.entries.map((entry) => {
-                            const ex = entry.exerciseId ? exerciseById[entry.exerciseId] : null;
-                            return (
-                              <View key={entry.id} style={styles.exerciseSubRow}>
-                                {ex ? (
-                                  <ExerciseThumb ex={ex} tone={col} size={30} />
-                                ) : (
-                                  <View style={[styles.exerciseSubThumbEmpty, { borderColor: col.badgeBorder }]} />
-                                )}
-                                <View style={styles.exerciseSubInfo}>
-                                  <View style={styles.exerciseSubNameRow}>
-                                    <Text style={styles.exerciseSubName} numberOfLines={1}>
-                                      {ex?.name ?? 'Chưa chọn bài tập'}
-                                    </Text>
-                                    {ex?.exercise_type ? (
-                                      <View style={[styles.exerciseTypeTag, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
-                                        <Text style={[styles.exerciseTypeTagText, { color: col.badgeText }]}>
-                                          {ex.exercise_type === 'compound' ? 'C' : 'I'}
-                                        </Text>
-                                      </View>
+                          <View style={styles.progressTrack}>
+                            <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: accent }]} />
+                          </View>
+
+                          <View style={styles.exerciseSubList}>
+                            {group.entries.map((entry) => {
+                              const ex = entry.exerciseId ? exerciseById[entry.exerciseId] : null;
+                              return (
+                                <View key={entry.id} style={styles.exerciseSubRow}>
+                                  {ex ? (
+                                    <ExerciseThumb ex={ex} tone={col} size={30} />
+                                  ) : (
+                                    <View style={[styles.exerciseSubThumbEmpty, { borderColor: col.badgeBorder }]} />
+                                  )}
+                                  <View style={styles.exerciseSubInfo}>
+                                    <View style={styles.exerciseSubNameRow}>
+                                      <Text style={styles.exerciseSubName} numberOfLines={1}>
+                                        {ex?.name ?? 'Chưa chọn bài tập'}
+                                      </Text>
+                                      {ex?.exercise_type ? (
+                                        <View style={[styles.exerciseTypeTag, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
+                                          <Text style={[styles.exerciseTypeTagText, { color: col.badgeText }]}>
+                                            {ex.exercise_type === 'compound' ? 'C' : 'I'}
+                                          </Text>
+                                        </View>
+                                      ) : null}
+                                    </View>
+                                    {entry.note ? (
+                                      <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
                                     ) : null}
                                   </View>
-                                  {entry.note ? (
-                                    <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
-                                  ) : null}
+                                  <View style={styles.exerciseSubSetsPill}>
+                                    <Text style={styles.exerciseSubSetsPillText}>{entry.sets}</Text>
+                                  </View>
+                                  <TouchableOpacity style={styles.exerciseSubDeleteBtn} onPress={() => remove(entry.id)} hitSlop={8}>
+                                    <Trash2 color={Colors.error} size={14} strokeWidth={2} />
+                                  </TouchableOpacity>
                                 </View>
-                                <View style={styles.exerciseSubSetsPill}>
-                                  <Text style={styles.exerciseSubSetsPillText}>{entry.sets}</Text>
-                                </View>
-                                <TouchableOpacity style={styles.exerciseSubDeleteBtn} onPress={() => remove(entry.id)} hitSlop={8}>
-                                  <Trash2 color={Colors.error} size={14} strokeWidth={2} />
-                                </TouchableOpacity>
-                              </View>
-                            );
-                          })}
+                              );
+                            })}
+                          </View>
                         </View>
                       </View>
                     );
@@ -532,14 +571,14 @@ export default function WeeklyPlanScreen() {
               {outOfPlanEntries.length > 0 && (
                 <View style={styles.outOfPlanSection}>
                   <View style={styles.outOfPlanHeader}>
-                    <Text style={styles.outOfPlanTitle}>Ngoài kế hoạch</Text>
+                    <Text style={styles.outOfPlanTitle}>NGOÀI KẾ HOẠCH</Text>
                     <Text style={styles.outOfPlanSub}>Đã tập nhưng chưa có trong lịch hôm nay</Text>
                   </View>
                   {outOfPlanEntries.map((item, idx) => (
                     <View key={item.muscleGroupId} style={[styles.outOfPlanCard, idx > 0 && { marginTop: 8 }]}>
-                      <View style={[styles.entryDot, { backgroundColor: Colors.warning }]} />
+                      <View style={styles.outOfPlanDot} />
                       <View style={styles.muscleInfo}>
-                        <Text style={styles.muscleName} numberOfLines={1}>
+                        <Text style={styles.outOfPlanName} numberOfLines={1}>
                           {muscleNameById[item.muscleGroupId] ?? 'Nhóm cơ đã xoá'}
                         </Text>
                         <Text style={styles.muscleNote} numberOfLines={1}>
@@ -550,7 +589,7 @@ export default function WeeklyPlanScreen() {
                         style={styles.outOfPlanAddBtn}
                         onPress={() => openAddToPlanFromOutside(item.muscleGroupId, item.actualSets)}
                       >
-                        <Text style={styles.outOfPlanAddBtnText}>Thêm vào KH</Text>
+                        <Text style={styles.outOfPlanAddBtnText}>THÊM VÀO KH</Text>
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -599,126 +638,147 @@ export default function WeeklyPlanScreen() {
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
+// Hướng thiết kế: "bảng điểm phòng gym" — nền mực đen (INK), số liệu lớn kiểu
+// scoreboard, LIME là accent chính (nút thêm, ngày đang chọn, thanh tiến độ
+// tuần), GREEN riêng cho trạng thái "đã hoàn thành" ở từng nhóm cơ, mọi thứ
+// còn lại giữ tông trầm, viền hairline mảnh thay cho shadow mềm mại.
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: INK },
   center: { alignItems: 'center', justifyContent: 'center' },
-  loadingText: { fontSize: 15, color: Colors.textMuted },
+  loadingText: { fontSize: 13, color: CHALK, opacity: 0.6, letterSpacing: 0.5 },
   content: { paddingBottom: 40 },
 
-  header: {
-    paddingHorizontal: 20, paddingBottom: 14,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
-  },
+  header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   headerTitleWrap: { flex: 1, minWidth: 0 },
+  eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.4, color: LIME, marginBottom: 6 },
   planSelector: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  title: { fontSize: 28, fontWeight: '700', color: Colors.text, letterSpacing: -0.5, flexShrink: 1 },
-  subtitle: { marginTop: 4, fontSize: 12, color: Colors.textMuted, lineHeight: 18 },
+  title: { fontSize: 30, fontWeight: '800', color: CHALK, letterSpacing: -0.8, flexShrink: 1 },
+  subtitle: { marginTop: 10, fontSize: 12, color: CHALK, opacity: 0.5, lineHeight: 18 },
   addBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: LIME, alignItems: 'center', justifyContent: 'center',
   },
 
-  statsRow: { flexDirection: 'row', gap: 8, marginHorizontal: 20, marginBottom: 14 },
-  statCard: {
-    flex: 1, backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
-    paddingVertical: 10, paddingHorizontal: 12,
+  // Scoreboard — panel số liệu lớn thay cho 2 statCard nhỏ
+  scoreboard: {
+    marginHorizontal: 20, marginBottom: 16,
+    backgroundColor: INK_RAISED, borderRadius: 18,
+    borderWidth: 1, borderColor: HAIRLINE,
+    paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14,
   },
-  statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 3 },
-  statValue: { fontSize: 24, fontWeight: '700', color: Colors.text, lineHeight: 30 },
-  statValueSub: { fontSize: 14, fontWeight: '400', color: Colors.textMuted },
-  statSub: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  scoreboardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  scoreboardLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: CHALK, opacity: 0.55 },
+  scoreboardBigRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  scoreboardBig: { fontSize: 52, fontWeight: '800', color: CHALK, letterSpacing: -1.5, lineHeight: 54 },
+  scoreboardBigSlash: { fontSize: 26, fontWeight: '400', color: CHALK, opacity: 0.3, marginBottom: 4 },
+  scoreboardBigTarget: { fontSize: 26, fontWeight: '700', color: CHALK, opacity: 0.4, marginBottom: 4 },
+  scoreboardTrack: { height: 6, borderRadius: 999, backgroundColor: 'rgba(243,246,239,0.08)', overflow: 'hidden', marginTop: 12 },
+  scoreboardFill: { height: '100%', borderRadius: 999, backgroundColor: LIME },
+  scoreboardFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  scoreboardFooterText: { fontSize: 11, color: CHALK, opacity: 0.55, fontWeight: '600' },
+  scoreboardDivider: { width: 1, height: 10, backgroundColor: HAIRLINE },
 
-  dayStrip: { paddingHorizontal: 20, paddingBottom: 14, gap: 8 },
-  dayBtn: {
-    alignItems: 'center', gap: 3, paddingVertical: 8, paddingHorizontal: 10,
-    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
-    backgroundColor: Colors.surface, minWidth: 44,
+  // Day strip — thẻ vuông bo góc thay cho hình tròn: rộng rãi hơn cho label
+  // dài như "Chủ nhật", có đệm ngang để chữ không dí sát viền, và tự co cỡ
+  // chữ (adjustsFontSizeToFit) làm lớp bảo hiểm thứ hai.
+  dayStrip: { paddingHorizontal: 20, paddingBottom: 16, gap: 8 },
+  dayPlate: {
+    alignItems: 'center', justifyContent: 'center', gap: 2,
+    width: 54, height: 58, borderRadius: 16,
+    borderWidth: 1.5, borderColor: HAIRLINE, backgroundColor: INK_RAISED,
+    paddingHorizontal: 4,
   },
-  dayBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  dayBtnToday: { borderColor: Colors.accent },
-  dayAbbr: { fontSize: 10, fontWeight: '600', color: Colors.textSecondary },
-  dayAbbrActive: { color: Colors.bg },
-  dayAbbrToday: { color: Colors.accent },
-  dayNum: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  dayNumActive: { color: Colors.bg },
-  dayNumToday: { color: Colors.accent },
-  dayDot: { width: 4, height: 4, borderRadius: 2 },
-  dayDotHas: { backgroundColor: Colors.accent + '88' },
-  dayDotActiveHas: { backgroundColor: Colors.bg + 'aa' },
-  dayDotEmpty: { backgroundColor: 'transparent' },
+  dayPlateLoaded: { borderColor: 'rgba(214,255,63,0.35)' },
+  dayPlateActive: {
+    backgroundColor: LIME, borderColor: LIME,
+    shadowColor: LIME, shadowOpacity: 0.3, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
+  dayPlateToday: { borderColor: LIME, borderWidth: 1.5 },
+  dayPlateAbbr: {
+    fontSize: 10, fontWeight: '800', letterSpacing: 0.2,
+    color: CHALK, opacity: 0.55, textAlign: 'center',
+    maxWidth: 44,
+  },
+  dayPlateAbbrActive: { color: INK, opacity: 0.75 },
+  dayPlateNum: { fontSize: 17, fontWeight: '800', color: CHALK },
+  dayPlateNumActive: { color: INK },
+  dayPlateTodayDot: {
+    position: 'absolute', top: 6, right: 6,
+    width: 5, height: 5, borderRadius: 2.5, backgroundColor: LIME,
+  },
 
   dayDetail: {
     marginHorizontal: 20, marginBottom: 4,
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 16,
-    backgroundColor: Colors.surface, overflow: 'hidden',
+    borderWidth: 1, borderColor: HAIRLINE, borderRadius: 18,
+    backgroundColor: INK_RAISED, overflow: 'hidden',
   },
   dayDetailHeader: {
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: HAIRLINE,
   },
-  dayDetailHeaderToday: {
-    backgroundColor: Colors.accent + '15',
-    borderBottomColor: Colors.accent + '40',
-  },
-  dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-  dayDetailTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  todayBadge: { backgroundColor: Colors.accent, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
-  todayBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.bg },
-  dayDetailDate: { fontSize: 11, color: Colors.textMuted },
+  dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  dayDetailTick: { width: 3, height: 14, borderRadius: 2, backgroundColor: LIME },
+  dayDetailTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 0.6, color: CHALK },
+  todayBadge: { backgroundColor: LIME, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  todayBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4, color: INK },
+  dayDetailDate: { fontSize: 11, color: CHALK, opacity: 0.5, marginLeft: 11 },
 
   dayRestRow: {
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: 16, paddingVertical: 18,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  dayRestText: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic' },
+  dayRestText: { fontSize: 13, color: CHALK, opacity: 0.45, fontStyle: 'italic' },
   dayAddInline: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 8, borderWidth: 1,
-    borderColor: Colors.accent + '55', backgroundColor: Colors.accent + '10',
+    borderColor: 'rgba(214,255,63,0.4)', backgroundColor: LIME_DIM,
   },
-  dayAddInlineText: { fontSize: 12, fontWeight: '600', color: Colors.accent },
+  dayAddInlineText: { fontSize: 12, fontWeight: '700', color: LIME },
 
   muscleList: {},
-  daySections: { gap: 8, paddingHorizontal: 12, paddingVertical: 12 },
+  daySections: { gap: 10, paddingHorizontal: 12, paddingVertical: 12 },
 
-  // Thẻ nhóm cơ — 1 card riêng biệt/nhóm cơ, luôn hiện danh sách bài tập con
-  // bên dưới dù có 1 hay nhiều bài (nhất quán, không rẽ nhánh theo số lượng).
+  // Thẻ nhóm cơ — dải màu dọc bên trái thay cho chấm tròn, kiểu "hàng điểm"
   muscleCard: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 14,
-    backgroundColor: Colors.surface, padding: 10,
+    flexDirection: 'row',
+    borderWidth: 1, borderColor: HAIRLINE, borderRadius: 14,
+    backgroundColor: INK, overflow: 'hidden',
   },
-  muscleCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  muscleCardStripe: { width: 4 },
+  muscleCardBody: { flex: 1, padding: 12 },
+  muscleCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  muscleCardStatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   statusPill: {
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999,
-    backgroundColor: Colors.surfaceElevated, flexShrink: 0,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
+    backgroundColor: 'rgba(243,246,239,0.06)', flexShrink: 0,
   },
-  statusPillDone: { backgroundColor: Colors.success + '18' },
-  statusPillText: { fontSize: 10, fontWeight: '700', color: Colors.textMuted },
+  statusPillDone: { backgroundColor: GREEN_DIM },
+  statusPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3, color: CHALK, opacity: 0.55 },
   cardEditBtn: {
-    width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.surfaceElevated, flexShrink: 0,
+    width: 24, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(243,246,239,0.06)', flexShrink: 0, marginLeft: 'auto',
   },
-  entryDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   muscleInfo: { flex: 1, minWidth: 0 },
-  muscleName: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: '700', color: Colors.text },
-  muscleNote: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
+  muscleName: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '800', letterSpacing: 0.4, color: CHALK },
+  muscleNote: { fontSize: 11, color: CHALK, opacity: 0.45, marginTop: 1 },
 
   // Danh sách bài tập con lồng trong 1 thẻ nhóm cơ
-  exerciseSubList: { gap: 5, marginTop: 8 },
+  exerciseSubList: { gap: 5, marginTop: 4 },
   exerciseSubRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.bg, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
+    backgroundColor: INK_RAISED, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
   },
   exerciseSubThumbEmpty: {
     width: 30, height: 30, borderRadius: 7, borderWidth: 1, borderStyle: 'dashed',
   },
   exerciseSubInfo: { flex: 1, minWidth: 0 },
   exerciseSubNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  exerciseSubName: { flexShrink: 1, fontSize: 12.5, color: Colors.text, fontWeight: '600' },
-  exerciseSubNote: { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginTop: 1 },
+  exerciseSubName: { flexShrink: 1, fontSize: 12.5, color: CHALK, fontWeight: '600' },
+  exerciseSubNote: { fontSize: 10, color: CHALK, opacity: 0.4, fontStyle: 'italic', marginTop: 1 },
   exerciseTypeTag: {
     width: 16, height: 16, borderRadius: 4, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -726,39 +786,38 @@ const styles = StyleSheet.create({
   exerciseTypeTagText: { fontSize: 9, fontWeight: '700' },
   exerciseSubSetsPill: {
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
-    backgroundColor: Colors.surfaceElevated, flexShrink: 0,
+    backgroundColor: 'rgba(243,246,239,0.08)', flexShrink: 0,
   },
-  exerciseSubSetsPillText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
+  exerciseSubSetsPillText: { fontSize: 11, fontWeight: '700', color: CHALK },
   exerciseSubDeleteBtn: { padding: 4 },
-  progressTrack: { height: 3, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
+  progressTrack: { height: 3, borderRadius: 999, backgroundColor: 'rgba(243,246,239,0.08)', overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
-  setsNow: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  setsDivider: { fontSize: 11, fontWeight: '400', color: Colors.textMuted },
-  setsWeekTarget: { fontSize: 10, color: Colors.textMuted },
-  doneChip: { fontSize: 10, fontWeight: '700' },
+  setsNow: { fontSize: 18, fontWeight: '800', color: CHALK },
+  setsDivider: { fontSize: 12, fontWeight: '500', color: CHALK, opacity: 0.4 },
 
-  // "Ngoài kế hoạch" — đồng bộ theo kiểu card của danh sách chính, chỉ đổi
-  // tông màu cảnh báo (warning) để phân biệt ngữ nghĩa "chưa nằm trong kế hoạch".
+  // "Ngoài kế hoạch" — tông ấm cảnh báo, tách biệt khỏi lime/xanh lá
   outOfPlanSection: {},
   outOfPlanHeader: { marginBottom: 8 },
-  outOfPlanTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  outOfPlanSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  outOfPlanTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6, color: CHALK, opacity: 0.7 },
+  outOfPlanSub: { fontSize: 11, color: CHALK, opacity: 0.4, marginTop: 2 },
   outOfPlanCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1, borderColor: Colors.warning + '35', backgroundColor: Colors.warning + '0c',
+    borderWidth: 1, borderColor: Colors.warning + '40', backgroundColor: Colors.warning + '12',
     borderRadius: 12, paddingHorizontal: 10, paddingVertical: 9,
   },
+  outOfPlanDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.warning, flexShrink: 0 },
+  outOfPlanName: { fontSize: 13, fontWeight: '700', color: CHALK },
   outOfPlanAddBtn: {
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: Colors.warning, flexShrink: 0,
   },
-  outOfPlanAddBtnText: { fontSize: 11, fontWeight: '700', color: Colors.bg },
+  outOfPlanAddBtnText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3, color: INK },
 
   emptyBox: {
     marginHorizontal: 20, marginTop: 12,
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 14,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 16, paddingVertical: 24, alignItems: 'center',
+    borderWidth: 1, borderColor: HAIRLINE, borderRadius: 16,
+    backgroundColor: INK_RAISED,
+    paddingHorizontal: 16, paddingVertical: 28, alignItems: 'center',
   },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 6 },
-  emptyText: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 15, fontWeight: '800', color: CHALK, marginBottom: 6 },
+  emptyText: { fontSize: 13, color: CHALK, opacity: 0.5, textAlign: 'center', lineHeight: 20 },
 });
