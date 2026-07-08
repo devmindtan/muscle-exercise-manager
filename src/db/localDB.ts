@@ -16,6 +16,11 @@ export type ExerciseWithStats = LocalExercise & {
   weekly_sets?: number;
 };
 
+export type LocalExerciseSecondaryMuscle = Database['public']['Tables']['exercise_secondary_muscles']['Row'] & {
+  dirty?: 0 | 1;
+  deleted?: 0 | 1;
+};
+
 export type LocalWorkoutLog = Database['public']['Tables']['workout_logs']['Row'] & {
   dirty?: 0 | 1;
   deleted?: 0 | 1;
@@ -229,10 +234,21 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       image_uri TEXT,
       is_active INTEGER DEFAULT 1,
       parent_exercise_id TEXT,
+      exercise_type TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       dirty INTEGER DEFAULT 0,
       deleted INTEGER DEFAULT 0,
+      FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
+    );
+    CREATE TABLE IF NOT EXISTS exercise_secondary_muscles (
+      id TEXT PRIMARY KEY,
+      exercise_id TEXT NOT NULL,
+      muscle_group_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      dirty INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0,
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id),
       FOREIGN KEY (muscle_group_id) REFERENCES muscle_groups(id)
     );
     CREATE TABLE IF NOT EXISTS workout_logs (
@@ -315,6 +331,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       user_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group_id ON exercises(muscle_group_id);
+    CREATE INDEX IF NOT EXISTS idx_exercise_secondary_muscles_exercise_id ON exercise_secondary_muscles(exercise_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_exercise_id ON workout_logs(exercise_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_muscle_group_id ON workout_logs(muscle_group_id);
     CREATE INDEX IF NOT EXISTS idx_workout_logs_logged_at ON workout_logs(logged_at);
@@ -473,6 +490,7 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'exercises', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'exercises', 'is_active', 'INTEGER DEFAULT 1');
   await ensureColumn(database, 'exercises', 'parent_exercise_id', 'TEXT');
+  await ensureColumn(database, 'exercises', 'exercise_type', 'TEXT');
 
   await ensureColumn(database, 'workout_logs', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
@@ -797,8 +815,8 @@ export async function upsertExercise(exercise: LocalExercise) {
   const dirty = exercise.dirty ?? 0;
   const deleted = exercise.deleted ?? 0;
   await database.runAsync(
-    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, exercise_type, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
       muscle_group_id = COALESCE(excluded.muscle_group_id, muscle_group_id),
       name = COALESCE(excluded.name, name),
@@ -806,6 +824,7 @@ export async function upsertExercise(exercise: LocalExercise) {
       image_uri = COALESCE(excluded.image_uri, image_uri),
       is_active = COALESCE(excluded.is_active, is_active),
       parent_exercise_id = excluded.parent_exercise_id,
+      exercise_type = excluded.exercise_type,
       updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
@@ -817,12 +836,90 @@ export async function upsertExercise(exercise: LocalExercise) {
       exercise.image_uri || null,
       exercise.is_active ? 1 : 0,
       exercise.parent_exercise_id ?? null,
+      exercise.exercise_type ?? null,
       exercise.created_at,
       exercise.updated_at || new Date().toISOString(),
       dirty,
       deleted,
     ]
   );
+}
+
+// exercise_secondary_muscles — ghi đè toàn bộ mỗi khi lưu (xoá hết + insert
+// lại), không tính diff thêm/xoá từng dòng để giảm độ phức tạp.
+export async function getExerciseSecondaryMuscleIds(exerciseId: string): Promise<string[]> {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync<{ muscle_group_id: string }>(
+    'SELECT muscle_group_id FROM exercise_secondary_muscles WHERE exercise_id = ? AND deleted = 0',
+    [exerciseId]
+  );
+  return rows.map((r) => r.muscle_group_id);
+}
+
+export async function setExerciseSecondaryMuscleIds(exerciseId: string, muscleGroupIds: string[]) {
+  const database = await getDatabase();
+  const existing = await database.getAllAsync<{ id: string; muscle_group_id: string }>(
+    'SELECT id, muscle_group_id FROM exercise_secondary_muscles WHERE exercise_id = ? AND deleted = 0',
+    [exerciseId]
+  );
+  const keepIds = new Set(muscleGroupIds);
+  const existingGroupIds = new Set(existing.map((row) => row.muscle_group_id));
+  const toRemove = existing.filter((row) => !keepIds.has(row.muscle_group_id));
+  const toAdd = muscleGroupIds.filter((id) => !existingGroupIds.has(id));
+
+  // Không hard-delete ngay — đánh dấu deleted=1,dirty=1 để sync push kịp
+  // biết mà xoá trên remote (bảng Postgres không có deleted_at, xoá cứng).
+  await database.withTransactionAsync(async () => {
+    for (const row of toRemove) {
+      await database.runAsync(
+        'UPDATE exercise_secondary_muscles SET deleted = 1, dirty = 1 WHERE id = ?',
+        [row.id]
+      );
+    }
+    for (const muscleGroupId of toAdd) {
+      await database.runAsync(
+        `INSERT INTO exercise_secondary_muscles (id, exercise_id, muscle_group_id, created_at, dirty, deleted)
+         VALUES (?, ?, ?, datetime('now'), 1, 0)
+         ON CONFLICT(id) DO UPDATE SET deleted = 0, dirty = 1`,
+        [`${exerciseId}::${muscleGroupId}`, exerciseId, muscleGroupId]
+      );
+    }
+  });
+}
+
+// Upsert 1 dòng đơn lẻ từ remote pull (khác setExerciseSecondaryMuscleIds —
+// hàm đó ghi đè toàn bộ theo exercise_id, dùng cho luồng lưu từ UI).
+export async function upsertExerciseSecondaryMuscle(row: LocalExerciseSecondaryMuscle) {
+  const database = await getDatabase();
+  await database.runAsync(
+    `INSERT INTO exercise_secondary_muscles (id, exercise_id, muscle_group_id, created_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+      exercise_id = excluded.exercise_id,
+      muscle_group_id = excluded.muscle_group_id,
+      dirty = COALESCE(excluded.dirty, dirty),
+      deleted = COALESCE(excluded.deleted, deleted)`,
+    [
+      row.id,
+      row.exercise_id,
+      row.muscle_group_id,
+      row.created_at,
+      row.dirty ?? 0,
+      row.deleted ?? 0,
+    ]
+  );
+}
+
+export async function getDirtyExerciseSecondaryMuscles() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalExerciseSecondaryMuscle>(
+    'SELECT * FROM exercise_secondary_muscles WHERE dirty = 1'
+  );
+}
+
+export async function markExerciseSecondaryMuscleClean(id: string) {
+  const database = await getDatabase();
+  await database.runAsync('UPDATE exercise_secondary_muscles SET dirty = 0 WHERE id = ?', [id]);
 }
 
 export async function getDirtyExercises() {
@@ -958,6 +1055,10 @@ export async function markMissingMuscleGroupsDeleted(remoteIds: string[]) {
 
 export async function markMissingExercisesDeleted(remoteIds: string[]) {
   await markMissingRowsDeleted('exercises', remoteIds);
+}
+
+export async function markMissingExerciseSecondaryMusclesDeleted(remoteIds: string[]) {
+  await markMissingRowsDeleted('exercise_secondary_muscles', remoteIds);
 }
 
 export async function markMissingWorkoutLogsDeleted(remoteIds: string[]) {

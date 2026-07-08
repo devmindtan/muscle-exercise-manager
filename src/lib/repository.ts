@@ -473,6 +473,7 @@ export async function createExercise(data: {
   notes?: string;
   image_uri?: string | null;
   parentExerciseId?: string | null;
+  exerciseType?: 'compound' | 'isolation' | null;
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
@@ -488,6 +489,7 @@ export async function createExercise(data: {
       image_uri: data.image_uri ?? null,
       is_active: true,
       parent_exercise_id: data.parentExerciseId ?? null,
+      exercise_type: data.exerciseType ?? null,
       created_at: now,
       updated_at: now,
       deleted_at: null,
@@ -505,6 +507,7 @@ export async function createExercise(data: {
     image_uri: data.image_uri ?? null,
     is_active: 1,
     parent_exercise_id: data.parentExerciseId ?? null,
+    exercise_type: data.exerciseType ?? null,
     created_at: now,
     updated_at: now,
     dirty: 1,
@@ -523,6 +526,7 @@ export async function insertExercise(data: {
   image_uri?: string | null;
   is_active?: boolean;
   parent_exercise_id?: string | null;
+  exercise_type?: 'compound' | 'isolation' | null;
 }) {
   return createExercise({
     muscleGroupId: data.muscleGroupId || data.muscle_group_id || '',
@@ -530,7 +534,50 @@ export async function insertExercise(data: {
     notes: data.notes || undefined,
     image_uri: data.image_uri ?? null,
     parentExerciseId: data.parent_exercise_id ?? null,
+    exerciseType: data.exercise_type ?? null,
   });
+}
+
+// exercise_secondary_muscles — nhóm cơ phụ mà 1 bài Compound tác động tới,
+// ghi đè toàn bộ mỗi khi lưu (đơn giản hơn tính diff thêm/xoá từng dòng).
+export async function getExerciseSecondaryMuscles(exerciseId: string): Promise<string[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data, error } = await supabase
+      .from('exercise_secondary_muscles')
+      .select('muscle_group_id')
+      .eq('exercise_id', exerciseId)
+      .eq('user_id', userId);
+    if (error) throw error;
+    return (data || []).map((row) => row.muscle_group_id);
+  }
+
+  return LocalDB.getExerciseSecondaryMuscleIds(exerciseId);
+}
+
+export async function setExerciseSecondaryMuscles(exerciseId: string, muscleGroupIds: string[]): Promise<void> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { error: deleteError } = await supabase
+      .from('exercise_secondary_muscles')
+      .delete()
+      .eq('exercise_id', exerciseId)
+      .eq('user_id', userId);
+    if (deleteError) throw deleteError;
+
+    if (muscleGroupIds.length > 0) {
+      const rows = muscleGroupIds.map((muscleGroupId) => ({
+        exercise_id: exerciseId,
+        muscle_group_id: muscleGroupId,
+        user_id: userId,
+      }));
+      const { error: insertError } = await supabase.from('exercise_secondary_muscles').insert(rows);
+      if (insertError) throw insertError;
+    }
+    return;
+  }
+
+  await LocalDB.setExerciseSecondaryMuscleIds(exerciseId, muscleGroupIds);
 }
 
 export async function getActiveExercises(muscleGroupId: string) {

@@ -143,6 +143,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           image_uri: exercise.image_uri,
           is_active: typeof exercise.is_active === 'boolean' ? exercise.is_active : !!exercise.is_active,
           parent_exercise_id: exercise.parent_exercise_id ?? null,
+          exercise_type: exercise.exercise_type ?? null,
           deleted_at: isDeleted ? new Date().toISOString() : null,
         }) as any);
         if (error) {
@@ -153,6 +154,29 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         }
       } catch (e: any) {
         errors.push(`Error syncing exercise ${exercise.id}: ${e.message}`);
+      }
+    }
+
+    // exercise_secondary_muscles — bảng junction đơn giản, không có deleted_at
+    // ở Postgres nên xoá cứng khi deleted=1 (thay vì upsert deleted_at).
+    const dirtySecondaryMuscles = await LocalDB.getDirtyExerciseSecondaryMuscles();
+    for (const row of dirtySecondaryMuscles) {
+      try {
+        if (row.deleted) {
+          const { error } = await supabase.from('exercise_secondary_muscles').delete().eq('id', row.id);
+          if (error) throw error;
+        } else {
+          const { error } = await (supabase.from('exercise_secondary_muscles').upsert({
+            id: row.id,
+            user_id: userId,
+            exercise_id: row.exercise_id,
+            muscle_group_id: row.muscle_group_id,
+          }) as any);
+          if (error) throw error;
+        }
+        await LocalDB.markExerciseSecondaryMuscleClean(row.id);
+      } catch (e: any) {
+        errors.push(`Error syncing exercise secondary muscle ${row.id}: ${e.message}`);
       }
     }
 
@@ -443,6 +467,34 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
       }
     } catch (e: any) {
       errors.push(`Error pulling exercises: ${e.message}`);
+    }
+
+    // exercise_secondary_muscles — luôn pull toàn bộ (bảng nhỏ, giống exercises)
+    try {
+      const { data: remoteSecondaryMuscles, error: secondaryMuscleError } = await supabase
+        .from('exercise_secondary_muscles')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (secondaryMuscleError) {
+        errors.push(`Failed to fetch exercise secondary muscles: ${secondaryMuscleError.message}`);
+      } else if (remoteSecondaryMuscles && Array.isArray(remoteSecondaryMuscles)) {
+        for (const row of remoteSecondaryMuscles) {
+          const rowData = row as any;
+          await LocalDB.upsertExerciseSecondaryMuscle({
+            id: rowData.id,
+            exercise_id: rowData.exercise_id,
+            muscle_group_id: rowData.muscle_group_id,
+            created_at: rowData.created_at,
+            user_id: rowData.user_id,
+            dirty: 0,
+            deleted: 0,
+          });
+        }
+        await LocalDB.markMissingExerciseSecondaryMusclesDeleted(remoteSecondaryMuscles.map((row: any) => row.id));
+      }
+    } catch (e: any) {
+      errors.push(`Error pulling exercise secondary muscles: ${e.message}`);
     }
 
     // Muscle goals — luôn pull

@@ -32,6 +32,8 @@ import {
   getMuscleGroups,
   softDeleteExercise,
   setExerciseActive,
+  getExerciseSecondaryMuscles,
+  setExerciseSecondaryMuscles,
 } from '@/src/lib/repository';
 import { ExerciseWithStats } from '@/src/db/localDB';
 import { MuscleGroup } from '@/src/types/database';
@@ -105,6 +107,8 @@ export default function MuscleDetailScreen() {
   const [exNotes, setExNotes] = useState('');
   const [exImageUri, setExImageUri] = useState('');
   const [exParentId, setExParentId] = useState<string | null>(null);
+  const [exType, setExType] = useState<'compound' | 'isolation' | null>(null);
+  const [exSecondaryIds, setExSecondaryIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [exError, setExError] = useState('');
   const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
@@ -128,7 +132,9 @@ export default function MuscleDetailScreen() {
     image_uri: '',
     muscle_group_id: '',
     parent_exercise_id: null as string | null,
+    exercise_type: null as 'compound' | 'isolation' | null,
   });
+  const [editSecondaryIds, setEditSecondaryIds] = useState<Set<string>>(new Set());
   const [loadError, setLoadError] = useState('');
 
   // Track xem ảnh đang upload không — dùng để block nút Save
@@ -206,6 +212,8 @@ export default function MuscleDetailScreen() {
   const closeAddExerciseModal = () => {
     blurFocusedElement();
     setShowAddExercise(false);
+    setExType(null);
+    setExSecondaryIds(new Set());
   };
 
   const closeEditExerciseModal = () => {
@@ -312,20 +320,30 @@ export default function MuscleDetailScreen() {
       setExError('Vui lòng nhập tên bài tập');
       return;
     }
+    if (!exType) {
+      setExError('Vui lòng chọn loại bài tập (Compound/Isolation)');
+      return;
+    }
     setSaving(true);
     try {
-      await insertExercise({
+      const created = await insertExercise({
         muscle_group_id: id as string,
         name: exName.trim(),
         notes: exNotes.trim() || null,
         image_uri: exImageUri.trim() || null,
         parent_exercise_id: exParentId,
+        exercise_type: exType,
       });
+      if (exType === 'compound' && exSecondaryIds.size > 0) {
+        await setExerciseSecondaryMuscles(created.id, Array.from(exSecondaryIds));
+      }
       setShowAddExercise(false);
       setExName('');
       setExNotes('');
       setExImageUri('');
       setExParentId(null);
+      setExType(null);
+      setExSecondaryIds(new Set());
       load();
     } catch (e: unknown) {
       setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
@@ -342,8 +360,15 @@ export default function MuscleDetailScreen() {
       image_uri: exercise.image_uri || '',
       muscle_group_id: exercise.muscle_group_id,
       parent_exercise_id: exercise.parent_exercise_id ?? null,
+      exercise_type: exercise.exercise_type ?? null,
     });
+    setEditSecondaryIds(new Set());
     setShowEditExercise(true);
+    if (exercise.exercise_type === 'compound') {
+      getExerciseSecondaryMuscles(exercise.id)
+        .then((ids) => setEditSecondaryIds(new Set(ids)))
+        .catch(() => {});
+    }
   };
 
   const toggleVariants = (baseId: string) => {
@@ -401,6 +426,10 @@ export default function MuscleDetailScreen() {
       setExError('Tên bài tập không được để trống');
       return;
     }
+    if (!editExerciseForm.exercise_type) {
+      setExError('Vui lòng chọn loại bài tập (Compound/Isolation)');
+      return;
+    }
     setSaving(true);
     setExError('');
     try {
@@ -410,7 +439,13 @@ export default function MuscleDetailScreen() {
         image_uri: editExerciseForm.image_uri.trim() || null,
         muscle_group_id: editExerciseForm.muscle_group_id,
         parent_exercise_id: editExerciseForm.parent_exercise_id,
+        exercise_type: editExerciseForm.exercise_type,
       });
+      // Không compound nữa -> dọn sạch nhóm cơ phụ đã gán trước đó.
+      await setExerciseSecondaryMuscles(
+        editingExercise.id,
+        editExerciseForm.exercise_type === 'compound' ? Array.from(editSecondaryIds) : [],
+      );
       setShowEditExercise(false);
       setEditingExercise(null);
       load();
@@ -769,6 +804,48 @@ export default function MuscleDetailScreen() {
               ))}
             </View>
 
+            <Text style={styles.label}>Loại bài tập</Text>
+            <View style={styles.muscleGroupPicker}>
+              {(['compound', 'isolation'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.muscleGroupChip, exType === t && { backgroundColor: group.color, borderColor: group.color }]}
+                  onPress={() => setExType(t)}
+                >
+                  <Text style={[styles.muscleGroupChipText, exType === t && styles.muscleGroupChipTextActive]}>
+                    {t === 'compound' ? 'Compound' : 'Isolation'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {exType === 'compound' && (
+              <>
+                <Text style={styles.label}>Nhóm cơ phụ tác động (tuỳ chọn)</Text>
+                <View style={styles.muscleGroupPicker}>
+                  {allMuscleGroups.filter((mg) => mg.id !== id).map((mg) => {
+                    const isChosen = exSecondaryIds.has(mg.id);
+                    return (
+                      <TouchableOpacity
+                        key={mg.id}
+                        style={[styles.muscleGroupChip, isChosen && { backgroundColor: mg.color, borderColor: mg.color }]}
+                        onPress={() => setExSecondaryIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(mg.id)) next.delete(mg.id); else next.add(mg.id);
+                          return next;
+                        })}
+                      >
+                        <View style={[styles.chipDot, { backgroundColor: isChosen ? Colors.bg : mg.color }]} />
+                        <Text style={[styles.muscleGroupChipText, isChosen && styles.muscleGroupChipTextActive]}>
+                          {mg.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
             {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
 
             <TouchableOpacity
@@ -890,6 +967,48 @@ export default function MuscleDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={styles.label}>Loại bài tập</Text>
+            <View style={styles.muscleGroupPicker}>
+              {(['compound', 'isolation'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.muscleGroupChip, editExerciseForm.exercise_type === t && { backgroundColor: group.color, borderColor: group.color }]}
+                  onPress={() => setEditExerciseForm((f) => ({ ...f, exercise_type: t }))}
+                >
+                  <Text style={[styles.muscleGroupChipText, editExerciseForm.exercise_type === t && styles.muscleGroupChipTextActive]}>
+                    {t === 'compound' ? 'Compound' : 'Isolation'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {editExerciseForm.exercise_type === 'compound' && (
+              <>
+                <Text style={styles.label}>Nhóm cơ phụ tác động (tuỳ chọn)</Text>
+                <View style={styles.muscleGroupPicker}>
+                  {allMuscleGroups.filter((mg) => mg.id !== editExerciseForm.muscle_group_id).map((mg) => {
+                    const isChosen = editSecondaryIds.has(mg.id);
+                    return (
+                      <TouchableOpacity
+                        key={mg.id}
+                        style={[styles.muscleGroupChip, isChosen && { backgroundColor: mg.color, borderColor: mg.color }]}
+                        onPress={() => setEditSecondaryIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(mg.id)) next.delete(mg.id); else next.add(mg.id);
+                          return next;
+                        })}
+                      >
+                        <View style={[styles.chipDot, { backgroundColor: isChosen ? Colors.bg : mg.color }]} />
+                        <Text style={[styles.muscleGroupChipText, isChosen && styles.muscleGroupChipTextActive]}>
+                          {mg.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             {exError ? <Text style={styles.errorText}>{exError}</Text> : null}
 

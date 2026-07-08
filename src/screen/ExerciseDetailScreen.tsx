@@ -38,9 +38,11 @@ import {
   softDeleteExercise,
   getMuscleGroups,
   getExercises,
+  getExerciseSecondaryMuscles,
 } from '@/src/lib/repository';
 import { Exercise, WorkoutLog, MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
+import { getGroupTone } from '@/src/lib/planTone';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('vi-VN', {
@@ -101,6 +103,7 @@ export default function ExerciseDetailScreen() {
   const [logFilter, setLogFilter] = useState<'all' | 'notes' | 'no-notes'>('all');
   const [allMuscleGroups, setAllMuscleGroups] = useState<MuscleGroup[]>([]);
   const [siblingExercises, setSiblingExercises] = useState<Exercise[]>([]);
+  const [secondaryMuscleIds, setSecondaryMuscleIds] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -112,6 +115,7 @@ export default function ExerciseDetailScreen() {
     if (ex) {
       setExercise(ex);
       setSiblingExercises((await getExercises(ex.muscle_group_id)) as Exercise[]);
+      setSecondaryMuscleIds(ex.exercise_type === 'compound' ? await getExerciseSecondaryMuscles(ex.id) : []);
     }
     setAllMuscleGroups(groups);
     // Sort mới nhất lên đầu
@@ -261,6 +265,38 @@ export default function ExerciseDetailScreen() {
           )}
           <View style={styles.headerInfo}>
             <Text style={styles.exerciseName}>{exercise.name}</Text>
+            <View style={styles.muscleBadgeRow}>
+              {(() => {
+                const primaryGroup = allMuscleGroups.find((mg) => mg.id === exercise.muscle_group_id);
+                if (!primaryGroup) return null;
+                const tone = getGroupTone(primaryGroup.color);
+                return (
+                  <View style={[styles.muscleBadgePrimary, { backgroundColor: tone.bar }]}>
+                    <Text style={styles.muscleBadgePrimaryText}>{primaryGroup.name}</Text>
+                  </View>
+                );
+              })()}
+              {exercise.exercise_type === 'compound' && secondaryMuscleIds.map((mgId) => {
+                const mg = allMuscleGroups.find((g) => g.id === mgId);
+                if (!mg) return null;
+                const tone = getGroupTone(mg.color);
+                return (
+                  <View
+                    key={mgId}
+                    style={[styles.muscleBadgeSecondary, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}
+                  >
+                    <Text style={[styles.muscleBadgeSecondaryText, { color: tone.badgeText }]}>{mg.name}</Text>
+                  </View>
+                );
+              })}
+              {exercise.exercise_type && (
+                <View style={styles.exerciseTypeBadge}>
+                  <Text style={styles.exerciseTypeBadgeText}>
+                    {exercise.exercise_type === 'compound' ? 'Compound' : 'Isolation'}
+                  </Text>
+                </View>
+              )}
+            </View>
             {exercise.parent_exercise_id ? (
               <Text style={styles.variantOfText}>
                 Biến thể của: {siblingExercises.find((e) => e.id === exercise.parent_exercise_id)?.name || '...'}
@@ -692,6 +728,16 @@ const styles = StyleSheet.create({
     color: Colors.text,
     letterSpacing: -0.5,
   },
+  muscleBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  muscleBadgePrimary: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  muscleBadgePrimaryText: { fontSize: 12, fontWeight: '700', color: Colors.bg },
+  muscleBadgeSecondary: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
+  muscleBadgeSecondaryText: { fontSize: 11, fontWeight: '600' },
+  exerciseTypeBadge: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surfaceElevated,
+  },
+  exerciseTypeBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
   notes: {
     fontSize: 14,
     color: Colors.textMuted,

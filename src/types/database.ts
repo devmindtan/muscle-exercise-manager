@@ -48,6 +48,7 @@ export type Database = {
           image_uri?: string | null;
           is_active?: boolean;
           parent_exercise_id?: string | null;
+          exercise_type?: 'compound' | 'isolation' | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -60,6 +61,7 @@ export type Database = {
           image_uri?: string | null;
           is_active?: boolean;
           parent_exercise_id?: string | null;
+          exercise_type?: 'compound' | 'isolation' | null;
           updated_at?: string;
           deleted_at?: string | null;
           sync_status?: 'pending' | 'synced' | 'failed';
@@ -67,6 +69,36 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: 'exercises_muscle_group_id_fkey';
+            columns: ['muscle_group_id'];
+            isOneToOne: false;
+            referencedRelation: 'muscle_groups';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      exercise_secondary_muscles: {
+        Row: ExerciseSecondaryMuscle;
+        Insert: {
+          id?: string;
+          exercise_id: string;
+          muscle_group_id: string;
+          created_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          exercise_id?: string;
+          muscle_group_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'exercise_secondary_muscles_exercise_id_fkey';
+            columns: ['exercise_id'];
+            isOneToOne: false;
+            referencedRelation: 'exercises';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'exercise_secondary_muscles_muscle_group_id_fkey';
             columns: ['muscle_group_id'];
             isOneToOne: false;
             referencedRelation: 'muscle_groups';
@@ -507,10 +539,22 @@ export type Exercise = {
   image_uri: string | null;
   is_active: boolean;
   parent_exercise_id: string | null;
+  exercise_type: 'compound' | 'isolation' | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
   sync_status: 'pending' | 'synced' | 'failed';
+  user_id: string | null;
+};
+
+// Nhóm cơ phụ mà 1 bài Compound tác động tới, ngoài nhóm cơ chính
+// (exercises.muscle_group_id). Bảng junction đơn giản, ghi đè toàn bộ mỗi
+// khi lưu (xem setExerciseSecondaryMuscles trong repository.ts).
+export type ExerciseSecondaryMuscle = {
+  id: string;
+  exercise_id: string;
+  muscle_group_id: string;
+  created_at: string;
   user_id: string | null;
 };
 
