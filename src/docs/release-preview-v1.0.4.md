@@ -3,8 +3,9 @@
 Ứng dụng workout tracking offline-first, tối ưu cho ghi log nhanh, lưu local ổn định và tự động đồng bộ cloud khi có mạng. Hỗ trợ Google Sign-In và chế độ khách.
 
 ## Phạm vi bản phát hành
-- Từ commit sau bản release v1.0.3 (`70a1ca2`) đến `HEAD` hiện tại (`1a7c59c`).
-- Tổng cộng 50 commit — đây là **bản cập nhật lớn**, gồm 3 mảng tính năng hoàn toàn mới: Dinh dưỡng, Chia sẻ/Cộng đồng kế hoạch tập, và Xuất/Nhập dữ liệu.
+- Từ commit sau bản release v1.0.3 (`70a1ca2`) đến hết ngày 07/07/2026 (`2bb0441`).
+- Tổng cộng 49 commit — đây là **bản cập nhật lớn**, gồm 2 mảng tính năng hoàn toàn mới: Dinh dưỡng, Chia sẻ/Cộng đồng kế hoạch tập.
+- Các commit từ 08/07/2026 trở đi (Xuất/Nhập dữ liệu JSON, dọn kiểu dữ liệu `as any`, v.v.) chuyển sang bản kế tiếp.
 
 ---
 
@@ -23,23 +24,18 @@
 - Biến thể bài tập (bài gốc/bài biến thể): thêm schema + UI, cho phép chọn đúng biến thể muốn tập ở từng ô trong kế hoạch tuần.
 - Chọn bài tập cụ thể theo đa lựa chọn, kèm thumbnail, cho từng nhóm cơ trong kế hoạch tuần.
 
-### 3) Xuất / Nhập dữ liệu qua JSON — tính năng hoàn toàn mới
-- Xuất một kế hoạch tập ra file JSON để nhờ AI/chuyên gia phân tích, sau đó nhập lại bản đã cải thiện.
-- Xuất toàn bộ thư viện nhóm cơ + bài tập (kèm biến thể) ra JSON — chỉ xuất, chưa hỗ trợ nhập lại.
-- Nhập file JSON dùng lại đúng pipeline của tính năng chia sẻ kế hoạch (mã chia sẻ và file JSON đi chung một hàm xử lý, không tách riêng logic).
-
-### 4) Điều hướng & UI tổng thể
+### 3) Điều hướng & UI tổng thể
 - Gộp "Kế hoạch" vào tab "Tập luyện", tách "Dinh dưỡng" ra tab riêng; dọn lại `MusclesScreen`.
 - Chuẩn hoá icon toàn bộ tab bar (size 20, strokeWidth 1.5), sửa khoảng cách/label lệch không đều.
 - Sửa sliding-pill indicator không hiện ở lần mount đầu trong `SegmentedSubTabs`; dùng spinner thay cho chữ "Đang tải..." ở nhiều màn hình.
 - Gọn lại thẻ kế hoạch trong tab "Giáo án của tôi"; sửa bàn phím che input ở modal tài khoản/dinh dưỡng.
 
-### 5) Bảo mật, Đồng bộ & Hiệu năng
+### 4) Bảo mật, Đồng bộ & Hiệu năng
 - Siết lại RLS cho các bảng cũ (`muscle_groups`, `exercises`, `workout_logs`) và sửa lỗ hổng đồng bộ đa thiết bị.
 - Thêm index `user_id` còn thiếu, dọn schema drift trên Supabase.
 - Sửa Dashboard không tự tải lại dữ liệu "Tuần này" sau lần đồng bộ đầu tiên.
 
-### 6) Công cụ phát triển (không ảnh hưởng người dùng cuối)
+### 5) Công cụ phát triển (không ảnh hưởng người dùng cuối)
 - Thêm CodeGraph + Graphify (knowledge graph tra cứu code) và enforce qua hook bắt buộc dùng trước khi grep/đọc file thô, giúp làm việc trên codebase nhanh và tiết kiệm hơn.
 
 ---
@@ -52,9 +48,7 @@
 - Upload ảnh minh họa và tự đồng bộ khi online.
 
 ## Giới hạn và lưu ý
-- Nhập nhóm cơ/bài tập từ file JSON chưa hỗ trợ (chỉ xuất) — sẽ cân nhắc màn hình xác nhận diff ở bản sau nếu cần.
-- Nút "Nhập từ file JSON" cần bản build native mới (thêm `expo-document-picker`) mới dùng được — bản cài sẵn hiện tại chưa có module native này.
-- Chưa có test tự động, thông báo đẩy.
+- Chưa có test tự động, thông báo đẩy, xuất/nhập dữ liệu.
 
 ---
 
@@ -71,5 +65,3 @@
 **Bảo mật, đồng bộ & hiệu năng (2 commit):** `a5bed6c` `169c102`
 
 **Công cụ phát triển (2 commit):** `266bebf` `2bb0441`
-
-**Xuất / Nhập dữ liệu (1 commit):** `1a7c59c`
