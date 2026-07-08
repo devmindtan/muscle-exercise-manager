@@ -49,12 +49,9 @@ tmp/
 # claude code local overrides (personal permission settings, not shared config)
 .claude/settings.local.json
 
-# graphify: machine-local paths, not portable across clones/machines
-graphify-out/.graphify_python
-graphify-out/.graphify_root
-
-# graphify: dated backup snapshots from `graphify update` (redundant with git history)
-graphify-out/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+# graphify: generated knowledge graph, kept local only
+graphify-out/
 
 # codegraph: local SQLite index + daemon state, not portable across clones/machines
 .codegraph/
+repomix-output.xml
