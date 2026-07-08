@@ -30,6 +30,14 @@ import { MuscleGroup, Exercise } from '@/src/types/database';
 
 type MuscleGroupWithCount = MuscleGroup & { exercise_count?: number };
 
+// 1 thẻ hiển thị/nhóm cơ trong 1 ngày, gộp mọi bài tập (entry) được gán cho
+// nhóm cơ đó — thay cho việc hiển thị phẳng từng dòng weekly_plan_entries.
+type MuscleGroupCard = {
+  muscleGroupId: string;
+  entries: WeeklyPlanEntry[];
+  totalSets: number;
+};
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DAY_LABEL_FULL: Record<WeekDayKey, string> = {
@@ -255,6 +263,23 @@ export default function WeeklyPlanScreen() {
     return map;
   }, [plans]);
 
+  // Gộp các dòng cùng nhóm cơ (nhiều bài tập/1 nhóm cơ/1 ngày) thành 1 thẻ —
+  // plans đã được sortPlans() sắp theo dayKey -> muscleGroupId nên các dòng
+  // cùng nhóm cơ luôn nằm liền kề nhau, Map giữ đúng thứ tự xuất hiện đầu tiên.
+  function groupEntriesByMuscle(entries: WeeklyPlanEntry[]): MuscleGroupCard[] {
+    const map = new Map<string, WeeklyPlanEntry[]>();
+    entries.forEach((entry) => {
+      const arr = map.get(entry.muscleGroupId) || [];
+      arr.push(entry);
+      map.set(entry.muscleGroupId, arr);
+    });
+    return Array.from(map.entries()).map(([muscleGroupId, groupEntries]) => ({
+      muscleGroupId,
+      entries: groupEntries,
+      totalSets: groupEntries.reduce((sum, e) => sum + e.sets, 0),
+    }));
+  }
+
   const setsPerDay = useMemo(() => {
     const map: Record<WeekDayKey, number> = {} as any;
     WEEK_DAYS.forEach((d) => { map[d.key] = byDay[d.key].reduce((s, e) => s + e.sets, 0); });
@@ -267,9 +292,13 @@ export default function WeeklyPlanScreen() {
   );
 
   const selectedEntries = useMemo(() => byDay[selectedDay] ?? [], [byDay, selectedDay]);
-  const selectedEntryIds = useMemo(
-    () => new Set(selectedEntries.map((entry) => entry.muscleGroupId)),
+  const selectedMuscleGroups = useMemo(
+    () => groupEntriesByMuscle(selectedEntries),
     [selectedEntries],
+  );
+  const selectedEntryIds = useMemo(
+    () => new Set(selectedMuscleGroups.map((group) => group.muscleGroupId)),
+    [selectedMuscleGroups],
   );
   const outOfPlanEntries = useMemo(() => {
     return Object.entries(actualSetsByMuscle)
@@ -402,7 +431,7 @@ export default function WeeklyPlanScreen() {
             </Text>
           </View>
 
-          {selectedEntries.length === 0 && outOfPlanEntries.length === 0 ? (
+          {selectedMuscleGroups.length === 0 && outOfPlanEntries.length === 0 ? (
             <View style={styles.dayRestRow}>
               <Text style={styles.dayRestText}>Nghỉ ngơi — chưa có lịch tập</Text>
               <TouchableOpacity style={styles.dayAddInline} onPress={openCreate}>
@@ -412,31 +441,58 @@ export default function WeeklyPlanScreen() {
             </View>
           ) : (
             <View style={styles.daySections}>
-              {selectedEntries.length > 0 && (
+              {selectedMuscleGroups.length > 0 && (
                 <View style={styles.muscleList}>
-                  {selectedEntries.map((entry, idx) => {
-                    const col = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
-                    const isLast = idx === selectedEntries.length - 1;
-                    const actualSets = actualSetsByMuscle[entry.muscleGroupId] ?? 0;
-                    const targetSets = targetSetsByMuscle[entry.muscleGroupId] ?? 0;
-                    const pct = entry.sets > 0 ? Math.min(actualSets / entry.sets, 1) : 0;
-                    const done = actualSets >= entry.sets && entry.sets > 0;
+                  {selectedMuscleGroups.map((group, idx) => {
+                    const col = colorByMuscle[group.muscleGroupId] ?? getGroupTone();
+                    const isLast = idx === selectedMuscleGroups.length - 1;
+                    const actualSets = actualSetsByMuscle[group.muscleGroupId] ?? 0;
+                    const targetSets = targetSetsByMuscle[group.muscleGroupId] ?? 0;
+                    const totalSets = group.totalSets;
+                    const pct = totalSets > 0 ? Math.min(actualSets / totalSets, 1) : 0;
+                    const done = actualSets >= totalSets && totalSets > 0;
                     const doneAccent = done ? Colors.success : col.bar;
+                    const hasMultiple = group.entries.length > 1;
+                    const singleEntry = group.entries[0];
                     return (
-                      <View key={entry.id} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
+                      <View key={group.muscleGroupId} style={[styles.muscleRow, !isLast && styles.muscleRowBorder]}>
                         <View style={[styles.entryDot, { backgroundColor: doneAccent }]} />
                         <View style={styles.muscleInfo}>
                           <Text style={styles.muscleName} numberOfLines={1}>
-                            {muscleNameById[entry.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
+                            {muscleNameById[group.muscleGroupId] ?? 'Nhóm cơ đã xoá'}{' '}
                             <Text style={[styles.setsNow, done && { color: Colors.success }]}>
                               {dayProgressLoading ? '…' : actualSets}
-                              <Text style={styles.setsDivider}> / {entry.sets}</Text>
+                              <Text style={styles.setsDivider}> / {totalSets}</Text>
                             </Text>
                           </Text>
-                          {entry.exerciseId && exerciseNameById[entry.exerciseId] ? (
-                            <Text style={styles.muscleNote} numberOfLines={1}>🏋 {exerciseNameById[entry.exerciseId]}</Text>
+                          {!hasMultiple && singleEntry.exerciseId && exerciseNameById[singleEntry.exerciseId] ? (
+                            <Text style={styles.muscleNote} numberOfLines={1}>🏋 {exerciseNameById[singleEntry.exerciseId]}</Text>
                           ) : null}
-                          {entry.note ? <Text style={styles.muscleNote} numberOfLines={1}>{entry.note}</Text> : null}
+                          {!hasMultiple && singleEntry.note ? (
+                            <Text style={styles.muscleNote} numberOfLines={1}>{singleEntry.note}</Text>
+                          ) : null}
+                          {hasMultiple && (
+                            <View style={styles.exerciseSubList}>
+                              {group.entries.map((entry) => (
+                                <View key={entry.id} style={styles.exerciseSubRow}>
+                                  <View style={styles.exerciseSubInfo}>
+                                    <Text style={styles.exerciseSubName} numberOfLines={1}>
+                                      🏋 {entry.exerciseId && exerciseNameById[entry.exerciseId]
+                                        ? exerciseNameById[entry.exerciseId]
+                                        : 'Chưa chọn bài'}
+                                      <Text style={styles.exerciseSubSets}> · {entry.sets} sets</Text>
+                                    </Text>
+                                    {entry.note ? (
+                                      <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
+                                    ) : null}
+                                  </View>
+                                  <TouchableOpacity style={styles.exerciseSubDeleteBtn} onPress={() => remove(entry.id)} hitSlop={8}>
+                                    <Text style={styles.exerciseSubDeleteText}>Xoá</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ))}
+                            </View>
+                          )}
                           <View style={styles.progressTrack}>
                             <View style={[styles.progressFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: doneAccent }]} />
                           </View>
@@ -447,12 +503,14 @@ export default function WeeklyPlanScreen() {
                             : <Text style={styles.setsWeekTarget}>mục tiêu {targetSets}s/tuần</Text>
                           }
                           <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(entry)}>
+                            <TouchableOpacity style={styles.actionEdit} onPress={() => openEdit(singleEntry)}>
                               <Text style={styles.actionEditText}>Sửa</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionDelete} onPress={() => remove(entry.id)}>
-                              <Text style={styles.actionDeleteText}>Xoá</Text>
-                            </TouchableOpacity>
+                            {!hasMultiple && (
+                              <TouchableOpacity style={styles.actionDelete} onPress={() => remove(singleEntry.id)}>
+                                <Text style={styles.actionDeleteText}>Xoá</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                         </View>
                       </View>
@@ -631,6 +689,19 @@ const styles = StyleSheet.create({
   muscleInfo: { flex: 1, minWidth: 0 },
   muscleName: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 4 },
   muscleNote: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
+
+  // Danh sách bài tập con lồng trong 1 thẻ nhóm cơ (khi có >= 2 bài tập)
+  exerciseSubList: { gap: 4, marginBottom: 4 },
+  exerciseSubRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6,
+  },
+  exerciseSubInfo: { flex: 1, minWidth: 0 },
+  exerciseSubName: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  exerciseSubSets: { fontSize: 11, fontWeight: '400', color: Colors.textMuted },
+  exerciseSubNote: { fontSize: 10, color: Colors.textMuted, fontStyle: 'italic', marginTop: 1 },
+  exerciseSubDeleteBtn: { paddingHorizontal: 6, paddingVertical: 3 },
+  exerciseSubDeleteText: { fontSize: 10, fontWeight: '600', color: Colors.error },
   progressTrack: { height: 3, borderRadius: 999, backgroundColor: Colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
   entryRight: { alignItems: 'flex-end', gap: 3, flexShrink: 0 },
