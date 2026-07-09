@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -134,6 +134,11 @@ export function PlanEditorSheet({
 }: PlanEditorSheetProps) {
   const editingId = request?.type === 'edit' ? request.entry.id : null;
   const editingEntry = request?.type === 'edit' ? request.entry : null;
+
+  const muscleNameById = useMemo(
+    () => groups.reduce<Record<string, string>>((acc, g) => { acc[g.id] = g.name; return acc; }, {}),
+    [groups],
+  );
 
   const [formDayCreate, setFormDayCreate] = useState<WeekDayKey>('mon');
   const [createDaySelections, setCreateDaySelections] = useState<
@@ -765,6 +770,7 @@ export function PlanEditorSheet({
           if (exercisePickerFor) clearExercisesForGroup(exercisePickerFor);
         }}
         onDone={() => setExercisePickerFor(null)}
+        muscleNameById={muscleNameById}
       />
     </>
   );

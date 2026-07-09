@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator } from 'react-native';
-import { Check, X } from 'lucide-react-native';
+import { Check, Info, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExercises } from '@/src/lib/repository';
 import { MuscleTone } from '@/src/lib/planTone';
 import { Exercise } from '@/src/types/database';
 import { ExerciseThumb } from './ExerciseThumb';
+import { ExerciseInfoModal } from './ExerciseInfoModal';
 
 // Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id) lồng dưới bài
 // gốc, để chọn bài tập cụ thể cho 1 mục kế hoạch.
@@ -35,6 +36,8 @@ interface ExercisePickerSheetProps {
   onToggle: (exerciseId: string) => void;
   onClearAll: () => void;
   onDone: () => void;
+  /** Tên nhóm cơ theo id — để resolve tên nhóm cơ phụ trong ExerciseInfoModal. */
+  muscleNameById: Record<string, string>;
 }
 
 // Bottom sheet riêng để chọn (nhiều) bài tập/biến thể cụ thể cho 1 nhóm cơ đã
@@ -48,9 +51,11 @@ export function ExercisePickerSheet({
   onToggle,
   onClearAll,
   onDone,
+  muscleNameById,
 }: ExercisePickerSheetProps) {
   const [exercisesByGroup, setExercisesByGroup] = useState<Record<string, Exercise[]>>({});
   const [loading, setLoading] = useState(false);
+  const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
 
   useEffect(() => {
     if (!muscleGroupId) return;
@@ -129,6 +134,9 @@ export function ExercisePickerSheet({
                       {variants.length > 0 && (
                         <Text style={styles.variantCountLabel}>{variants.length} biến thể</Text>
                       )}
+                      <TouchableOpacity style={styles.infoBtn} onPress={() => setInfoExercise(ex)} hitSlop={8}>
+                        <Info color={Colors.textMuted} size={16} strokeWidth={2} />
+                      </TouchableOpacity>
                       <View style={[styles.checkbox, isChosen && styles.checkboxActive]}>
                         {isChosen && <Check color={Colors.bg} size={14} strokeWidth={3} />}
                       </View>
@@ -147,6 +155,9 @@ export function ExercisePickerSheet({
                           <Text style={[styles.variantText, vChosen && styles.optionTextActive]} numberOfLines={2}>
                             {v.name}
                           </Text>
+                          <TouchableOpacity style={styles.infoBtn} onPress={() => setInfoExercise(v)} hitSlop={8}>
+                            <Info color={Colors.textMuted} size={16} strokeWidth={2} />
+                          </TouchableOpacity>
                           <View style={[styles.checkbox, vChosen && styles.checkboxActive]}>
                             {vChosen && <Check color={Colors.bg} size={13} strokeWidth={3} />}
                           </View>
@@ -167,6 +178,12 @@ export function ExercisePickerSheet({
         </TouchableOpacity>
         <View style={{ height: 24 }} />
       </View>
+
+      <ExerciseInfoModal
+        exercise={infoExercise}
+        muscleNameById={muscleNameById}
+        onClose={() => setInfoExercise(null)}
+      />
     </Modal>
   );
 }
@@ -205,6 +222,7 @@ const styles = StyleSheet.create({
   optionMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   optionText: { flex: 1, fontSize: 14, color: Colors.text, fontWeight: '500' },
   optionTextActive: { color: Colors.accent, fontWeight: '700' },
+  infoBtn: { padding: 2 },
   checkbox: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: Colors.border,
     alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg,

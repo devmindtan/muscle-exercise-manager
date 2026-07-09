@@ -28,6 +28,7 @@ import {
 import { getGroupTone } from '@/src/lib/planTone';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
 import { ExercisePickerSheet } from '@/src/components/plan/ExercisePickerSheet';
+import { ExerciseInfoModal } from '@/src/components/plan/ExerciseInfoModal';
 import { getWeeklyPlanEntries, getWorkoutPlans, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
 import { Exercise, MuscleGroup } from '@/src/types/database';
 
@@ -101,6 +102,7 @@ export default function FocusModeScreen() {
   const [resolvedExerciseByEntryId, setResolvedExerciseByEntryId] = useState<Record<string, Exercise>>({});
   const [pickerForEntryId, setPickerForEntryId] = useState<string | null>(null);
   const [exercisePR, setExercisePR] = useState<{ bestReps: number | null; bestWeight: number | null } | null>(null);
+  const [infoModalExercise, setInfoModalExercise] = useState<Exercise | null>(null);
 
   const [phase, setPhase] = useState<Phase>('exercise');
   const [stepIndex, setStepIndex] = useState(0);
@@ -465,6 +467,13 @@ export default function FocusModeScreen() {
       ) : phase === 'logging' && currentStep ? (
         <ScrollView contentContainerStyle={styles.loggingContent}>
           <Text style={styles.muscleLabel}>GHI NHANH</Text>
+          {effectiveExercise ? (
+            <ExerciseThumb ex={effectiveExercise} tone={tone} size={72} />
+          ) : (
+            <View style={[styles.groupOnlyThumb, styles.groupOnlyThumbMedium]}>
+              <Dumbbell color={LIME} size={24} strokeWidth={1.5} />
+            </View>
+          )}
           <Text style={styles.exerciseName}>
             {effectiveExercise?.name ?? 'Chưa chọn bài tập cụ thể'}
           </Text>
@@ -540,7 +549,12 @@ export default function FocusModeScreen() {
           <Text style={styles.countdown}>{formatCountdown(displayRemainingMs)}</Text>
 
           {upcomingStep ? (
-            <View style={styles.upNextRow}>
+            <TouchableOpacity
+              style={styles.upNextRow}
+              activeOpacity={upcomingEffectiveExercise ? 0.7 : 1}
+              disabled={!upcomingEffectiveExercise}
+              onPress={() => upcomingEffectiveExercise && setInfoModalExercise(upcomingEffectiveExercise)}
+            >
               {upcomingEffectiveExercise ? (
                 <ExerciseThumb ex={upcomingEffectiveExercise} tone={tone} size={44} />
               ) : (
@@ -555,7 +569,7 @@ export default function FocusModeScreen() {
                 </Text>
                 <Text style={styles.upNextSub}>Set {upcomingStep.setIndex}/{upcomingStep.totalSets}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ) : null}
 
           <View style={styles.countdownControls}>
@@ -594,6 +608,13 @@ export default function FocusModeScreen() {
         onToggle={handlePickExercise}
         onClearAll={handleClearPickedExercise}
         onDone={() => setPickerForEntryId(null)}
+        muscleNameById={muscleNameById}
+      />
+
+      <ExerciseInfoModal
+        exercise={infoModalExercise}
+        muscleNameById={muscleNameById}
+        onClose={() => setInfoModalExercise(null)}
       />
     </View>
   );
@@ -634,6 +655,7 @@ const styles = StyleSheet.create({
     backgroundColor: INK_RAISED, borderWidth: 1, borderColor: HAIRLINE,
   },
   groupOnlyThumbSmall: { width: 44, height: 44, borderRadius: 10 },
+  groupOnlyThumbMedium: { width: 72, height: 72, borderRadius: 16 },
   pickExerciseBtn: {
     marginTop: 10, borderWidth: 1, borderColor: 'rgba(214,255,63,0.4)', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 8,
