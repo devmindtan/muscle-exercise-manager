@@ -121,14 +121,14 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   heroImage: {
-    width: '100%', aspectRatio: 1, borderRadius: 20,
-    backgroundColor: Colors.surfaceElevated, marginTop: 4,
+    width: '100%', height: 220, borderRadius: 20,
+    backgroundColor: Colors.surfaceElevated, marginTop: 44,
   },
   heroPlaceholder: {
-    width: '100%', aspectRatio: 1, borderRadius: 20,
-    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', marginTop: 4,
+    width: '100%', height: 220, borderRadius: 20,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', marginTop: 44,
   },
-  heroPlaceholderText: { fontSize: 72, fontWeight: '800', color: Colors.accent },
+  heroPlaceholderText: { fontSize: 56, fontWeight: '800', color: Colors.accent },
   center: { alignItems: 'center', marginTop: 14, marginBottom: 4 },
   name: { fontSize: 22, fontWeight: '800', color: Colors.text, textAlign: 'center' },
   typeBadge: {
