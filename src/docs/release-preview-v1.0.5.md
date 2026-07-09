@@ -4,7 +4,7 @@
 
 ## Phạm vi bản phát hành
 
-- Từ commit sau bản release v1.0.4 (`2bb0441`) đến hết ngày 09/07/2026 (`ee8a2f9`).
+- Từ commit sau bản release v1.0.4 (`2bb0441`) đến ngày 09/07/2026 (`cd8f85c`).
 - Tổng cộng 26 commit — trọng tâm là tính năng **"Tập trung" (Focus Mode)** chạy buổi tập thực tế có đếm ngược nghỉ/chuẩn bị, cùng với đồng bộ hoá hiển thị Compound/Isolation và 1 đợt rà soát bảo mật/hiệu năng/data-integrity sâu trên toàn bộ codebase.
 
 ---
