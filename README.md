@@ -14,7 +14,9 @@
 
 ## Tính năng chính
 
-- **Weekly Plan** — lập kế hoạch theo ngày và nhóm cơ, chọn bài tập/biến thể cụ thể cho từng ô, theo dõi tiến độ sets thực tế so với mục tiêu; hiển thị nhóm cơ ngoài kế hoạch và thêm nhanh vào ngày hiện tại.
+- **Weekly Plan** — lập kế hoạch theo ngày và nhóm cơ, chọn bài tập/biến thể cụ thể cho từng ô kèm số reps mục tiêu, theo dõi tiến độ sets thực tế so với mục tiêu theo từng bài tập; hiển thị nhóm cơ ngoài kế hoạch và thêm nhanh vào ngày hiện tại.
+- **Tập trung (Focus Mode)** — chạy buổi tập thực tế theo đúng thứ tự kế hoạch, ghi nhanh sau mỗi set, tự đếm ngược thời gian nghỉ/chuẩn bị (chỉnh được ngay lúc tập), báo hết giờ bằng rung + âm thanh.
+- **Xem nhanh bài tập & Kỷ lục cá nhân** — modal xem ảnh/loại Compound-Isolation/nhóm cơ phụ/ghi chú, hiện kỷ lục reps/kg cao nhất khi chọn bài tập ở tab Ghi lại và Tập trung.
 - **Dashboard** — tổng quan sets tuần (actual/target), khối lượng tháng, trạng thái từng nhóm cơ (hoàn thành / chưa đủ / vượt mục tiêu).
 - **Dinh dưỡng** — log thức ăn theo ngày, TDEE calculator tích hợp InBody, cấu hình dưỡng chất linh hoạt, biểu đồ tuần.
 - **Body Metrics** — nhập tay hoặc quét, goal tracking, biểu đồ lịch sử.
@@ -86,7 +88,8 @@ npm run build:web
 
 | Phiên bản | Trạng thái | Ghi chú |
 |-----------|------------|---------|
-| v1.0.4 | Latest | [Release notes](src/docs/release-preview-v1.0.4.md) |
+| v1.0.5 | Latest | [Release notes](src/docs/release-preview-v1.0.5.md) |
+| v1.0.4 | — | [Release notes](src/docs/release-preview-v1.0.4.md) |
 | v1.0.3 | — | [Release notes](src/docs/release-preview-v1.0.3.md) |
 | `v1.0.1-preview` | Tag | — |
 | `v1.0.0-preview` | Tag | — |
