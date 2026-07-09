@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, Image } from 'react-native';
 import { X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExerciseSecondaryMuscles } from '@/src/lib/repository';
 import { Exercise } from '@/src/types/database';
-import { ExerciseThumb } from './ExerciseThumb';
 
 interface ExerciseInfoModalProps {
   /** null = đóng modal. */
@@ -37,45 +36,65 @@ export function ExerciseInfoModal({ exercise, muscleNameById, onClose }: Exercis
       <View style={styles.sheet}>
         <View style={styles.sheetHandle} />
         {exercise ? (
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose} hitSlop={10}>
               <X color={Colors.textSecondary} size={20} strokeWidth={2} />
             </TouchableOpacity>
+            <ScrollView showsVerticalScrollIndicator={false}>
+            {exercise.image_uri ? (
+              <Image source={{ uri: exercise.image_uri }} style={styles.heroImage} resizeMode="cover" />
+            ) : (
+              <View style={styles.heroPlaceholder}>
+                <Text style={styles.heroPlaceholderText}>{exercise.name[0]?.toUpperCase() ?? '?'}</Text>
+              </View>
+            )}
 
             <View style={styles.center}>
-              <ExerciseThumb ex={exercise} size={160} />
               <Text style={styles.name}>{exercise.name}</Text>
-              {exercise.exercise_type ? (
-                <View style={styles.typeBadge}>
-                  <Text style={styles.typeBadgeText}>
-                    {exercise.exercise_type === 'compound' ? 'Compound' : 'Isolation'}
-                  </Text>
-                </View>
-              ) : null}
             </View>
 
-            {secondaryIds.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Loại bài tập</Text>
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeBadgeText}>
+                  {exercise.exercise_type === 'compound'
+                    ? 'Compound'
+                    : exercise.exercise_type === 'isolation'
+                    ? 'Isolation'
+                    : 'Chưa phân loại'}
+                </Text>
+              </View>
+            </View>
+
+            {exercise.exercise_type === 'compound' ? (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Nhóm cơ phụ</Text>
-                <View style={styles.chipRow}>
-                  {secondaryIds.map((id) => (
-                    <View key={id} style={styles.chip}>
-                      <Text style={styles.chipText}>{muscleNameById[id] ?? 'Không rõ'}</Text>
-                    </View>
-                  ))}
-                </View>
+                {secondaryIds.length > 0 ? (
+                  <View style={styles.chipRow}>
+                    {secondaryIds.map((id) => (
+                      <View key={id} style={styles.chip}>
+                        <Text style={styles.chipText}>{muscleNameById[id] ?? 'Không rõ'}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyHint}>Chưa gán nhóm cơ phụ</Text>
+                )}
               </View>
             ) : null}
 
-            {exercise.notes ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionLabel}>Ghi chú</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Ghi chú</Text>
+              {exercise.notes ? (
                 <Text style={styles.notes}>{exercise.notes}</Text>
-              </View>
-            ) : null}
+              ) : (
+                <Text style={styles.emptyHint}>Chưa có ghi chú</Text>
+              )}
+            </View>
 
             <View style={{ height: 24 }} />
-          </ScrollView>
+            </ScrollView>
+          </>
         ) : null}
       </View>
     </Modal>
@@ -96,15 +115,29 @@ const styles = StyleSheet.create({
     width: 44, height: 4, borderRadius: 999, backgroundColor: Colors.textMuted,
     alignSelf: 'center', marginBottom: 8, opacity: 0.4,
   },
-  closeBtn: { alignSelf: 'flex-end', padding: 4 },
-  center: { alignItems: 'center', gap: 10, marginBottom: 8 },
-  name: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  closeBtn: {
+    position: 'absolute', top: 8, right: 20, zIndex: 1,
+    padding: 6, backgroundColor: Colors.surface, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  heroImage: {
+    width: '100%', aspectRatio: 1, borderRadius: 20,
+    backgroundColor: Colors.surfaceElevated, marginTop: 4,
+  },
+  heroPlaceholder: {
+    width: '100%', aspectRatio: 1, borderRadius: 20,
+    backgroundColor: Colors.surfaceElevated, alignItems: 'center', justifyContent: 'center', marginTop: 4,
+  },
+  heroPlaceholderText: { fontSize: 72, fontWeight: '800', color: Colors.accent },
+  center: { alignItems: 'center', marginTop: 14, marginBottom: 4 },
+  name: { fontSize: 22, fontWeight: '800', color: Colors.text, textAlign: 'center' },
   typeBadge: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surfaceElevated,
   },
-  typeBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
-  section: { marginTop: 14 },
+  typeBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase' },
+  section: { marginTop: 16 },
   sectionLabel: {
     fontSize: 12, fontWeight: '700', color: Colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
@@ -116,4 +149,5 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
   notes: { fontSize: 14, color: Colors.textMuted, lineHeight: 20 },
+  emptyHint: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic' },
 });
