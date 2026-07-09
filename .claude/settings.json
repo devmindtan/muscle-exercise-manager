@@ -26,6 +26,15 @@
             "command": "jq -cn '{hookSpecificOutput:{hookEventName:\"PreToolUse\",additionalContext:\"CodeGraph is indexed for this repo (.codegraph/codegraph.db, live daemon). Before reading raw files, run `codegraph explore \\\"<symbol or question>\\\"` (or the codegraph_explore MCP tool) to get source + call graph in one shot. Use graphify query/explain/path for architecture-level questions. Only read raw files after being oriented, or to modify/debug specific lines.\"}}'"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c 'if ((.tool_input.file_path // \"\") | test(\"\\\\.(tsx|jsx)$\")) then {hookSpecificOutput:{hookEventName:\"PreToolUse\",additionalContext:\"File UI (.tsx/.jsx) trong app React Native. Trước khi sửa giao diện/layout/màu sắc, cân nhắc dùng skill `design` hoặc `ui-ux-pro-max` (gọi qua Skill tool) để tham khảo palette/pattern chuẩn thay vì tự quyết định thủ công.\"}} else {} end'"
+          }
+        ]
       }
     ]
   }
