@@ -108,19 +108,15 @@ export function ActivityHeatmap({ days }: { days: FriendActivityDay[] }) {
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
         >
           <View>
-            <View style={styles.monthRow}>
-              {weeks.map((_, w) => {
-                const marker = monthMarkers.find((m) => m.weekIndex === w);
-                return (
-                  <View key={w} style={[styles.monthLabelSlot, { width: CELL_SIZE + CELL_GAP }]}>
-                    {marker && (
-                      <Text style={styles.monthLabel} numberOfLines={1}>
-                        {marker.label}
-                      </Text>
-                    )}
-                  </View>
-                );
-              })}
+            <View style={[styles.monthRow, { width: weeks.length * (CELL_SIZE + CELL_GAP) }]}>
+              {monthMarkers.map((marker) => (
+                <Text
+                  key={marker.weekIndex}
+                  style={[styles.monthLabel, { left: marker.weekIndex * (CELL_SIZE + CELL_GAP) }]}
+                >
+                  {marker.label}
+                </Text>
+              ))}
             </View>
             <View style={styles.weeksRow}>
               {weeks.map((col, w) => (
@@ -175,11 +171,16 @@ const styles = StyleSheet.create({
     fontSize: 9, color: Colors.textMuted,
     height: CELL_SIZE + CELL_GAP, lineHeight: CELL_SIZE + CELL_GAP,
   },
-  monthRow: { flexDirection: 'row', height: MONTH_ROW_HEIGHT, overflow: 'visible' },
-  monthLabelSlot: { height: MONTH_ROW_HEIGHT, overflow: 'visible' },
+  // position: 'relative' + con position: 'absolute' theo px tuyệt đối thay vì
+  // dàn theo từng slot 1 cột — cách cũ dùng width cố định + numberOfLines bên
+  // trong 1 slot hẹp hơn nhiều so với text, phải "tràn" ra ngoài bằng overflow
+  // visible; trên web, ScrollView cha luôn có overflow-x để cuộn nên phần tràn
+  // bị cắt mất, hiện "T..." thay vì "Th8". Label giờ không bị ràng buộc theo
+  // slot nào cả nên không còn gì để cắt.
+  monthRow: { height: MONTH_ROW_HEIGHT, position: 'relative' },
   monthLabel: {
     fontSize: 9, color: Colors.textMuted,
-    position: 'absolute', left: 0, top: 0, width: 40,
+    position: 'absolute', top: 0,
   },
   weeksRow: { flexDirection: 'row' },
   weekCol: { marginRight: CELL_GAP },

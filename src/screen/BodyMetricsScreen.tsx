@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -174,6 +175,14 @@ const INBODY_SAVE_ENTRIES: { metricKey: keyof InBodyFormState; unit: string; lab
   { metricKey: 'waist_hip_ratio', unit: 'ratio', label: 'Waist-Hip Ratio' },
   { metricKey: 'visceral_fat_level', unit: 'level', label: 'Visceral Fat Level' },
 ];
+
+// maxHeight '85%' trên sheet chỉ resolve đúng khi có 1 ancestor kích thước rõ
+// ràng — sheetWrap (KeyboardAvoidingView bọc ngoài) không có flex/height cố
+// định nên trên web (CSS percentage-height cần ancestor chain có height xác
+// định, khác Yoga trên native) modal cứ cao theo nội dung, ScrollView bên
+// trong không có chiều cao để so sánh nên không cuộn được. Dùng số px tuyệt
+// đối từ kích thước màn hình để nhất quán cả 2 nền tảng.
+const SHEET_MAX_HEIGHT = Dimensions.get('window').height * 0.85;
 
 const DEFAULT_INBODY_FORM: InBodyFormState = {
   measuredAt: '',
@@ -1329,7 +1338,7 @@ const styles = StyleSheet.create({
   sheetWrap: { justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 20,
-    borderTopRightRadius: 20, padding: 20, paddingBottom: 36, maxHeight: '85%',
+    borderTopRightRadius: 20, padding: 20, paddingBottom: 36, maxHeight: SHEET_MAX_HEIGHT,
   },
   sheetContent: { paddingBottom: 24 },
   sheetHandle: {
