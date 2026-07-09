@@ -36,6 +36,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/expo-doctor-check.sh",
+            "timeout": 90
+          }
+        ]
+      }
     ]
   }
 }
