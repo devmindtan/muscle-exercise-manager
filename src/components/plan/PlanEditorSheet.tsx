@@ -418,6 +418,29 @@ export function PlanEditorSheet({
           return;
         }
       }
+    } else {
+      // Tạo hàng loạt: chặn từ trước nếu 1 nhóm cơ/ngày có tổng sets nhỏ hơn
+      // số bài tập đã chọn — nếu không, splitSetsEvenly() sẽ sinh ra sets=0
+      // cho vài bài, vi phạm CHECK (sets > 0) ở Postgres và làm hỏng cả lượt
+      // sync (không chỉ báo lỗi ở dòng đó mà kẹt luôn các dòng khác cùng lượt).
+      const source = { ...createDaySelections, [formDayCreate]: selectedMuscles };
+      const exerciseSource = { ...createDayExerciseSelections, [formDayCreate]: selectedExercises };
+      for (const day of WEEK_DAYS) {
+        const musclesForDay = source[day.key] || {};
+        const exercisesForDay = exerciseSource[day.key] || {};
+        for (const [muscleGroupId, setsRaw] of Object.entries(musclesForDay)) {
+          const sets = Number(setsRaw);
+          if (!Number.isFinite(sets) || sets <= 0) continue;
+          const exerciseIds = exercisesForDay[muscleGroupId] || [];
+          if (exerciseIds.length >= 2 && sets < exerciseIds.length) {
+            const groupName = groups.find((g) => g.id === muscleGroupId)?.name ?? 'Nhóm cơ đã chọn';
+            setError(
+              `${groupName} (${day.label}): ${sets} sets ít hơn ${exerciseIds.length} bài tập đã chọn — mỗi bài cần ít nhất 1 set.`,
+            );
+            return;
+          }
+        }
+      }
     }
     setSaving(true);
     try {

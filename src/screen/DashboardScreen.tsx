@@ -142,6 +142,16 @@ export default function DashboardScreen() {
   // historyLoading để tránh tab "Lịch sử" chớp về màn hình loading liên tục.
   const hasLoadedHistoryRef = useRef(false);
 
+  // Chống load() chạy chồng: useFocusEffect (mount/focus) và useEffect theo
+  // lastSyncAt có thể nổ ra gần như đồng thời lúc mới mở app (sync ban đầu
+  // xong ngay sau khi màn hình vừa focus) — nếu đang có 1 lượt load() chạy
+  // dở thì không chạy chồng thêm 1 lượt nữa, chỉ đánh dấu "pending" để chạy
+  // lại đúng 1 lần ngay sau khi lượt đang chạy xong (đảm bảo vẫn phản ánh
+  // dữ liệu mới nhất sau sync, không lùi lại thành throttle theo thời gian
+  // vì thời điểm sync xong không đoán trước được).
+  const isLoadingRef = useRef(false);
+  const pendingReloadRef = useRef(false);
+
   // Total target sets across all muscle groups
   const totalTargetSets = useMemo(
     () => stats.reduce((s, r) => s + r.targetSetsPerWeek, 0),
@@ -149,6 +159,11 @@ export default function DashboardScreen() {
   );
 
   const load = useCallback(async () => {
+    if (isLoadingRef.current) {
+      pendingReloadRef.current = true;
+      return;
+    }
+    isLoadingRef.current = true;
     const isInitialHistoryLoad = !hasLoadedHistoryRef.current;
     try {
       const { start, end } = getWeekRange();
@@ -222,6 +237,11 @@ export default function DashboardScreen() {
       if (isInitialHistoryLoad) setHistoryLoading(false);
       hasLoadedHistoryRef.current = true;
       setLoading(false);
+      isLoadingRef.current = false;
+      if (pendingReloadRef.current) {
+        pendingReloadRef.current = false;
+        load();
+      }
     }
   }, []);
 
