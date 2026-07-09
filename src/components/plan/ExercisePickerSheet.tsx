@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator } from 'react-native';
-import { Check, ChevronDown, X } from 'lucide-react-native';
+import { Check, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExercises } from '@/src/lib/repository';
 import { MuscleTone } from '@/src/lib/planTone';
@@ -51,11 +51,9 @@ export function ExercisePickerSheet({
 }: ExercisePickerSheetProps) {
   const [exercisesByGroup, setExercisesByGroup] = useState<Record<string, Exercise[]>>({});
   const [loading, setLoading] = useState(false);
-  const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!muscleGroupId) return;
-    setExpandedVariants(new Set());
     if (exercisesByGroup[muscleGroupId]) return;
 
     let cancelled = false;
@@ -114,7 +112,6 @@ export function ExercisePickerSheet({
             <View style={styles.listWrap}>
               {topLevel.map((ex) => {
                 const variants = variantsByParent.get(ex.id) || [];
-                const expanded = expandedVariants.has(ex.id);
                 const isChosen = chosenExerciseIds.includes(ex.id);
                 return (
                   <View key={ex.id}>
@@ -130,29 +127,14 @@ export function ExercisePickerSheet({
                         </Text>
                       </View>
                       {variants.length > 0 && (
-                        <TouchableOpacity
-                          style={styles.variantToggle}
-                          onPress={() => setExpandedVariants((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(ex.id)) next.delete(ex.id); else next.add(ex.id);
-                            return next;
-                          })}
-                          hitSlop={8}
-                        >
-                          <Text style={styles.variantToggleText}>{variants.length} biến thể</Text>
-                          <ChevronDown
-                            color={Colors.textMuted}
-                            size={14}
-                            style={!expanded ? styles.variantChevronCollapsed : undefined}
-                          />
-                        </TouchableOpacity>
+                        <Text style={styles.variantCountLabel}>{variants.length} biến thể</Text>
                       )}
                       <View style={[styles.checkbox, isChosen && styles.checkboxActive]}>
                         {isChosen && <Check color={Colors.bg} size={14} strokeWidth={3} />}
                       </View>
                     </TouchableOpacity>
 
-                    {expanded && variants.map((v) => {
+                    {variants.map((v) => {
                       const vChosen = chosenExerciseIds.includes(v.id);
                       return (
                         <TouchableOpacity
@@ -228,13 +210,11 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg,
   },
   checkboxActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  variantToggle: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+  variantCountLabel: {
+    fontSize: 11, color: Colors.textMuted, fontWeight: '600',
     paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8,
     backgroundColor: Colors.surfaceElevated,
   },
-  variantToggleText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
-  variantChevronCollapsed: { transform: [{ rotate: '-90deg' }] },
   variantRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginTop: 6, marginLeft: 20,

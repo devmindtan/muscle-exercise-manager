@@ -36,6 +36,7 @@ import type { RecentLog } from '@/src/lib/repository';
 import { MuscleGroup, Exercise } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 import { useSync } from '@/src/context/SyncContext';
+import { getGroupTone } from '@/src/lib/planTone';
 
 const PAGE_SIZE = 10;
 
@@ -94,6 +95,10 @@ export default function StrengthTab() {
     () => new Map(muscleGroups.map((g) => [g.id, g])),
     [muscleGroups],
   );
+
+  // Mọi bài tập trong picker đều thuộc selectedGroup đang chọn, nên chỉ cần
+  // 1 tone cho cả nhóm — cùng cách tính với WeeklyPlanScreen.tsx/MuscleDetailScreen.tsx.
+  const exerciseTypeTone = selectedGroup ? getGroupTone(selectedGroup.color) : undefined;
 
   const load = useCallback(async () => {
     try {
@@ -225,7 +230,16 @@ export default function StrengthTab() {
         >
           {selectedExercise ? (
             <View style={styles.pickerExerciseInfo}>
-              <Text style={styles.pickerText}>{selectedExercise.name}</Text>
+              <View style={styles.exerciseNameRow}>
+                <Text style={styles.pickerText}>{selectedExercise.name}</Text>
+                {selectedExercise.exercise_type && exerciseTypeTone ? (
+                  <View style={[styles.exerciseTypeTag, { backgroundColor: exerciseTypeTone.badgeBg, borderColor: exerciseTypeTone.badgeBorder }]}>
+                    <Text style={[styles.exerciseTypeTagText, { color: exerciseTypeTone.badgeText }]}>
+                      {selectedExercise.exercise_type === 'compound' ? 'C' : 'I'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               {exercisePR && (exercisePR.bestReps != null || exercisePR.bestWeight != null) ? (
                 <View style={styles.prRow}>
                   <Trophy color={Colors.accent} size={12} strokeWidth={2} />
@@ -535,7 +549,16 @@ export default function StrengthTab() {
                     <Dumbbell color={Colors.textMuted} size={18} strokeWidth={1.5} />
                   </View>
                 )}
-                <Text style={styles.optionText}>{ex.name}</Text>
+                <View style={styles.exerciseNameRow}>
+                  <Text style={styles.optionText}>{ex.name}</Text>
+                  {ex.exercise_type && exerciseTypeTone ? (
+                    <View style={[styles.exerciseTypeTag, { backgroundColor: exerciseTypeTone.badgeBg, borderColor: exerciseTypeTone.badgeBorder }]}>
+                      <Text style={[styles.exerciseTypeTagText, { color: exerciseTypeTone.badgeText }]}>
+                        {ex.exercise_type === 'compound' ? 'C' : 'I'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
                 {selectedExercise?.id === ex.id && <Check color={Colors.accent} size={16} strokeWidth={2.5} />}
               </TouchableOpacity>
             ))}
@@ -590,6 +613,12 @@ const styles = StyleSheet.create({
   pickerText: { fontSize: 15, color: Colors.text, fontWeight: '600' },
   pickerPlaceholder: { fontSize: 14, color: Colors.textMuted },
   pickerExerciseInfo: { flex: 1, gap: 6 },
+  exerciseNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  exerciseTypeTag: {
+    width: 16, height: 16, borderRadius: 4, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  exerciseTypeTagText: { fontSize: 9, fontWeight: '700' },
   prRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   prChip: {
     flexDirection: 'row', alignItems: 'baseline', gap: 3,

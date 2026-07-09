@@ -234,7 +234,7 @@ export function UserAccountModal() {
                   onPress={() => setShowAccountInfo((v) => !v)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.sectionTitle}>Thông tin tài khoản</Text>
+                  <Text style={[styles.sectionTitle, styles.sectionTitleInline]}>Thông tin tài khoản</Text>
                   {showAccountInfo ? (
                     <ChevronUp color={Colors.textMuted} size={16} strokeWidth={2} />
                   ) : (
@@ -463,6 +463,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  // "Thông tin tài khoản" nằm chung 1 hàng với icon chevron (collapsibleHeader)
+  // — bỏ marginBottom của sectionTitle ở đây để text không bị lệch thấp hơn icon.
+  sectionTitleInline: { marginBottom: 0 },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '600',

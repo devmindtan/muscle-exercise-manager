@@ -17,7 +17,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Plus, Trash2, X, Pencil, ChevronDown, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, X, Pencil } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
 import { uploadImage } from '@/src/services/imageUpload';
@@ -38,6 +38,7 @@ import {
 import { ExerciseWithStats } from '@/src/db/localDB';
 import { MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
+import { getGroupTone } from '@/src/lib/planTone';
 
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
@@ -115,7 +116,6 @@ export default function MuscleDetailScreen() {
   const [exPrepSeconds, setExPrepSeconds] = useState('');
   const [saving, setSaving] = useState(false);
   const [exError, setExError] = useState('');
-  const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
 
   const [editingGroup, setEditingGroup] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -385,15 +385,6 @@ export default function MuscleDetailScreen() {
     }
   };
 
-  const toggleVariants = (baseId: string) => {
-    setExpandedVariants((prev) => {
-      const next = new Set(prev);
-      if (next.has(baseId)) next.delete(baseId);
-      else next.add(baseId);
-      return next;
-    });
-  };
-
   // Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id trỏ tới 1 bài
   // trong cùng danh sách) được lồng dưới bài gốc, thu gọn mặc định. Biến thể
   // mồ côi (bài gốc bị lọc sang tab khác) vẫn hiện như bài độc lập.
@@ -497,6 +488,8 @@ export default function MuscleDetailScreen() {
     );
   }
 
+  const tone = getGroupTone(group.color);
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -586,7 +579,6 @@ export default function MuscleDetailScreen() {
           const { topLevel, variantsByParent } = groupExercises(exercises.filter((e) => !!e.is_active));
           return topLevel.map((ex) => {
             const variants = variantsByParent.get(ex.id) || [];
-            const expanded = expandedVariants.has(ex.id);
             return (
               <View key={ex.id}>
                 <TouchableOpacity
@@ -603,7 +595,16 @@ export default function MuscleDetailScreen() {
                     </View>
                   )}
                   <View style={styles.exInfo}>
-                    <Text style={styles.exName}>{ex.name}</Text>
+                    <View style={styles.exNameRow}>
+                      <Text style={styles.exName}>{ex.name}</Text>
+                      {ex.exercise_type ? (
+                        <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
+                          <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
+                            {ex.exercise_type === 'compound' ? 'C' : 'I'}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
                     {ex.notes ? (
                       <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
@@ -619,17 +620,10 @@ export default function MuscleDetailScreen() {
                 </TouchableOpacity>
 
                 {variants.length > 0 && (
-                  <TouchableOpacity style={styles.variantsToggle} onPress={() => toggleVariants(ex.id)}>
-                    {expanded ? (
-                      <ChevronDown color={Colors.textMuted} size={14} />
-                    ) : (
-                      <ChevronRight color={Colors.textMuted} size={14} />
-                    )}
-                    <Text style={styles.variantsToggleText}>Biến thể ({variants.length})</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.variantsLabel}>Biến thể ({variants.length})</Text>
                 )}
 
-                {expanded && variants.map((v) => (
+                {variants.map((v) => (
                   <TouchableOpacity
                     key={v.id}
                     style={[styles.exCard, styles.exCardVariant]}
@@ -645,7 +639,16 @@ export default function MuscleDetailScreen() {
                       </View>
                     )}
                     <View style={styles.exInfo}>
-                      <Text style={styles.exName}>{v.name}</Text>
+                      <View style={styles.exNameRow}>
+                        <Text style={styles.exName}>{v.name}</Text>
+                        {v.exercise_type ? (
+                          <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
+                            <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
+                              {v.exercise_type === 'compound' ? 'C' : 'I'}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <Text style={styles.exDate}>{formatRelativeDate(v.last_logged_at)}</Text>
                     </View>
                     <TouchableOpacity onPress={() => openEditExercise(v)} style={styles.exEditIcon}>
@@ -671,7 +674,6 @@ export default function MuscleDetailScreen() {
           const { topLevel, variantsByParent } = groupExercises(exercises.filter((e) => !e.is_active));
           return topLevel.map((ex) => {
             const variants = variantsByParent.get(ex.id) || [];
-            const expanded = expandedVariants.has(ex.id);
             return (
               <View key={ex.id}>
                 <TouchableOpacity
@@ -688,7 +690,16 @@ export default function MuscleDetailScreen() {
                     </View>
                   )}
                   <View style={styles.exInfo}>
-                    <Text style={[styles.exName, styles.disabledText]}>{ex.name}</Text>
+                    <View style={styles.exNameRow}>
+                      <Text style={[styles.exName, styles.disabledText]}>{ex.name}</Text>
+                      {ex.exercise_type ? (
+                        <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
+                          <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
+                            {ex.exercise_type === 'compound' ? 'C' : 'I'}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
                     {ex.notes ? (
                       <Text style={styles.exNotes} numberOfLines={1}>{ex.notes}</Text>
@@ -700,17 +711,10 @@ export default function MuscleDetailScreen() {
                 </TouchableOpacity>
 
                 {variants.length > 0 && (
-                  <TouchableOpacity style={styles.variantsToggle} onPress={() => toggleVariants(ex.id)}>
-                    {expanded ? (
-                      <ChevronDown color={Colors.textMuted} size={14} />
-                    ) : (
-                      <ChevronRight color={Colors.textMuted} size={14} />
-                    )}
-                    <Text style={styles.variantsToggleText}>Biến thể ({variants.length})</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.variantsLabel}>Biến thể ({variants.length})</Text>
                 )}
 
-                {expanded && variants.map((v) => (
+                {variants.map((v) => (
                   <TouchableOpacity
                     key={v.id}
                     style={[styles.exCard, styles.exCardDisabled, styles.exCardVariant]}
@@ -726,7 +730,16 @@ export default function MuscleDetailScreen() {
                       </View>
                     )}
                     <View style={styles.exInfo}>
-                      <Text style={[styles.exName, styles.disabledText]}>{v.name}</Text>
+                      <View style={styles.exNameRow}>
+                        <Text style={[styles.exName, styles.disabledText]}>{v.name}</Text>
+                        {v.exercise_type ? (
+                          <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
+                            <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
+                              {v.exercise_type === 'compound' ? 'C' : 'I'}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                       <Text style={styles.exDate}>{formatRelativeDate(v.last_logged_at)}</Text>
                     </View>
                     <View style={styles.exEditIcon}>
@@ -1321,7 +1334,13 @@ const styles = StyleSheet.create({
   },
   exImgText: { fontSize: 20, fontWeight: '800' },
   exInfo: { flex: 1, marginLeft: 12 },
+  exNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   exName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  exerciseTypeTag: {
+    width: 16, height: 16, borderRadius: 4, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  exerciseTypeTagText: { fontSize: 9, fontWeight: '700' },
   exNotes: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   exDate: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   exEditIcon: { padding: 8 },
@@ -1381,15 +1400,13 @@ const styles = StyleSheet.create({
   enableHint: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
   exCardDisabled: { opacity: 0.6, borderStyle: 'dashed' },
   exCardVariant: { marginLeft: 20, marginTop: -4 },
-  variantsToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  variantsLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '600',
     marginLeft: 12,
     marginBottom: 8,
-    paddingVertical: 4,
   },
-  variantsToggleText: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
   disabledImage: { opacity: 0.5 },
   disabledText: { color: Colors.textSecondary },
   disableBtn: {
