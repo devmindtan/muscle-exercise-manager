@@ -466,40 +466,42 @@ export default function FocusModeScreen() {
         </ScrollView>
       ) : phase === 'logging' && currentStep ? (
         <ScrollView contentContainerStyle={styles.loggingContent}>
-          <Text style={styles.muscleLabel}>GHI NHANH</Text>
-          {effectiveExercise ? (
-            <ExerciseThumb ex={effectiveExercise} tone={tone} size={72} />
-          ) : (
-            <View style={[styles.groupOnlyThumb, styles.groupOnlyThumbMedium]}>
-              <Dumbbell color={LIME} size={24} strokeWidth={1.5} />
-            </View>
-          )}
-          <Text style={styles.exerciseName}>
-            {effectiveExercise?.name ?? 'Chưa chọn bài tập cụ thể'}
-          </Text>
-          {effectiveExercise && exercisePR && (exercisePR.bestReps != null || exercisePR.bestWeight != null) ? (
-            <View style={styles.prRow}>
-              <Trophy color={LIME} size={12} strokeWidth={2} />
-              {exercisePR.bestReps != null && (
-                <View style={styles.prChip}>
-                  <Text style={styles.prChipValue}>{exercisePR.bestReps}</Text>
-                  <Text style={styles.prChipUnit}>reps</Text>
-                </View>
-              )}
-              {exercisePR.bestWeight != null && (
-                <View style={styles.prChip}>
-                  <Text style={styles.prChipValue}>{exercisePR.bestWeight}</Text>
-                  <Text style={styles.prChipUnit}>kg</Text>
-                </View>
-              )}
-            </View>
-          ) : null}
-          <Text style={styles.setLabel}>SET {currentStep.setIndex}/{currentStep.totalSets}</Text>
-          {!effectiveExercise ? (
-            <TouchableOpacity style={styles.pickExerciseBtn} onPress={openExercisePickerForCurrentStep}>
-              <Text style={styles.pickExerciseBtnText}>Chọn bài tập để ghi log</Text>
-            </TouchableOpacity>
-          ) : null}
+          <View style={styles.loggingHeader}>
+            <Text style={styles.muscleLabel}>GHI NHANH</Text>
+            {effectiveExercise ? (
+              <ExerciseThumb ex={effectiveExercise} tone={tone} size={110} />
+            ) : (
+              <View style={styles.groupOnlyThumb}>
+                <Dumbbell color={LIME} size={40} strokeWidth={1.5} />
+              </View>
+            )}
+            <Text style={styles.exerciseName}>
+              {effectiveExercise?.name ?? 'Chưa chọn bài tập cụ thể'}
+            </Text>
+            {effectiveExercise && exercisePR && (exercisePR.bestReps != null || exercisePR.bestWeight != null) ? (
+              <View style={styles.prRow}>
+                <Trophy color={LIME} size={16} strokeWidth={2} />
+                {exercisePR.bestReps != null && (
+                  <View style={styles.prChip}>
+                    <Text style={styles.prChipValue}>{exercisePR.bestReps}</Text>
+                    <Text style={styles.prChipUnit}>reps</Text>
+                  </View>
+                )}
+                {exercisePR.bestWeight != null && (
+                  <View style={styles.prChip}>
+                    <Text style={styles.prChipValue}>{exercisePR.bestWeight}</Text>
+                    <Text style={styles.prChipUnit}>kg</Text>
+                  </View>
+                )}
+              </View>
+            ) : null}
+            <Text style={styles.setLabel}>SET {currentStep.setIndex}/{currentStep.totalSets}</Text>
+            {!effectiveExercise ? (
+              <TouchableOpacity style={styles.pickExerciseBtn} onPress={openExercisePickerForCurrentStep}>
+                <Text style={styles.pickExerciseBtnText}>Chọn bài tập để ghi log</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
           <View style={styles.logRow}>
             <View style={styles.logField}>
@@ -625,6 +627,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   centerContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, gap: 10 },
   loggingContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 16, gap: 10 },
+  loggingHeader: { alignItems: 'center', gap: 4, marginBottom: 4 },
 
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -641,21 +644,20 @@ const styles = StyleSheet.create({
   exerciseName: { fontSize: 22, fontWeight: '800', color: CHALK, textAlign: 'center', marginTop: 8 },
   setLabel: { fontSize: 13, fontWeight: '700', color: CHALK, opacity: 0.55, marginTop: 4 },
   targetReps: { fontSize: 13, color: LIME, fontWeight: '700', marginTop: 2 },
-  prRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  prRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   prChip: {
-    flexDirection: 'row', alignItems: 'baseline', gap: 3,
-    backgroundColor: 'rgba(214,255,63,0.14)', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 3,
+    flexDirection: 'row', alignItems: 'baseline', gap: 4,
+    backgroundColor: 'rgba(214,255,63,0.14)', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 6,
   },
-  prChipValue: { fontSize: 12, fontWeight: '800', color: LIME },
-  prChipUnit: { fontSize: 10, fontWeight: '700', color: LIME, opacity: 0.7 },
+  prChipValue: { fontSize: 18, fontWeight: '800', color: LIME },
+  prChipUnit: { fontSize: 13, fontWeight: '700', color: LIME, opacity: 0.7 },
 
   groupOnlyThumb: {
     width: 110, height: 110, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
     backgroundColor: INK_RAISED, borderWidth: 1, borderColor: HAIRLINE,
   },
   groupOnlyThumbSmall: { width: 44, height: 44, borderRadius: 10 },
-  groupOnlyThumbMedium: { width: 72, height: 72, borderRadius: 16 },
   pickExerciseBtn: {
     marginTop: 10, borderWidth: 1, borderColor: 'rgba(214,255,63,0.4)', borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 8,

@@ -19,6 +19,7 @@ import { getGroupTone } from '@/src/lib/planTone';
 import { PlanEditorSheet, PlanEditorRequest } from '@/src/components/plan/PlanEditorSheet';
 import { PlanManagerSheet } from '@/src/components/plan/PlanManagerSheet';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
+import { ExerciseInfoModal } from '@/src/components/plan/ExerciseInfoModal';
 import {
   deleteWeeklyPlanEntry,
   getWeeklyPlanEntries,
@@ -147,6 +148,7 @@ export default function WeeklyPlanScreen() {
   selectedDayRef.current = selectedDay;
 
   const [editorRequest, setEditorRequest] = useState<PlanEditorRequest | null>(null);
+  const [infoExercise, setInfoExercise] = useState<Exercise | null>(null);
 
   // ── Data loading ──
 
@@ -559,28 +561,35 @@ export default function WeeklyPlanScreen() {
                               const exerciseDone = actualForExercise != null && actualForExercise >= entry.sets;
                               return (
                                 <View key={entry.id} style={styles.exerciseSubRow}>
-                                  {ex ? (
-                                    <ExerciseThumb ex={ex} tone={col} size={30} />
-                                  ) : (
-                                    <View style={[styles.exerciseSubThumbEmpty, { borderColor: col.badgeBorder }]} />
-                                  )}
-                                  <View style={styles.exerciseSubInfo}>
-                                    <View style={styles.exerciseSubNameRow}>
-                                      <Text style={styles.exerciseSubName} numberOfLines={1}>
-                                        {ex?.name ?? 'Chưa chọn bài tập'}
-                                      </Text>
-                                      {ex?.exercise_type ? (
-                                        <View style={[styles.exerciseTypeTag, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
-                                          <Text style={[styles.exerciseTypeTagText, { color: col.badgeText }]}>
-                                            {ex.exercise_type === 'compound' ? 'C' : 'I'}
-                                          </Text>
-                                        </View>
+                                  <TouchableOpacity
+                                    style={styles.exerciseSubMain}
+                                    activeOpacity={ex ? 0.7 : 1}
+                                    disabled={!ex}
+                                    onPress={() => ex && setInfoExercise(ex)}
+                                  >
+                                    {ex ? (
+                                      <ExerciseThumb ex={ex} tone={col} size={30} />
+                                    ) : (
+                                      <View style={[styles.exerciseSubThumbEmpty, { borderColor: col.badgeBorder }]} />
+                                    )}
+                                    <View style={styles.exerciseSubInfo}>
+                                      <View style={styles.exerciseSubNameRow}>
+                                        <Text style={styles.exerciseSubName} numberOfLines={1}>
+                                          {ex?.name ?? 'Chưa chọn bài tập'}
+                                        </Text>
+                                        {ex?.exercise_type ? (
+                                          <View style={[styles.exerciseTypeTag, { backgroundColor: col.badgeBg, borderColor: col.badgeBorder }]}>
+                                            <Text style={[styles.exerciseTypeTagText, { color: col.badgeText }]}>
+                                              {ex.exercise_type === 'compound' ? 'C' : 'I'}
+                                            </Text>
+                                          </View>
+                                        ) : null}
+                                      </View>
+                                      {entry.note ? (
+                                        <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
                                       ) : null}
                                     </View>
-                                    {entry.note ? (
-                                      <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
-                                    ) : null}
-                                  </View>
+                                  </TouchableOpacity>
                                   <View style={[styles.exerciseSubSetsPill, exerciseDone && styles.exerciseSubSetsPillDone]}>
                                     <Text style={[styles.exerciseSubSetsPillText, exerciseDone && styles.exerciseSubSetsPillTextDone]}>
                                       {actualForExercise != null ? `${dayProgressLoading ? '…' : actualForExercise}/${entry.sets}` : entry.sets} sets
@@ -664,6 +673,12 @@ export default function WeeklyPlanScreen() {
         onWorkoutPlansChange={setWorkoutPlans}
         onActivePlanChange={setActivePlanId}
         onPlansReload={(nextPlans) => setPlans(sortPlans(nextPlans))}
+      />
+
+      <ExerciseInfoModal
+        exercise={infoExercise}
+        muscleNameById={muscleNameById}
+        onClose={() => setInfoExercise(null)}
       />
     </View>
   );
@@ -814,6 +829,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: INK_RAISED, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
   },
+  exerciseSubMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
   exerciseSubThumbEmpty: {
     width: 30, height: 30, borderRadius: 7, borderWidth: 1, borderStyle: 'dashed',
   },
