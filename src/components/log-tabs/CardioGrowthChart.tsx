@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import Svg, {
   Path,
@@ -211,47 +211,60 @@ type SvgChartProps = {
 };
 
 function CardioSvgChart({ points, selectedIdx, onSelect, mode }: SvgChartProps) {
+  // Hồi quy tuyến tính + dựng path SVG chỉ phụ thuộc points/mode, không phụ
+  // thuộc selectedIdx — bọc trong useMemo để chạm vào 1 điểm khác trên biểu
+  // đồ (đổi selectedIdx) không tính lại toàn bộ trend + path mỗi lần render.
+  // Hook phải chạy trước mọi early-return để không phá vỡ thứ tự hook giữa
+  // các lần render (points rỗng -> đầy khi dữ liệu vừa tải xong).
+  const { toX, toY, linePath, areaPath, trendPath, ticks } = useMemo(() => {
+    if (points.length === 0) {
+      return { toX: () => 0, toY: () => 0, linePath: '', areaPath: '', trendPath: '', ticks: [] as { v: number; y: number }[] };
+    }
+    const vals = points.map((p) => p.totalMinutes);
+    const trend = linearRegression(vals);
+
+    const minRaw = Math.min(...vals, 0);
+    const maxRaw = Math.max(...vals, 1);
+    const span = Math.max(maxRaw - minRaw, 1);
+    const minV = Math.max(0, minRaw - span * 0.12);
+    const maxV = maxRaw + span * 0.08;
+    const range = Math.max(maxV - minV, 1);
+
+    const toX = (i: number) =>
+      PAD.left + (points.length > 1 ? (i / (points.length - 1)) * IW : IW / 2);
+    const toY = (v: number) => PAD.top + IH - ((v - minV) / range) * IH;
+
+    function smoothPath(ys: number[]): string {
+      if (ys.length === 1) return `M ${toX(0)} ${toY(ys[0])}`;
+      const pts = ys.map((v, i) => ({ x: toX(i), y: toY(v) }));
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length; i++) {
+        const cp1x = pts[i - 1].x + (pts[i].x - pts[i - 1].x) / 3;
+        const cp2x = pts[i].x - (pts[i].x - pts[i - 1].x) / 3;
+        d += ` C ${cp1x} ${pts[i - 1].y}, ${cp2x} ${pts[i].y}, ${pts[i].x} ${pts[i].y}`;
+      }
+      return d;
+    }
+
+    const linePath = smoothPath(vals);
+    const areaPath =
+      linePath +
+      ` L ${toX(points.length - 1)} ${PAD.top + IH}` +
+      ` L ${toX(0)} ${PAD.top + IH} Z`;
+    const trendPath = smoothPath(trend);
+
+    const ticks = Array.from({ length: 4 }, (_, i) => {
+      const v = minV + (range * i) / 3;
+      return { v: Math.max(0, Math.round(v)), y: toY(v) };
+    });
+
+    return { toX, toY, linePath, areaPath, trendPath, ticks };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, mode]);
+
   if (points.length === 0) return null;
 
-  const vals = points.map((p) => p.totalMinutes);
-  const trend = linearRegression(vals);
-
-  const minRaw = Math.min(...vals, 0);
-  const maxRaw = Math.max(...vals, 1);
-  const span = Math.max(maxRaw - minRaw, 1);
-  const minV = Math.max(0, minRaw - span * 0.12);
-  const maxV = maxRaw + span * 0.08;
-  const range = Math.max(maxV - minV, 1);
-
-  const toX = (i: number) =>
-    PAD.left + (points.length > 1 ? (i / (points.length - 1)) * IW : IW / 2);
-  const toY = (v: number) => PAD.top + IH - ((v - minV) / range) * IH;
-
-  function smoothPath(ys: number[]): string {
-    if (ys.length === 1) return `M ${toX(0)} ${toY(ys[0])}`;
-    const pts = ys.map((v, i) => ({ x: toX(i), y: toY(v) }));
-    let d = `M ${pts[0].x} ${pts[0].y}`;
-    for (let i = 1; i < pts.length; i++) {
-      const cp1x = pts[i - 1].x + (pts[i].x - pts[i - 1].x) / 3;
-      const cp2x = pts[i].x - (pts[i].x - pts[i - 1].x) / 3;
-      d += ` C ${cp1x} ${pts[i - 1].y}, ${cp2x} ${pts[i].y}, ${pts[i].x} ${pts[i].y}`;
-    }
-    return d;
-  }
-
-  const linePath = smoothPath(vals);
-  const areaPath =
-    linePath +
-    ` L ${toX(points.length - 1)} ${PAD.top + IH}` +
-    ` L ${toX(0)} ${PAD.top + IH} Z`;
-  const trendPath = smoothPath(trend);
-
   const safe = Math.min(Math.max(selectedIdx, 0), points.length - 1);
-
-  const ticks = Array.from({ length: 4 }, (_, i) => {
-    const v = minV + (range * i) / 3;
-    return { v: Math.max(0, Math.round(v)), y: toY(v) };
-  });
 
   return (
     <View style={s.chartWrap}>

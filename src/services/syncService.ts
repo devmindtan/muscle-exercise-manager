@@ -202,6 +202,15 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
         if (error) {
           console.error('Failed to sync workout log', { log, payload, error });
           if (error.code === '23503' && error.details && error.details.includes('exercise')) {
+            // Lưới an toàn, không phải xử lý cho 1 lỗi có thể tái diễn bình
+            // thường: app không bao giờ hard-delete exercises (softDeleteExercise
+            // chỉ set deleted_at), và FK exercise_id trên workout_logs là
+            // ON DELETE CASCADE nên kể cả có hard-delete cũng không thể ra
+            // 23503 — con trỏ đó sẽ tự cascade theo, không lỗi khoá ngoại.
+            // exercise_id chỉ thực sự "mồ côi" nếu hàng exercises đó bị dọn
+            // trực tiếp ngoài app (VD chạy SQL thủ công lúc dev/test). Giữ
+            // nhánh này để không kẹt sync vĩnh viễn vì 1 dòng log không thể
+            // cứu được, không phải để che 1 bug xoá dữ liệu trong app.
             await LocalDB.upsertWorkoutLog({ ...log, deleted: 1, dirty: 0, updated_at: new Date().toISOString() });
             errors.push(`Workout log ${log.id} orphaned (exercise_id not found), auto-deleted local.`);
           } else {

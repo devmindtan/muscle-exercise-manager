@@ -81,14 +81,18 @@ export default function StrengthTab() {
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
 
   // PR (kỷ lục reps/kg cao nhất từng ghi) của bài tập đang chọn — không phụ
-  // thuộc vào nhóm cơ hay ngày cụ thể, tính trên toàn bộ lịch sử log.
+  // thuộc vào nhóm cơ hay ngày cụ thể, tính trên toàn bộ lịch sử log. Debounce
+  // 200ms: nếu người dùng đổi bài liên tục, chỉ bài cuối cùng mới thực sự bắn
+  // query xuống SQLite thay vì mỗi lần đổi bài lại gọi 1 lần.
   useEffect(() => {
     if (!selectedExercise) { setExercisePR(null); return; }
     let cancelled = false;
-    getExercisePersonalRecord(selectedExercise.id).then((pr) => {
-      if (!cancelled) setExercisePR(pr);
-    });
-    return () => { cancelled = true; };
+    const timer = setTimeout(() => {
+      getExercisePersonalRecord(selectedExercise.id).then((pr) => {
+        if (!cancelled) setExercisePR(pr);
+      });
+    }, 200);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [selectedExercise]);
 
   const muscleGroupMap = useMemo(
