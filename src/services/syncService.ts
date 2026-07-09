@@ -144,6 +144,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           is_active: typeof exercise.is_active === 'boolean' ? exercise.is_active : !!exercise.is_active,
           parent_exercise_id: exercise.parent_exercise_id ?? null,
           exercise_type: exercise.exercise_type ?? null,
+          rest_seconds: exercise.rest_seconds ?? null,
+          prep_seconds: exercise.prep_seconds ?? null,
           deleted_at: isDeleted ? new Date().toISOString() : null,
         }) as any);
         if (error) {
@@ -348,6 +350,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           muscle_group_id: plan.muscle_group_id,
           exercise_id: plan.exercise_id ?? null,
           sets: plan.sets,
+          reps: plan.reps ?? null,
+          sort_order: plan.sort_order ?? null,
           note: plan.note,
           plan_id: plan.plan_id,
           created_at: plan.created_at,

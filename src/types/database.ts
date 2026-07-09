@@ -49,6 +49,8 @@ export type Database = {
           is_active?: boolean;
           parent_exercise_id?: string | null;
           exercise_type?: 'compound' | 'isolation' | null;
+          rest_seconds?: number | null;
+          prep_seconds?: number | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -62,6 +64,8 @@ export type Database = {
           is_active?: boolean;
           parent_exercise_id?: string | null;
           exercise_type?: 'compound' | 'isolation' | null;
+          rest_seconds?: number | null;
+          prep_seconds?: number | null;
           updated_at?: string;
           deleted_at?: string | null;
           sync_status?: 'pending' | 'synced' | 'failed';
@@ -219,6 +223,8 @@ export type Database = {
           muscle_group_id: string;
           exercise_id?: string | null;
           sets: number;
+          reps?: number | null;
+          sort_order?: number | null;
           note?: string | null;
           created_at?: string;
         };
@@ -227,6 +233,8 @@ export type Database = {
           muscle_group_id?: string;
           exercise_id?: string | null;
           sets?: number;
+          reps?: number | null;
+          sort_order?: number | null;
           note?: string | null;
         };
         Relationships: [
@@ -540,6 +548,8 @@ export type Exercise = {
   is_active: boolean;
   parent_exercise_id: string | null;
   exercise_type: 'compound' | 'isolation' | null;
+  rest_seconds: number | null;
+  prep_seconds: number | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -638,7 +648,10 @@ export type WeeklyPlanEntry = {
   muscle_group_id: string;
   exercise_id: string | null;
   sets: number;
+  reps: number | null;
+  sort_order: number | null;
   note: string | null;
+  plan_id: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

@@ -474,6 +474,8 @@ export async function createExercise(data: {
   image_uri?: string | null;
   parentExerciseId?: string | null;
   exerciseType?: 'compound' | 'isolation' | null;
+  restSeconds?: number | null;
+  prepSeconds?: number | null;
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
@@ -490,6 +492,8 @@ export async function createExercise(data: {
       is_active: true,
       parent_exercise_id: data.parentExerciseId ?? null,
       exercise_type: data.exerciseType ?? null,
+      rest_seconds: data.restSeconds ?? null,
+      prep_seconds: data.prepSeconds ?? null,
       created_at: now,
       updated_at: now,
       deleted_at: null,
@@ -508,6 +512,8 @@ export async function createExercise(data: {
     is_active: 1,
     parent_exercise_id: data.parentExerciseId ?? null,
     exercise_type: data.exerciseType ?? null,
+    rest_seconds: data.restSeconds ?? null,
+    prep_seconds: data.prepSeconds ?? null,
     created_at: now,
     updated_at: now,
     dirty: 1,
@@ -527,6 +533,8 @@ export async function insertExercise(data: {
   is_active?: boolean;
   parent_exercise_id?: string | null;
   exercise_type?: 'compound' | 'isolation' | null;
+  rest_seconds?: number | null;
+  prep_seconds?: number | null;
 }) {
   return createExercise({
     muscleGroupId: data.muscleGroupId || data.muscle_group_id || '',
@@ -535,6 +543,8 @@ export async function insertExercise(data: {
     image_uri: data.image_uri ?? null,
     parentExerciseId: data.parent_exercise_id ?? null,
     exerciseType: data.exercise_type ?? null,
+    restSeconds: data.rest_seconds ?? null,
+    prepSeconds: data.prep_seconds ?? null,
   });
 }
 
@@ -779,6 +789,22 @@ export async function getWorkoutLogs(startDate?: string, endDate?: string, exerc
 
 export async function getWorkoutLogById(id: string) {
   return LocalDB.getWorkoutLogById(id);
+}
+
+// Kỷ lục cá nhân (PR) của 1 bài tập — reps cao nhất và kg cao nhất từng ghi
+// nhận, không nhất thiết cùng 1 lần log. Dùng khi chọn bài tập ở form ghi log
+// (tab "Ghi lại" và màn "Tập trung") để người dùng biết mốc cần vượt qua.
+export async function getExercisePersonalRecord(
+  exerciseId: string,
+): Promise<{ bestReps: number | null; bestWeight: number | null }> {
+  const logs = await getWorkoutLogs(undefined, undefined, exerciseId);
+  let bestReps: number | null = null;
+  let bestWeight: number | null = null;
+  for (const log of logs as any[]) {
+    if (log.reps != null && (bestReps == null || log.reps > bestReps)) bestReps = log.reps;
+    if (log.weight != null && (bestWeight == null || log.weight > bestWeight)) bestWeight = log.weight;
+  }
+  return { bestReps, bestWeight };
 }
 
 export async function createWorkoutLog(data: any) {

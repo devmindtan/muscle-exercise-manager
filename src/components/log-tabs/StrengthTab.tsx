@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Dumbbell,
+  Trophy,
 } from 'lucide-react-native';
 import {
   getMuscleGroups,
@@ -29,6 +30,7 @@ import {
   softDeleteWorkoutLog,
   getLogCountsByMuscleGroup,
   getExerciseById,
+  getExercisePersonalRecord,
 } from '@/src/lib/repository';
 import type { RecentLog } from '@/src/lib/repository';
 import { MuscleGroup, Exercise } from '@/src/types/database';
@@ -59,6 +61,7 @@ export default function StrengthTab() {
 
   const [selectedGroup, setSelectedGroup] = useState<MuscleGroup | null>(null);
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
+  const [exercisePR, setExercisePR] = useState<{ bestReps: number | null; bestWeight: number | null } | null>(null);
   const [sets, setSets] = useState(3);
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
@@ -75,6 +78,17 @@ export default function StrengthTab() {
 
   const selectedExerciseRef = useRef(selectedExercise);
   useEffect(() => { selectedExerciseRef.current = selectedExercise; }, [selectedExercise]);
+
+  // PR (kỷ lục reps/kg cao nhất từng ghi) của bài tập đang chọn — không phụ
+  // thuộc vào nhóm cơ hay ngày cụ thể, tính trên toàn bộ lịch sử log.
+  useEffect(() => {
+    if (!selectedExercise) { setExercisePR(null); return; }
+    let cancelled = false;
+    getExercisePersonalRecord(selectedExercise.id).then((pr) => {
+      if (!cancelled) setExercisePR(pr);
+    });
+    return () => { cancelled = true; };
+  }, [selectedExercise]);
 
   const muscleGroupMap = useMemo(
     () => new Map(muscleGroups.map((g) => [g.id, g])),
@@ -210,7 +224,26 @@ export default function StrengthTab() {
           activeOpacity={0.7}
         >
           {selectedExercise ? (
-            <Text style={styles.pickerText}>{selectedExercise.name}</Text>
+            <View style={styles.pickerExerciseInfo}>
+              <Text style={styles.pickerText}>{selectedExercise.name}</Text>
+              {exercisePR && (exercisePR.bestReps != null || exercisePR.bestWeight != null) ? (
+                <View style={styles.prRow}>
+                  <Trophy color={Colors.accent} size={12} strokeWidth={2} />
+                  {exercisePR.bestReps != null && (
+                    <View style={styles.prChip}>
+                      <Text style={styles.prChipValue}>{exercisePR.bestReps}</Text>
+                      <Text style={styles.prChipUnit}>reps</Text>
+                    </View>
+                  )}
+                  {exercisePR.bestWeight != null && (
+                    <View style={styles.prChip}>
+                      <Text style={styles.prChipValue}>{exercisePR.bestWeight}</Text>
+                      <Text style={styles.prChipUnit}>kg</Text>
+                    </View>
+                  )}
+                </View>
+              ) : null}
+            </View>
           ) : (
             <Text style={styles.pickerPlaceholder}>
               {selectedGroup ? 'Chọn bài tập...' : 'Chọn nhóm cơ trước'}
@@ -556,6 +589,15 @@ const styles = StyleSheet.create({
   pickerDot: { width: 9, height: 9, borderRadius: 5 },
   pickerText: { fontSize: 15, color: Colors.text, fontWeight: '600' },
   pickerPlaceholder: { fontSize: 14, color: Colors.textMuted },
+  pickerExerciseInfo: { flex: 1, gap: 6 },
+  prRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  prChip: {
+    flexDirection: 'row', alignItems: 'baseline', gap: 3,
+    backgroundColor: Colors.accent + '18', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  prChipValue: { fontSize: 12, fontWeight: '800', color: Colors.accent },
+  prChipUnit: { fontSize: 10, fontWeight: '600', color: Colors.accentDim },
 
   /* Sets */
   setsControl: {

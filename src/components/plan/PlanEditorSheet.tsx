@@ -56,6 +56,8 @@ type EntryUpsertPayload = {
   muscleGroupId: string;
   exerciseId: string | null;
   sets: number;
+  reps: number | null;
+  sortOrder: number | null;
   note: string;
 };
 
@@ -65,6 +67,9 @@ type EntryUpsertPayload = {
 // duy nhất với exerciseId = null (y hệt hành vi cũ, chỉ theo nhóm cơ).
 // setsByExerciseId (nếu có) cho phép mỗi bài tập có sets riêng thay vì dùng
 // chung 1 giá trị `sets` — dùng khi 1 nhóm cơ có >= 2 bài tập được chọn.
+// repsByExerciseId (nếu có) là reps mục tiêu riêng từng bài, tuỳ chọn (null
+// = không đặt mục tiêu reps). sortOrder = vị trí trong mảng exerciseIds —
+// đủ dùng cho Focus Mode chạy đúng thứ tự trong phạm vi 1 nhóm cơ/1 ngày.
 function resolveMuscleEntries(
   dayKey: WeekDayKey,
   muscleGroupId: string,
@@ -73,12 +78,23 @@ function resolveMuscleEntries(
   exerciseIds: string[],
   existingEntries: WeeklyPlanEntry[],
   setsByExerciseId?: Record<string, number>,
+  repsByExerciseId?: Record<string, number | null>,
 ): { toUpsert: EntryUpsertPayload[]; toDeleteIds: string[] } {
   const targetIds: (string | null)[] = exerciseIds.length > 0 ? exerciseIds : [null];
-  const toUpsert = targetIds.map((exId) => {
+  const toUpsert = targetIds.map((exId, idx) => {
     const existing = existingEntries.find((e) => (e.exerciseId ?? null) === exId);
     const rowSets = exId && setsByExerciseId?.[exId] !== undefined ? setsByExerciseId[exId] : sets;
-    return { id: existing?.id, dayKey, muscleGroupId, exerciseId: exId, sets: rowSets, note };
+    const rowReps = exId ? repsByExerciseId?.[exId] ?? null : null;
+    return {
+      id: existing?.id,
+      dayKey,
+      muscleGroupId,
+      exerciseId: exId,
+      sets: rowSets,
+      reps: rowReps,
+      sortOrder: exId ? idx : null,
+      note,
+    };
   });
   const toDeleteIds = existingEntries
     .filter((e) => !targetIds.includes(e.exerciseId ?? null))
@@ -142,6 +158,11 @@ export function PlanEditorSheet({
   // để giảm độ phức tạp UI). muscleGroupId -> exerciseId -> giá trị input.
   const [exerciseSetsOverride, setExerciseSetsOverride] = useState<Record<string, Record<string, string>>>({});
 
+  // Reps mục tiêu riêng từng bài tập — chỉ có ý nghĩa khi đã chọn bài tập cụ
+  // thể, tuỳ chọn (không bắt buộc, để trống = không đặt mục tiêu). Cũng chỉ
+  // cho chỉnh ở chế độ sửa, giống exerciseSetsOverride.
+  const [exerciseRepsOverride, setExerciseRepsOverride] = useState<Record<string, Record<string, string>>>({});
+
   // Seed lại toàn bộ state cục bộ mỗi khi có yêu cầu mở sheet mới (tạo/sửa/
   // đưa từ ngoài kế hoạch vào).
   useEffect(() => {
@@ -165,8 +186,15 @@ export function PlanEditorSheet({
       // Nạp sets thật của từng bài tập (không chia đều lại) để người dùng
       // thấy đúng số hiện có, chỉnh tiếp từ đó.
       const overrideForGroup: Record<string, string> = {};
-      siblings.forEach((p) => { if (p.exerciseId) overrideForGroup[p.exerciseId] = String(p.sets); });
+      const repsOverrideForGroup: Record<string, string> = {};
+      siblings.forEach((p) => {
+        if (p.exerciseId) {
+          overrideForGroup[p.exerciseId] = String(p.sets);
+          if (p.reps != null) repsOverrideForGroup[p.exerciseId] = String(p.reps);
+        }
+      });
       setExerciseSetsOverride({ [entry.muscleGroupId]: overrideForGroup });
+      setExerciseRepsOverride({ [entry.muscleGroupId]: repsOverrideForGroup });
       setCreateDayExerciseSelections({});
     } else if (request.type === 'prefill') {
       const sets = String(Math.max(1, Math.round(request.sets)));
@@ -176,6 +204,7 @@ export function PlanEditorSheet({
       setEditNote('');
       setSelectedExercises({});
       setExerciseSetsOverride({});
+      setExerciseRepsOverride({});
       setCreateDayExerciseSelections({});
     } else {
       setFormDayCreate(initialDay);
@@ -184,6 +213,7 @@ export function PlanEditorSheet({
       setEditNote('');
       setSelectedExercises({});
       setExerciseSetsOverride({});
+      setExerciseRepsOverride({});
       setCreateDayExerciseSelections({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -314,6 +344,15 @@ export function PlanEditorSheet({
           }
           return prevOverride;
         });
+        // Reps không có khái niệm "tổng" để chia — bỏ chọn thì xoá override,
+        // thêm bài mới thì để trống (không ép nhập, không tự điền).
+        if (!turningOn) {
+          setExerciseRepsOverride((prevOverride) => {
+            const nextOverride = { ...(prevOverride[muscleGroupId] || {}) };
+            delete nextOverride[exerciseId];
+            return { ...prevOverride, [muscleGroupId]: nextOverride };
+          });
+        }
       }
       return nextMap;
     });
@@ -326,6 +365,7 @@ export function PlanEditorSheet({
         setCreateDayExerciseSelections((dayPrev) => ({ ...dayPrev, [formDayCreate]: nextMap }));
       } else {
         setExerciseSetsOverride((prevOverride) => ({ ...prevOverride, [muscleGroupId]: {} }));
+        setExerciseRepsOverride((prevOverride) => ({ ...prevOverride, [muscleGroupId]: {} }));
       }
       return nextMap;
     });
@@ -341,6 +381,14 @@ export function PlanEditorSheet({
       setSelectedMuscles((prevMuscles) => ({ ...prevMuscles, [muscleGroupId]: String(total) }));
       return { ...prev, [muscleGroupId]: nextGroupOverride };
     });
+  };
+
+  // Reps mục tiêu riêng — không có tổng để dồn lại, chỉ lưu giá trị nhập.
+  const updateExerciseReps = (muscleGroupId: string, exerciseId: string, val: string) => {
+    setExerciseRepsOverride((prev) => ({
+      ...prev,
+      [muscleGroupId]: { ...(prev[muscleGroupId] || {}), [exerciseId]: val },
+    }));
   };
 
   const submit = async () => {
@@ -380,7 +428,14 @@ export function PlanEditorSheet({
         const setsByExerciseId = exerciseIds.length >= 2
           ? Object.fromEntries(exerciseIds.map((exId) => [exId, Number(exerciseSetsOverride[muscleGroupId]?.[exId]) || 0]))
           : undefined;
-        const { toUpsert, toDeleteIds } = resolveMuscleEntries(dayKey, muscleGroupId, sets, editNote, exerciseIds, existingEntries, setsByExerciseId);
+        const repsByExerciseId = exerciseIds.length >= 1
+          ? Object.fromEntries(exerciseIds.map((exId) => {
+              const raw = exerciseRepsOverride[muscleGroupId]?.[exId];
+              const parsed = Number(raw);
+              return [exId, raw && Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null];
+            }))
+          : undefined;
+        const { toUpsert, toDeleteIds } = resolveMuscleEntries(dayKey, muscleGroupId, sets, editNote, exerciseIds, existingEntries, setsByExerciseId, repsByExerciseId);
         allUpserts.push(...toUpsert);
         allDeleteIds.push(...toDeleteIds);
       } else {
@@ -627,8 +682,12 @@ export function PlanEditorSheet({
                       </TouchableOpacity>
                     )}
 
-                    {/* Sets riêng từng bài — chỉ hiện khi sửa và có >= 2 bài */}
-                    {editingId && chosenExerciseIds.length >= 2 && (
+                    {/* Sets/reps riêng từng bài — chỉ hiện khi sửa và đã chọn
+                        bài tập cụ thể. Sets riêng chỉ cần khi >= 2 bài (khi
+                        chỉ 1 bài, sets đã có ở ô chung phía trên); reps mục
+                        tiêu thì luôn hiện vì nó vốn là thuộc tính riêng từng
+                        bài, không có "tổng" để gộp. */}
+                    {editingId && chosenExerciseIds.length >= 1 && (
                       <View style={styles.exerciseSetsBreakdown}>
                         {chosenExerciseIds.map((exId) => (
                           <View key={exId} style={styles.exerciseSetsBreakdownRow}>
@@ -638,11 +697,24 @@ export function PlanEditorSheet({
                             <Text style={styles.exerciseSetsBreakdownName} numberOfLines={1}>
                               {exerciseNameById[exId] || 'Bài tập'}
                             </Text>
+                            {chosenExerciseIds.length >= 2 && (
+                              <TextInput
+                                style={[styles.exerciseSetsBreakdownInput, { borderColor: col?.bar ?? Colors.accent }]}
+                                keyboardType="number-pad"
+                                value={exerciseSetsOverride[group.id]?.[exId] ?? ''}
+                                onChangeText={(val) => updateExerciseSets(group.id, exId, val)}
+                                placeholder="sets"
+                                placeholderTextColor={Colors.textMuted}
+                                selectTextOnFocus
+                              />
+                            )}
                             <TextInput
-                              style={[styles.exerciseSetsBreakdownInput, { borderColor: col?.bar ?? Colors.accent }]}
+                              style={[styles.exerciseRepsBreakdownInput, { borderColor: col?.bar ?? Colors.accent }]}
                               keyboardType="number-pad"
-                              value={exerciseSetsOverride[group.id]?.[exId] ?? ''}
-                              onChangeText={(val) => updateExerciseSets(group.id, exId, val)}
+                              value={exerciseRepsOverride[group.id]?.[exId] ?? ''}
+                              onChangeText={(val) => updateExerciseReps(group.id, exId, val)}
+                              placeholder="reps"
+                              placeholderTextColor={Colors.textMuted}
                               selectTextOnFocus
                             />
                           </View>
@@ -804,5 +876,10 @@ const styles = StyleSheet.create({
     width: 44, textAlign: 'center', borderWidth: 1.5, borderRadius: 8,
     paddingVertical: 3, paddingHorizontal: 4,
     fontSize: 13, fontWeight: '700', color: Colors.text, backgroundColor: Colors.surfaceElevated,
+  },
+  exerciseRepsBreakdownInput: {
+    width: 52, textAlign: 'center', borderWidth: 1.5, borderRadius: 8,
+    paddingVertical: 3, paddingHorizontal: 4,
+    fontSize: 12, fontWeight: '600', color: Colors.text, backgroundColor: Colors.surfaceElevated,
   },
 });

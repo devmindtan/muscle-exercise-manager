@@ -44,6 +44,8 @@ export type LocalWeeklyPlanEntry = {
   muscle_group_id: string;
   exercise_id: string | null;
   sets: number;
+  reps: number | null;
+  sort_order: number | null;
   note: string | null;
   plan_id: string | null;
   created_at: string;
@@ -235,6 +237,8 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       is_active INTEGER DEFAULT 1,
       parent_exercise_id TEXT,
       exercise_type TEXT,
+      rest_seconds INTEGER,
+      prep_seconds INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       dirty INTEGER DEFAULT 0,
@@ -301,6 +305,8 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       muscle_group_id TEXT NOT NULL,
       exercise_id TEXT,
       sets INTEGER NOT NULL,
+      reps INTEGER,
+      sort_order INTEGER,
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -491,6 +497,8 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'exercises', 'is_active', 'INTEGER DEFAULT 1');
   await ensureColumn(database, 'exercises', 'parent_exercise_id', 'TEXT');
   await ensureColumn(database, 'exercises', 'exercise_type', 'TEXT');
+  await ensureColumn(database, 'exercises', 'rest_seconds', 'INTEGER');
+  await ensureColumn(database, 'exercises', 'prep_seconds', 'INTEGER');
 
   await ensureColumn(database, 'workout_logs', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
@@ -508,6 +516,8 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'weekly_plan_entries', 'note', 'TEXT');
   await ensureColumn(database, 'weekly_plan_entries', 'plan_id', 'TEXT');
   await ensureColumn(database, 'weekly_plan_entries', 'exercise_id', 'TEXT');
+  await ensureColumn(database, 'weekly_plan_entries', 'reps', 'INTEGER');
+  await ensureColumn(database, 'weekly_plan_entries', 'sort_order', 'INTEGER');
 
   await ensureColumn(database, 'plan_shares', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
 
@@ -815,8 +825,8 @@ export async function upsertExercise(exercise: LocalExercise) {
   const dirty = exercise.dirty ?? 0;
   const deleted = exercise.deleted ?? 0;
   await database.runAsync(
-    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, exercise_type, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, exercise_type, rest_seconds, prep_seconds, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
       muscle_group_id = COALESCE(excluded.muscle_group_id, muscle_group_id),
       name = COALESCE(excluded.name, name),
@@ -825,6 +835,8 @@ export async function upsertExercise(exercise: LocalExercise) {
       is_active = COALESCE(excluded.is_active, is_active),
       parent_exercise_id = excluded.parent_exercise_id,
       exercise_type = excluded.exercise_type,
+      rest_seconds = excluded.rest_seconds,
+      prep_seconds = excluded.prep_seconds,
       updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
@@ -837,6 +849,8 @@ export async function upsertExercise(exercise: LocalExercise) {
       exercise.is_active ? 1 : 0,
       exercise.parent_exercise_id ?? null,
       exercise.exercise_type ?? null,
+      exercise.rest_seconds ?? null,
+      exercise.prep_seconds ?? null,
       exercise.created_at,
       exercise.updated_at || new Date().toISOString(),
       dirty,
@@ -1225,6 +1239,8 @@ export async function getWeeklyPlanEntries(planId?: string | null) {
          WHEN 'sun' THEN 7
          ELSE 99
        END ASC,
+       (sort_order IS NULL) ASC,
+       sort_order ASC,
        created_at ASC`;
 
   if (planId) {
@@ -1245,13 +1261,15 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
   const deleted = entry.deleted ?? 0;
 
   await database.runAsync(
-    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, exercise_id, sets, note, plan_id, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO weekly_plan_entries (id, day_key, muscle_group_id, exercise_id, sets, reps, sort_order, note, plan_id, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        day_key = excluded.day_key,
        muscle_group_id = excluded.muscle_group_id,
        exercise_id = excluded.exercise_id,
        sets = excluded.sets,
+       reps = excluded.reps,
+       sort_order = excluded.sort_order,
        note = excluded.note,
        plan_id = COALESCE(excluded.plan_id, plan_id),
        updated_at = datetime('now'),
@@ -1263,6 +1281,8 @@ export async function upsertWeeklyPlanEntry(entry: LocalWeeklyPlanEntry) {
       entry.muscle_group_id,
       entry.exercise_id || null,
       Math.max(1, Math.round(entry.sets)),
+      entry.reps ?? null,
+      entry.sort_order ?? null,
       entry.note || null,
       entry.plan_id || null,
       entry.created_at,

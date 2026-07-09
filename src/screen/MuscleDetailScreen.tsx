@@ -109,6 +109,10 @@ export default function MuscleDetailScreen() {
   const [exParentId, setExParentId] = useState<string | null>(null);
   const [exType, setExType] = useState<'compound' | 'isolation' | null>(null);
   const [exSecondaryIds, setExSecondaryIds] = useState<Set<string>>(new Set());
+  // Thời gian nghỉ/chuẩn bị mặc định (giây) cho Focus Mode — tuỳ chọn, để
+  // trống thì Focus Mode tự dùng mặc định chung (90s nghỉ/120s chuẩn bị).
+  const [exRestSeconds, setExRestSeconds] = useState('');
+  const [exPrepSeconds, setExPrepSeconds] = useState('');
   const [saving, setSaving] = useState(false);
   const [exError, setExError] = useState('');
   const [expandedVariants, setExpandedVariants] = useState<Set<string>>(new Set());
@@ -133,6 +137,8 @@ export default function MuscleDetailScreen() {
     muscle_group_id: '',
     parent_exercise_id: null as string | null,
     exercise_type: null as 'compound' | 'isolation' | null,
+    rest_seconds: '',
+    prep_seconds: '',
   });
   const [editSecondaryIds, setEditSecondaryIds] = useState<Set<string>>(new Set());
   const [loadError, setLoadError] = useState('');
@@ -214,6 +220,8 @@ export default function MuscleDetailScreen() {
     setShowAddExercise(false);
     setExType(null);
     setExSecondaryIds(new Set());
+    setExRestSeconds('');
+    setExPrepSeconds('');
   };
 
   const closeEditExerciseModal = () => {
@@ -333,6 +341,8 @@ export default function MuscleDetailScreen() {
         image_uri: exImageUri.trim() || null,
         parent_exercise_id: exParentId,
         exercise_type: exType,
+        rest_seconds: exRestSeconds.trim() ? Math.max(0, Math.round(Number(exRestSeconds))) : null,
+        prep_seconds: exPrepSeconds.trim() ? Math.max(0, Math.round(Number(exPrepSeconds))) : null,
       });
       if (exType === 'compound' && exSecondaryIds.size > 0) {
         await setExerciseSecondaryMuscles(created.id, Array.from(exSecondaryIds));
@@ -344,6 +354,8 @@ export default function MuscleDetailScreen() {
       setExParentId(null);
       setExType(null);
       setExSecondaryIds(new Set());
+      setExRestSeconds('');
+      setExPrepSeconds('');
       load();
     } catch (e: unknown) {
       setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
@@ -361,6 +373,8 @@ export default function MuscleDetailScreen() {
       muscle_group_id: exercise.muscle_group_id,
       parent_exercise_id: exercise.parent_exercise_id ?? null,
       exercise_type: exercise.exercise_type ?? null,
+      rest_seconds: exercise.rest_seconds != null ? String(exercise.rest_seconds) : '',
+      prep_seconds: exercise.prep_seconds != null ? String(exercise.prep_seconds) : '',
     });
     setEditSecondaryIds(new Set());
     setShowEditExercise(true);
@@ -440,6 +454,8 @@ export default function MuscleDetailScreen() {
         muscle_group_id: editExerciseForm.muscle_group_id,
         parent_exercise_id: editExerciseForm.parent_exercise_id,
         exercise_type: editExerciseForm.exercise_type,
+        rest_seconds: editExerciseForm.rest_seconds.trim() ? Math.max(0, Math.round(Number(editExerciseForm.rest_seconds))) : null,
+        prep_seconds: editExerciseForm.prep_seconds.trim() ? Math.max(0, Math.round(Number(editExerciseForm.prep_seconds))) : null,
       });
       // Không compound nữa -> dọn sạch nhóm cơ phụ đã gán trước đó.
       await setExerciseSecondaryMuscles(
@@ -819,6 +835,32 @@ export default function MuscleDetailScreen() {
               ))}
             </View>
 
+            <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
+            <View style={styles.restPrepRow}>
+              <View style={styles.restPrepField}>
+                <Text style={styles.restPrepFieldLabel}>Nghỉ giữa set</Text>
+                <TextInput
+                  style={styles.input}
+                  value={exRestSeconds}
+                  onChangeText={setExRestSeconds}
+                  keyboardType="number-pad"
+                  placeholder="90"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+              <View style={styles.restPrepField}>
+                <Text style={styles.restPrepFieldLabel}>Chuẩn bị đổi bài</Text>
+                <TextInput
+                  style={styles.input}
+                  value={exPrepSeconds}
+                  onChangeText={setExPrepSeconds}
+                  keyboardType="number-pad"
+                  placeholder="120"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+            </View>
+
             {exType === 'compound' && (
               <>
                 <Text style={styles.label}>Nhóm cơ phụ tác động (tuỳ chọn)</Text>
@@ -981,6 +1023,32 @@ export default function MuscleDetailScreen() {
                   </Text>
                 </TouchableOpacity>
               ))}
+            </View>
+
+            <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
+            <View style={styles.restPrepRow}>
+              <View style={styles.restPrepField}>
+                <Text style={styles.restPrepFieldLabel}>Nghỉ giữa set</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editExerciseForm.rest_seconds}
+                  onChangeText={(t) => setEditExerciseForm((f) => ({ ...f, rest_seconds: t }))}
+                  keyboardType="number-pad"
+                  placeholder="90"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+              <View style={styles.restPrepField}>
+                <Text style={styles.restPrepFieldLabel}>Chuẩn bị đổi bài</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editExerciseForm.prep_seconds}
+                  onChangeText={(t) => setEditExerciseForm((f) => ({ ...f, prep_seconds: t }))}
+                  keyboardType="number-pad"
+                  placeholder="120"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
             </View>
 
             {editExerciseForm.exercise_type === 'compound' && (
@@ -1353,6 +1421,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
+  restPrepRow: { flexDirection: 'row', gap: 10 },
+  restPrepField: { flex: 1 },
+  restPrepFieldLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
   input: {
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,

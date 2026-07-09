@@ -21,6 +21,8 @@ export type WeeklyPlanEntry = {
   muscleGroupId: string;
   exerciseId: string | null;
   sets: number;
+  reps: number | null;
+  sortOrder: number | null;
   note: string | null;
   planId: string | null;
   createdAt: string;
@@ -33,6 +35,8 @@ export type WeeklyPlanEntryInput = {
   muscleGroupId: string;
   exerciseId?: string | null;
   sets: number;
+  reps?: number | null;
+  sortOrder?: number | null;
   note?: string | null;
 };
 
@@ -75,12 +79,17 @@ function normalizeEntries(value: unknown): WeeklyPlanEntry[] {
       const numericSets = Number(entry.sets);
       if (!Number.isFinite(numericSets) || numericSets <= 0) return null;
 
+      const numericReps = Number(entry.reps);
+      const numericSortOrder = Number(entry.sortOrder);
+
       return {
         id: String(entry.id),
         dayKey: entry.dayKey as WeekDayKey,
         muscleGroupId: String(entry.muscleGroupId),
         exerciseId: entry.exerciseId ? String(entry.exerciseId) : null,
         sets: Math.round(numericSets),
+        reps: Number.isFinite(numericReps) && numericReps > 0 ? Math.round(numericReps) : null,
+        sortOrder: Number.isFinite(numericSortOrder) ? Math.round(numericSortOrder) : null,
         note: entry.note ? String(entry.note) : null,
         planId: entry.planId ? String(entry.planId) : null,
         createdAt: entry.createdAt || new Date().toISOString(),
@@ -390,6 +399,8 @@ async function getWebWeeklyPlanEntries(userId?: string | null, planId?: string |
       muscleGroupId: row.muscle_group_id,
       exerciseId: row.exercise_id ?? null,
       sets: row.sets,
+      reps: row.reps ?? null,
+      sortOrder: row.sort_order ?? null,
       note: row.note,
       planId: row.plan_id ?? null,
       createdAt: row.created_at,
@@ -430,6 +441,8 @@ export async function getWeeklyPlanEntries(userId?: string | null, planId?: stri
     muscleGroupId: row.muscle_group_id,
     exerciseId: row.exercise_id || null,
     sets: Number(row.sets) || 0,
+    reps: row.reps != null ? Number(row.reps) : null,
+    sortOrder: row.sort_order != null ? Number(row.sort_order) : null,
     note: row.note || null,
     planId: row.plan_id || null,
     createdAt: row.created_at,
@@ -450,6 +463,8 @@ export async function upsertWeeklyPlanEntry(
     muscleGroupId: input.muscleGroupId,
     exerciseId: input.exerciseId ?? null,
     sets: Math.max(1, Math.round(input.sets)),
+    reps: input.reps != null && input.reps > 0 ? Math.round(input.reps) : null,
+    sortOrder: input.sortOrder ?? null,
     note: input.note?.trim() || null,
     planId: resolvedPlanId,
     createdAt: now,
@@ -467,6 +482,8 @@ export async function upsertWeeklyPlanEntry(
         muscle_group_id: nextEntry.muscleGroupId,
         exercise_id: nextEntry.exerciseId,
         sets: nextEntry.sets,
+        reps: nextEntry.reps,
+        sort_order: nextEntry.sortOrder,
         note: nextEntry.note,
         plan_id: nextEntry.planId,
         created_at: nextEntry.createdAt,
@@ -505,6 +522,8 @@ export async function upsertWeeklyPlanEntry(
     muscle_group_id: nextEntry.muscleGroupId,
     exercise_id: nextEntry.exerciseId,
     sets: nextEntry.sets,
+    reps: nextEntry.reps,
+    sort_order: nextEntry.sortOrder,
     note: nextEntry.note,
     plan_id: resolvedPlanId,
     created_at: existing?.createdAt || now,
@@ -534,6 +553,8 @@ export async function upsertWeeklyPlanEntries(
     muscleGroupId: input.muscleGroupId,
     exerciseId: input.exerciseId ?? null,
     sets: Math.max(1, Math.round(input.sets)),
+    reps: input.reps != null && input.reps > 0 ? Math.round(input.reps) : null,
+    sortOrder: input.sortOrder ?? null,
     note: input.note?.trim() || null,
     planId: resolvedPlanId,
     createdAt: now,
@@ -551,6 +572,8 @@ export async function upsertWeeklyPlanEntries(
         muscle_group_id: nextEntry.muscleGroupId,
         exercise_id: nextEntry.exerciseId,
         sets: nextEntry.sets,
+        reps: nextEntry.reps,
+        sort_order: nextEntry.sortOrder,
         note: nextEntry.note,
         plan_id: nextEntry.planId,
         created_at: nextEntry.createdAt,
@@ -596,6 +619,8 @@ export async function upsertWeeklyPlanEntries(
       muscle_group_id: nextEntry.muscleGroupId,
       exercise_id: nextEntry.exerciseId,
       sets: nextEntry.sets,
+      reps: nextEntry.reps,
+      sort_order: nextEntry.sortOrder,
       note: nextEntry.note,
       plan_id: resolvedPlanId,
       created_at: existing?.createdAt || now,

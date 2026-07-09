@@ -118,17 +118,17 @@ export function ExercisePickerSheet({
                 const isChosen = chosenExerciseIds.includes(ex.id);
                 return (
                   <View key={ex.id}>
-                    <View style={[styles.optionRow, isChosen && styles.optionRowActive]}>
-                      <TouchableOpacity
-                        style={styles.optionMain}
-                        onPress={() => onToggle(ex.id)}
-                        activeOpacity={0.7}
-                      >
+                    <TouchableOpacity
+                      style={[styles.optionRow, isChosen && styles.optionRowActive]}
+                      onPress={() => onToggle(ex.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.optionMain}>
                         <ExerciseThumb ex={ex} tone={tone} />
                         <Text style={[styles.optionText, isChosen && styles.optionTextActive]} numberOfLines={2}>
                           {ex.name}
                         </Text>
-                      </TouchableOpacity>
+                      </View>
                       {variants.length > 0 && (
                         <TouchableOpacity
                           style={styles.variantToggle}
@@ -150,7 +150,7 @@ export function ExercisePickerSheet({
                       <View style={[styles.checkbox, isChosen && styles.checkboxActive]}>
                         {isChosen && <Check color={Colors.bg} size={14} strokeWidth={3} />}
                       </View>
-                    </View>
+                    </TouchableOpacity>
 
                     {expanded && variants.map((v) => {
                       const vChosen = chosenExerciseIds.includes(v.id);

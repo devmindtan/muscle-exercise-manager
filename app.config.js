@@ -55,6 +55,7 @@ export default {
           },
         },
       ],
+      'expo-audio',
     ],
   },
 };

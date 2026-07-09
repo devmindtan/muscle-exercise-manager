@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ChevronDown, Plus, Pencil, Trash2, Flame } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { ChevronDown, Plus, Pencil, Trash2, Flame, Target } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs, getExercises } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
@@ -50,9 +51,9 @@ const INK_RAISED = '#161C19';
 const CHALK = '#F3F6EF';
 const LIME = '#D6FF3F';
 const LIME_DIM = 'rgba(214,255,63,0.16)';
-// Xanh lá cho trạng thái "đã hoàn thành" — khác với LIME (màu nhấn chính)
-const GREEN = '#34D399';
-const GREEN_DIM = 'rgba(52,211,153,0.16)';
+// Xanh lá cho trạng thái "đã hoàn thành" — khác với LIME (màu nhấn chính),
+// dùng cùng tông với Colors.success để nhất quán với các màn khác trong app.
+const GREEN = '#4CAF50';
 const HAIRLINE = 'rgba(243,246,239,0.10)';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -119,11 +120,12 @@ function getWeekBounds() {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function WeeklyPlanScreen() {
+  const router = useRouter();
   const { user } = useAuth();
   const userKey = user?.id || 'guest';
   const todayKey = getTodayKey();
   const dayScrollRef = useRef<ScrollView>(null);
-  const dayProgressCacheRef = useRef<Partial<Record<WeekDayKey, Record<string, number>>>>({});
+  const dayProgressCacheRef = useRef<Partial<Record<WeekDayKey, { muscle: Record<string, number>; exercise: Record<string, number> }>>>({});
 
   const [groups, setGroups] = useState<MuscleGroupWithCount[]>([]);
   const [plans, setPlans] = useState<WeeklyPlanEntry[]>([]);
@@ -133,6 +135,7 @@ export default function WeeklyPlanScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actualSetsByMuscle, setActualSetsByMuscle] = useState<Record<string, number>>({});
+  const [actualSetsByExercise, setActualSetsByExercise] = useState<Record<string, number>>({});
   const [weeklyActualSetsByMuscle, setWeeklyActualSetsByMuscle] = useState<Record<string, number>>({});
   const [dayProgressLoading, setDayProgressLoading] = useState(false);
   const [weekProgressLoading, setWeekProgressLoading] = useState(false);
@@ -172,20 +175,26 @@ export default function WeeklyPlanScreen() {
   const loadDayProgress = useCallback(async (dayKey: WeekDayKey, options?: { force?: boolean }) => {
     const cached = dayProgressCacheRef.current[dayKey];
     if (!options?.force && cached) {
-      setActualSetsByMuscle(cached);
+      setActualSetsByMuscle(cached.muscle);
+      setActualSetsByExercise(cached.exercise);
       return;
     }
     setDayProgressLoading(true);
     try {
       const { start, end } = getDayBounds(dayKey);
       const logs = await getWorkoutLogs(start, end);
-      const nextMap = logs.reduce<Record<string, number>>((acc, log: any) => {
-        const muscleGroupId = log.muscle_group_id;
-        acc[muscleGroupId] = (acc[muscleGroupId] || 0) + Number(log.sets || 0);
-        return acc;
-      }, {});
-      dayProgressCacheRef.current[dayKey] = nextMap;
-      setActualSetsByMuscle(nextMap);
+      const muscleMap: Record<string, number> = {};
+      const exerciseMap: Record<string, number> = {};
+      logs.forEach((log: any) => {
+        const sets = Number(log.sets || 0);
+        muscleMap[log.muscle_group_id] = (muscleMap[log.muscle_group_id] || 0) + sets;
+        if (log.exercise_id) {
+          exerciseMap[log.exercise_id] = (exerciseMap[log.exercise_id] || 0) + sets;
+        }
+      });
+      dayProgressCacheRef.current[dayKey] = { muscle: muscleMap, exercise: exerciseMap };
+      setActualSetsByMuscle(muscleMap);
+      setActualSetsByExercise(exerciseMap);
     } finally {
       setDayProgressLoading(false);
     }
@@ -318,6 +327,9 @@ export default function WeeklyPlanScreen() {
     () => groupEntriesByMuscle(selectedEntries),
     [selectedEntries],
   );
+  // Tập trung chạy được cả khi entry chỉ theo nhóm cơ (chưa chọn bài cụ thể)
+  // — chỉ cần ngày đó có ít nhất 1 dòng kế hoạch.
+  const canFocusMode = selectedEntries.length > 0;
   const selectedEntryIds = useMemo(
     () => new Set(selectedMuscleGroups.map((group) => group.muscleGroupId)),
     [selectedMuscleGroups],
@@ -452,21 +464,37 @@ export default function WeeklyPlanScreen() {
         {/* ── Selected day detail ── */}
         <View style={styles.dayDetail}>
           <View style={styles.dayDetailHeader}>
-            <View style={styles.dayDetailTitleRow}>
-              <View style={styles.dayDetailTick} />
-              <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay].toUpperCase()}</Text>
-              {selectedDay === todayKey && (
-                <View style={styles.todayBadge}>
-                  <Text style={styles.todayBadgeText}>HÔM NAY</Text>
+            <View style={styles.dayDetailHeaderRow}>
+              <View style={styles.dayDetailTitleWrap}>
+                <View style={styles.dayDetailTitleRow}>
+                  <View style={styles.dayDetailTick} />
+                  <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay].toUpperCase()}</Text>
+                  {selectedDay === todayKey && (
+                    <View style={styles.todayBadge}>
+                      <Text style={styles.todayBadgeText}>HÔM NAY</Text>
+                    </View>
+                  )}
                 </View>
-              )}
+                <Text style={styles.dayDetailDate}>
+                  {formatShortDate(selectedDate)}
+                  {setsPerDay[selectedDay] > 0
+                    ? `  ·  ${dayProgressLoading ? '…' : dayActualTotal}/${setsPerDay[selectedDay]} sets`
+                    : `  ·  ${dayProgressLoading ? '…' : dayActualTotal} sets`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.focusBtn, !canFocusMode && styles.focusBtnDisabled]}
+                onPress={() => canFocusMode && router.push(`/focus/${selectedDay}` as any)}
+                disabled={!canFocusMode}
+                activeOpacity={0.8}
+              >
+                <Target color={canFocusMode ? INK : CHALK} size={14} strokeWidth={2.5} opacity={canFocusMode ? 1 : 0.35} />
+                <Text style={[styles.focusBtnText, !canFocusMode && styles.focusBtnTextDisabled]}>TẬP TRUNG</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.dayDetailDate}>
-              {formatShortDate(selectedDate)}
-              {setsPerDay[selectedDay] > 0
-                ? `  ·  ${dayProgressLoading ? '…' : dayActualTotal}/${setsPerDay[selectedDay]} sets`
-                : `  ·  ${dayProgressLoading ? '…' : dayActualTotal} sets`}
-            </Text>
+            {!canFocusMode && (
+              <Text style={styles.focusBtnHint}>Cần có lịch tập trong ngày để dùng Tập trung</Text>
+            )}
           </View>
 
           {selectedMuscleGroups.length === 0 && outOfPlanEntries.length === 0 ? (
@@ -514,7 +542,7 @@ export default function WeeklyPlanScreen() {
                               <Text style={styles.setsDivider}> / {totalSets} sets</Text>
                             </Text>
                             <View style={[styles.statusPill, done && styles.statusPillDone]}>
-                              <Text style={[styles.statusPillText, done && { color: GREEN }]}>
+                              <Text style={[styles.statusPillText, done && { color: INK, opacity: 1 }]}>
                                 {done ? '✓ XONG' : `${targetSets} S/TUẦN`}
                               </Text>
                             </View>
@@ -527,6 +555,8 @@ export default function WeeklyPlanScreen() {
                           <View style={styles.exerciseSubList}>
                             {group.entries.map((entry) => {
                               const ex = entry.exerciseId ? exerciseById[entry.exerciseId] : null;
+                              const actualForExercise = entry.exerciseId ? (actualSetsByExercise[entry.exerciseId] ?? 0) : null;
+                              const exerciseDone = actualForExercise != null && actualForExercise >= entry.sets;
                               return (
                                 <View key={entry.id} style={styles.exerciseSubRow}>
                                   {ex ? (
@@ -551,8 +581,10 @@ export default function WeeklyPlanScreen() {
                                       <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
                                     ) : null}
                                   </View>
-                                  <View style={styles.exerciseSubSetsPill}>
-                                    <Text style={styles.exerciseSubSetsPillText}>{entry.sets}</Text>
+                                  <View style={[styles.exerciseSubSetsPill, exerciseDone && styles.exerciseSubSetsPillDone]}>
+                                    <Text style={[styles.exerciseSubSetsPillText, exerciseDone && styles.exerciseSubSetsPillTextDone]}>
+                                      {actualForExercise != null ? `${dayProgressLoading ? '…' : actualForExercise}/${entry.sets}` : entry.sets} sets
+                                    </Text>
                                   </View>
                                   <TouchableOpacity style={styles.exerciseSubDeleteBtn} onPress={() => remove(entry.id)} hitSlop={8}>
                                     <Trash2 color={Colors.error} size={14} strokeWidth={2} />
@@ -719,12 +751,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: HAIRLINE,
   },
+  dayDetailHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  dayDetailTitleWrap: { flex: 1, minWidth: 0 },
   dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   dayDetailTick: { width: 3, height: 14, borderRadius: 2, backgroundColor: LIME },
   dayDetailTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 0.6, color: CHALK },
   todayBadge: { backgroundColor: LIME, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   todayBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4, color: INK },
   dayDetailDate: { fontSize: 11, color: CHALK, opacity: 0.5, marginLeft: 11 },
+  focusBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0,
+    backgroundColor: LIME, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7,
+  },
+  focusBtnDisabled: { backgroundColor: 'rgba(243,246,239,0.06)' },
+  focusBtnText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.4, color: INK },
+  focusBtnTextDisabled: { color: CHALK, opacity: 0.35 },
+  focusBtnHint: { fontSize: 10, color: CHALK, opacity: 0.4, marginTop: 6, marginLeft: 11 },
 
   dayRestRow: {
     paddingHorizontal: 16, paddingVertical: 18,
@@ -756,7 +798,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
     backgroundColor: 'rgba(243,246,239,0.06)', flexShrink: 0,
   },
-  statusPillDone: { backgroundColor: GREEN_DIM },
+  statusPillDone: { backgroundColor: GREEN },
   statusPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3, color: CHALK, opacity: 0.55 },
   cardEditBtn: {
     width: 24, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
@@ -788,7 +830,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
     backgroundColor: 'rgba(243,246,239,0.08)', flexShrink: 0,
   },
+  exerciseSubSetsPillDone: { backgroundColor: GREEN },
   exerciseSubSetsPillText: { fontSize: 11, fontWeight: '700', color: CHALK },
+  exerciseSubSetsPillTextDone: { color: INK },
   exerciseSubDeleteBtn: { padding: 4 },
   progressTrack: { height: 3, borderRadius: 999, backgroundColor: 'rgba(243,246,239,0.08)', overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999 },
