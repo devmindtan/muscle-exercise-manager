@@ -39,6 +39,7 @@ import {
   getMuscleGroups,
   getExercises,
   getExerciseSecondaryMuscles,
+  setExerciseSecondaryMuscles,
 } from '@/src/lib/repository';
 import { Exercise, WorkoutLog, MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
@@ -96,7 +97,11 @@ export default function ExerciseDetailScreen() {
     image_uri: '',
     muscle_group_id: '',
     parent_exercise_id: null as string | null,
+    exercise_type: null as 'compound' | 'isolation' | null,
+    rest_seconds: '',
+    prep_seconds: '',
   });
+  const [editSecondaryIds, setEditSecondaryIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [editError, setEditError] = useState('');
@@ -166,7 +171,11 @@ export default function ExerciseDetailScreen() {
       image_uri: exercise.image_uri || '',
       muscle_group_id: exercise.muscle_group_id,
       parent_exercise_id: exercise.parent_exercise_id ?? null,
+      exercise_type: exercise.exercise_type ?? null,
+      rest_seconds: exercise.rest_seconds != null ? String(exercise.rest_seconds) : '',
+      prep_seconds: exercise.prep_seconds != null ? String(exercise.prep_seconds) : '',
     });
+    setEditSecondaryIds(new Set(exercise.exercise_type === 'compound' ? secondaryMuscleIds : []));
     setEditError('');
     setEditing(true);
   };
@@ -211,6 +220,10 @@ export default function ExerciseDetailScreen() {
       setEditError('Tên bài tập không được để trống');
       return;
     }
+    if (!editForm.exercise_type) {
+      setEditError('Vui lòng chọn loại bài tập (Compound/Isolation)');
+      return;
+    }
     setSaving(true);
     setEditError('');
     try {
@@ -220,7 +233,15 @@ export default function ExerciseDetailScreen() {
         image_uri: editForm.image_uri.trim() || null,
         muscle_group_id: editForm.muscle_group_id || exercise.muscle_group_id,
         parent_exercise_id: editForm.parent_exercise_id,
+        exercise_type: editForm.exercise_type,
+        rest_seconds: editForm.rest_seconds.trim() ? Math.max(0, Math.round(Number(editForm.rest_seconds))) : null,
+        prep_seconds: editForm.prep_seconds.trim() ? Math.max(0, Math.round(Number(editForm.prep_seconds))) : null,
       });
+      // Không compound nữa -> dọn sạch nhóm cơ phụ đã gán trước đó.
+      await setExerciseSecondaryMuscles(
+        exercise.id,
+        editForm.exercise_type === 'compound' ? Array.from(editSecondaryIds) : [],
+      );
       setEditing(false);
       load();
     } catch (e: any) {
@@ -594,6 +615,74 @@ export default function ExerciseDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={styles.label}>Loại bài tập</Text>
+            <View style={styles.muscleGroupPicker}>
+              {(['compound', 'isolation'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.muscleGroupChip, editForm.exercise_type === t && styles.muscleGroupChipSelected]}
+                  onPress={() => setEditForm((f) => ({ ...f, exercise_type: t }))}
+                >
+                  <Text style={[styles.muscleGroupChipText, editForm.exercise_type === t && styles.muscleGroupChipTextActive]}>
+                    {t === 'compound' ? 'Compound' : 'Isolation'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
+            <View style={styles.restPrepRow}>
+              <View style={styles.restPrepField}>
+                <Text style={styles.restPrepFieldLabel}>Nghỉ giữa set</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editForm.rest_seconds}
+                  onChangeText={(t) => setEditForm((f) => ({ ...f, rest_seconds: t }))}
+                  keyboardType="number-pad"
+                  placeholder="90"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+              <View style={styles.restPrepField}>
+                <Text style={styles.restPrepFieldLabel}>Chuẩn bị đổi bài</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editForm.prep_seconds}
+                  onChangeText={(t) => setEditForm((f) => ({ ...f, prep_seconds: t }))}
+                  keyboardType="number-pad"
+                  placeholder="120"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+            </View>
+
+            {editForm.exercise_type === 'compound' && (
+              <>
+                <Text style={styles.label}>Nhóm cơ phụ tác động (tuỳ chọn)</Text>
+                <View style={styles.muscleGroupPicker}>
+                  {allMuscleGroups.filter((mg) => mg.id !== editForm.muscle_group_id).map((mg) => {
+                    const isChosen = editSecondaryIds.has(mg.id);
+                    return (
+                      <TouchableOpacity
+                        key={mg.id}
+                        style={[styles.muscleGroupChip, isChosen && { backgroundColor: mg.color, borderColor: mg.color }]}
+                        onPress={() => setEditSecondaryIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(mg.id)) next.delete(mg.id); else next.add(mg.id);
+                          return next;
+                        })}
+                      >
+                        <View style={[styles.chipDot, { backgroundColor: isChosen ? Colors.bg : mg.color }]} />
+                        <Text style={[styles.muscleGroupChipText, isChosen && styles.muscleGroupChipTextActive]}>
+                          {mg.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             {editError ? <Text style={styles.errorText}>{editError}</Text> : null}
 
@@ -1017,6 +1106,9 @@ const styles = StyleSheet.create({
   muscleGroupChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
   muscleGroupChipTextActive: { color: Colors.bg, fontWeight: '700' },
   muscleGroupChipSelected: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  restPrepRow: { flexDirection: 'row', gap: 10 },
+  restPrepField: { flex: 1 },
+  restPrepFieldLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
   variantOfText: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
   variantRow: {
     backgroundColor: Colors.surfaceElevated,
