@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
-import { X, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react-native';
+import { X, ChevronUp, ChevronDown, ArrowUpDown, GripVertical } from 'lucide-react-native';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { Colors } from '@/src/constants/colors';
 import { getGroupTone } from '@/src/lib/planTone';
 import { upsertWeeklyPlanEntries, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
 import { Exercise } from '@/src/types/database';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
+
+const ROW_HEIGHT = 62;
 
 interface FocusOrderSheetProps {
   visible: boolean;
@@ -35,6 +39,107 @@ function sortForDisplay(entries: WeeklyPlanEntry[]): WeeklyPlanEntry[] {
   });
 }
 
+interface OrderRowProps {
+  entry: WeeklyPlanEntry;
+  index: number;
+  total: number;
+  ex: Exercise | null;
+  tone: ReturnType<typeof getGroupTone>;
+  muscleLabel: string;
+  isDragging: boolean;
+  showDropLineAbove: boolean;
+  disabled: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDragStart: () => void;
+  onDragUpdate: (translationY: number) => void;
+  onDragEnd: () => void;
+}
+
+// Kéo-thả: chỉ giữ ở tay cầm (GripVertical) — kéo không làm reorder liên tục
+// giữa chừng (tránh phải bù trừ vị trí phức tạp khi mảng đổi ngay trong lúc
+// kéo), chỉ hiện 1 đường chỉ báo sẽ thả vào đâu, thật sự đổi thứ tự + lưu khi
+// thả tay. Mũi tên ▲▼ vẫn giữ song song — đáng tin cậy hơn trên mọi nền tảng.
+function OrderRow({
+  entry,
+  index,
+  total,
+  ex,
+  tone,
+  muscleLabel,
+  isDragging,
+  showDropLineAbove,
+  disabled,
+  onMoveUp,
+  onMoveDown,
+  onDragStart,
+  onDragUpdate,
+  onDragEnd,
+}: OrderRowProps) {
+  const translateY = useSharedValue(0);
+
+  useEffect(() => {
+    if (!isDragging) translateY.value = withSpring(0, { damping: 22, stiffness: 280 });
+  }, [isDragging, translateY]);
+
+  const pan = Gesture.Pan()
+    .onStart(() => {
+      runOnJS(onDragStart)();
+    })
+    .onUpdate((event) => {
+      translateY.value = event.translationY;
+      runOnJS(onDragUpdate)(event.translationY);
+    })
+    .onEnd(() => {
+      runOnJS(onDragEnd)();
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    zIndex: isDragging ? 10 : 0,
+    opacity: isDragging ? 0.95 : 1,
+    shadowOpacity: isDragging ? 0.35 : 0,
+    shadowRadius: 8,
+    shadowColor: '#000',
+    elevation: isDragging ? 6 : 0,
+  }));
+
+  return (
+    <View>
+      {showDropLineAbove && <View style={styles.dropLine} />}
+      <Animated.View style={[styles.row, animatedStyle]}>
+        <Text style={styles.rowIndex}>{index + 1}</Text>
+        {ex ? (
+          <ExerciseThumb ex={ex} tone={tone} size={30} />
+        ) : (
+          <View style={[styles.dot, { backgroundColor: tone.bar }]} />
+        )}
+        <View style={styles.rowInfo}>
+          <Text style={styles.rowName} numberOfLines={1}>
+            {ex?.name ?? 'Chưa chọn bài tập'}
+          </Text>
+          <Text style={styles.rowMuscle} numberOfLines={1}>
+            {muscleLabel} · {entry.sets} sets
+          </Text>
+        </View>
+        <View style={styles.arrowCol}>
+          <TouchableOpacity onPress={onMoveUp} disabled={index === 0 || disabled} hitSlop={6}>
+            <ChevronUp size={16} color={index === 0 ? Colors.border : Colors.textMuted} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onMoveDown} disabled={index === total - 1 || disabled} hitSlop={6}>
+            <ChevronDown size={16} color={index === total - 1 ? Colors.border : Colors.textMuted} strokeWidth={2.2} />
+          </TouchableOpacity>
+        </View>
+        <GestureDetector gesture={pan}>
+          <View style={styles.dragHandle} hitSlop={8}>
+            <GripVertical size={18} color={Colors.textMuted} strokeWidth={2} />
+          </View>
+        </GestureDetector>
+      </Animated.View>
+    </View>
+  );
+}
+
 export function FocusOrderSheet({
   visible,
   dayLabel,
@@ -49,6 +154,9 @@ export function FocusOrderSheet({
 }: FocusOrderSheetProps) {
   const [order, setOrder] = useState<WeeklyPlanEntry[]>([]);
   const [saving, setSaving] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const dragStartIndexRef = useRef(0);
 
   useEffect(() => {
     if (visible) setOrder(sortForDisplay(entries));
@@ -83,70 +191,86 @@ export function FocusOrderSheet({
     void persist(next);
   };
 
+  const handleDragStart = (entryId: string) => {
+    const idx = order.findIndex((e) => e.id === entryId);
+    dragStartIndexRef.current = idx;
+    setDraggingId(entryId);
+    setHoverIndex(idx);
+  };
+
+  const handleDragUpdate = (translationY: number) => {
+    const delta = Math.round(translationY / ROW_HEIGHT);
+    const next = Math.max(0, Math.min(order.length - 1, dragStartIndexRef.current + delta));
+    setHoverIndex((prev) => (prev === next ? prev : next));
+  };
+
+  const handleDragEnd = (entryId: string) => {
+    setDraggingId(null);
+    const from = order.findIndex((e) => e.id === entryId);
+    const to = hoverIndex ?? from;
+    setHoverIndex(null);
+    if (from === -1 || from === to) return;
+    const next = [...order];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setOrder(next);
+    void persist(next);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.sheetHandle} />
-        <View style={styles.header}>
-          <View style={styles.headerTitleRow}>
-            <ArrowUpDown color={Colors.text} size={18} strokeWidth={2.2} />
-            <Text style={styles.title}>Thứ tự tập — {dayLabel}</Text>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+        <Pressable style={styles.overlay} onPress={onClose} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.header}>
+            <View style={styles.headerTitleRow}>
+              <ArrowUpDown color={Colors.text} size={18} strokeWidth={2.2} />
+              <Text style={styles.title}>Thứ tự tập — {dayLabel}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <X color={Colors.textSecondary} size={20} strokeWidth={2} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <X color={Colors.textSecondary} size={20} strokeWidth={2} />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.subtitle}>
-          Đây là thứ tự Focus Mode sẽ chạy qua — kéo lên/xuống để đổi, không phân biệt nhóm cơ.
-        </Text>
+          <Text style={styles.subtitle}>
+            Đây là thứ tự Focus Mode sẽ chạy qua — kéo tay cầm hoặc bấm mũi tên để đổi, không phân biệt nhóm cơ.
+          </Text>
 
-        <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-          {order.map((entry, idx) => {
-            const ex = entry.exerciseId ? exerciseById[entry.exerciseId] : null;
-            const tone = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
-            return (
-              <View key={entry.id} style={styles.row}>
-                <Text style={styles.rowIndex}>{idx + 1}</Text>
-                {ex ? (
-                  <ExerciseThumb ex={ex} tone={tone} size={30} />
-                ) : (
-                  <View style={[styles.dot, { backgroundColor: tone.bar }]} />
-                )}
-                <View style={styles.rowInfo}>
-                  <Text style={styles.rowName} numberOfLines={1}>
-                    {ex?.name ?? 'Chưa chọn bài tập'}
-                  </Text>
-                  <Text style={styles.rowMuscle} numberOfLines={1}>
-                    {muscleNameById[entry.muscleGroupId] ?? ''} · {entry.sets} sets
-                  </Text>
-                </View>
-                <View style={styles.arrowCol}>
-                  <TouchableOpacity onPress={() => move(idx, 'up')} disabled={idx === 0 || saving} hitSlop={6}>
-                    <ChevronUp size={18} color={idx === 0 ? Colors.border : Colors.textMuted} strokeWidth={2.2} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => move(idx, 'down')}
-                    disabled={idx === order.length - 1 || saving}
-                    hitSlop={6}
-                  >
-                    <ChevronDown
-                      size={18}
-                      color={idx === order.length - 1 ? Colors.border : Colors.textMuted}
-                      strokeWidth={2.2}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
-        </ScrollView>
-      </View>
+          <ScrollView style={styles.list} showsVerticalScrollIndicator={false} scrollEnabled={!draggingId}>
+            {order.map((entry, idx) => {
+              const ex = entry.exerciseId ? exerciseById[entry.exerciseId] : null;
+              const tone = colorByMuscle[entry.muscleGroupId] ?? getGroupTone();
+              const isDragging = draggingId === entry.id;
+              return (
+                <OrderRow
+                  key={entry.id}
+                  entry={entry}
+                  index={idx}
+                  total={order.length}
+                  ex={ex}
+                  tone={tone}
+                  muscleLabel={muscleNameById[entry.muscleGroupId] ?? ''}
+                  isDragging={isDragging}
+                  showDropLineAbove={hoverIndex === idx && !isDragging}
+                  disabled={saving}
+                  onMoveUp={() => move(idx, 'up')}
+                  onMoveDown={() => move(idx, 'down')}
+                  onDragStart={() => handleDragStart(entry.id)}
+                  onDragUpdate={handleDragUpdate}
+                  onDragEnd={() => handleDragEnd(entry.id)}
+                />
+              );
+            })}
+            {hoverIndex === order.length && <View style={styles.dropLine} />}
+          </ScrollView>
+        </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: { flex: 1 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
     position: 'absolute',
@@ -177,7 +301,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: Colors.surface,
     borderRadius: 12,
     borderWidth: 1,
@@ -192,4 +316,6 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   rowMuscle: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
   arrowCol: { alignItems: 'center', justifyContent: 'center', gap: 2 },
+  dragHandle: { paddingHorizontal: 4, paddingVertical: 10 },
+  dropLine: { height: 3, borderRadius: 2, backgroundColor: Colors.accent, marginBottom: 5, marginHorizontal: 2 },
 });
