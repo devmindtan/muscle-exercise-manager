@@ -25,6 +25,26 @@ export interface WeekStat {
   targetSetsPerWeek: number;
 }
 
+// "Cô lập" = sets tính trực tiếp lên nhóm cơ chính (như WeekStat cũ, không
+// đổi). "Tác động" = cô lập + sets từ các bài compound có nhóm cơ này là
+// nhóm cơ phụ (exercise_secondary_muscles). Dùng cho Dashboard — không thay
+// getMuscleGroupsWithWeeklyStats/WeekStat để MusclesScreen.tsx không đổi.
+export interface MuscleGroupStat {
+  id: string;
+  name: string;
+  color?: string;
+  category?: string | null;
+  exerciseCount: number;
+  weekly_isolation_sets: number;
+  weekly_impact_sets: number;
+  monthly_isolation_sets: number;
+  monthly_impact_sets: number;
+  targetIsolationPerWeek: number;
+  targetImpactPerWeek: number;
+  targetIsolationPerMonth: number;
+  targetImpactPerMonth: number;
+}
+
 export interface ExerciseHistoryItem {
   id: string;
   sets: number;
@@ -209,6 +229,116 @@ export async function getMuscleGroupsWithWeeklyStats(startDate: string, endDate:
   return stats.sort((a, b) => {
     return (groupOrder.get(a.id) ?? 0) - (groupOrder.get(b.id) ?? 0);
   });
+}
+
+function buildMuscleGroupStats(
+  groups: any[],
+  logs: any[],
+  exercises: any[],
+  secondaryRows: any[],
+  weekStart: string,
+  weekEnd: string
+): MuscleGroupStat[] {
+  const exerciseById = new Map(exercises.map((e: any) => [e.id, e]));
+
+  // muscle_group_id -> exercise_id[] của các bài compound có nhóm cơ này là
+  // nhóm cơ phụ (loại trừ trường hợp trùng với nhóm cơ chính của chính nó).
+  const secondaryExercisesByGroup = new Map<string, Set<string>>();
+  for (const row of secondaryRows) {
+    const ex = exerciseById.get(row.exercise_id);
+    if (!ex || ex.exercise_type !== 'compound' || ex.muscle_group_id === row.muscle_group_id) continue;
+    const set = secondaryExercisesByGroup.get(row.muscle_group_id) || new Set<string>();
+    set.add(row.exercise_id);
+    secondaryExercisesByGroup.set(row.muscle_group_id, set);
+  }
+
+  const exerciseCountByGroup = exercises.reduce<Record<string, number>>((acc, e: any) => {
+    acc[e.muscle_group_id] = (acc[e.muscle_group_id] || 0) + 1;
+    return acc;
+  }, {});
+
+  return groups.map((group: any) => {
+    const secondaryIds = secondaryExercisesByGroup.get(group.id) || new Set<string>();
+    let monthlyIsolation = 0;
+    let monthlyImpactExtra = 0;
+    let weeklyIsolation = 0;
+    let weeklyImpactExtra = 0;
+
+    for (const log of logs) {
+      const sets = log.sets || 0;
+      const inWeek = log.logged_at >= weekStart && log.logged_at <= weekEnd;
+      if (log.muscle_group_id === group.id) {
+        monthlyIsolation += sets;
+        if (inWeek) weeklyIsolation += sets;
+      } else if (secondaryIds.has(log.exercise_id)) {
+        monthlyImpactExtra += sets;
+        if (inWeek) weeklyImpactExtra += sets;
+      }
+    }
+
+    const targetIsolationPerWeek = group.target_sets_per_week || 10;
+    const targetIsolationPerMonth = group.target_sets_per_month || 40;
+
+    return {
+      id: group.id,
+      name: group.name,
+      color: group.color,
+      category: group.category,
+      exerciseCount: exerciseCountByGroup[group.id] || 0,
+      weekly_isolation_sets: weeklyIsolation,
+      weekly_impact_sets: weeklyIsolation + weeklyImpactExtra,
+      monthly_isolation_sets: monthlyIsolation,
+      monthly_impact_sets: monthlyIsolation + monthlyImpactExtra,
+      targetIsolationPerWeek,
+      targetImpactPerWeek: group.target_impact_sets_per_week ?? targetIsolationPerWeek,
+      targetIsolationPerMonth,
+      targetImpactPerMonth: group.target_impact_sets_per_month ?? targetIsolationPerMonth,
+    } as MuscleGroupStat;
+  });
+}
+
+export async function getMuscleGroupsWithStats(
+  weekStart: string,
+  weekEnd: string,
+  monthStart: string,
+  monthEnd: string
+): Promise<MuscleGroupStat[]> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const [groupsRes, logsRes, exercisesRes, secondaryRes] = await Promise.all([
+      supabase.from('muscle_groups').select('*').eq('user_id', userId).is('deleted_at', null),
+      supabase
+        .from('workout_logs')
+        .select('muscle_group_id, exercise_id, sets, logged_at')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .gte('logged_at', monthStart)
+        .lte('logged_at', monthEnd),
+      supabase.from('exercises').select('id, muscle_group_id, exercise_type').eq('user_id', userId).is('deleted_at', null),
+      supabase.from('exercise_secondary_muscles').select('exercise_id, muscle_group_id').eq('user_id', userId),
+    ]);
+    if (groupsRes.error) throw groupsRes.error;
+    if (logsRes.error) throw logsRes.error;
+    if (exercisesRes.error) throw exercisesRes.error;
+    if (secondaryRes.error) throw secondaryRes.error;
+
+    return buildMuscleGroupStats(
+      groupsRes.data || [],
+      logsRes.data || [],
+      exercisesRes.data || [],
+      secondaryRes.data || [],
+      weekStart,
+      weekEnd
+    );
+  }
+
+  const [groups, logs, exercises, secondaryRows] = await Promise.all([
+    LocalDB.getMuscleGroups(),
+    LocalDB.getWorkoutLogs(monthStart, monthEnd),
+    LocalDB.getExercises(),
+    LocalDB.getAllExerciseSecondaryMuscles(),
+  ]);
+  return buildMuscleGroupStats(groups, logs, exercises, secondaryRows, weekStart, weekEnd);
 }
 
 export async function getMuscleGroupsByWeek(weekStart: string, weekEnd: string) {
@@ -476,6 +606,7 @@ export async function createExercise(data: {
   exerciseType?: 'compound' | 'isolation' | null;
   restSeconds?: number | null;
   prepSeconds?: number | null;
+  isInjuryProne?: boolean | null;
 }) {
   const id = generateUUID();
   const now = new Date().toISOString();
@@ -494,6 +625,7 @@ export async function createExercise(data: {
       exercise_type: data.exerciseType ?? null,
       rest_seconds: data.restSeconds ?? null,
       prep_seconds: data.prepSeconds ?? null,
+      is_injury_prone: !!data.isInjuryProne,
       created_at: now,
       updated_at: now,
       deleted_at: null,
@@ -514,6 +646,7 @@ export async function createExercise(data: {
     exercise_type: data.exerciseType ?? null,
     rest_seconds: data.restSeconds ?? null,
     prep_seconds: data.prepSeconds ?? null,
+    is_injury_prone: data.isInjuryProne ? 1 : 0,
     created_at: now,
     updated_at: now,
     dirty: 1,
@@ -535,6 +668,7 @@ export async function insertExercise(data: {
   exercise_type?: 'compound' | 'isolation' | null;
   rest_seconds?: number | null;
   prep_seconds?: number | null;
+  is_injury_prone?: boolean | null;
 }) {
   return createExercise({
     muscleGroupId: data.muscleGroupId || data.muscle_group_id || '',
@@ -545,6 +679,7 @@ export async function insertExercise(data: {
     exerciseType: data.exercise_type ?? null,
     restSeconds: data.rest_seconds ?? null,
     prepSeconds: data.prep_seconds ?? null,
+    isInjuryProne: data.is_injury_prone ?? null,
   });
 }
 
@@ -889,6 +1024,81 @@ export async function getSetCounts(
   return logs
     .filter((log) => log.muscle_group_id === muscleGroupId && !log.deleted)
     .reduce((acc, log) => acc + (log.sets || 0), 0);
+}
+
+// Sets "cộng thêm" cho mục tiêu tác động — chỉ tính các bài compound có
+// muscleGroupId là nhóm cơ PHỤ (exercise_secondary_muscles), không tính lại
+// phần đã có trong getSetCounts (nhóm cơ chính).
+export async function getSecondaryImpactSetCounts(
+  muscleGroupId: string,
+  startDate: string,
+  endDate: string
+): Promise<number> {
+  if (Platform.OS === 'web') {
+    const userId = await getWebUserIdOrThrow();
+    const { data: secondaryRows, error: secErr } = await supabase
+      .from('exercise_secondary_muscles')
+      .select('exercise_id')
+      .eq('user_id', userId)
+      .eq('muscle_group_id', muscleGroupId);
+    if (secErr) throw secErr;
+    const exerciseIds = (secondaryRows || []).map((r: any) => r.exercise_id);
+    if (exerciseIds.length === 0) return 0;
+
+    const { data: compoundExercises, error: exErr } = await supabase
+      .from('exercises')
+      .select('id, muscle_group_id')
+      .eq('user_id', userId)
+      .eq('exercise_type', 'compound')
+      .in('id', exerciseIds);
+    if (exErr) throw exErr;
+    const validIds = (compoundExercises || [])
+      .filter((e: any) => e.muscle_group_id !== muscleGroupId)
+      .map((e: any) => e.id);
+    if (validIds.length === 0) return 0;
+
+    const { data: logs, error: logErr } = await supabase
+      .from('workout_logs')
+      .select('sets, exercise_id')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .gte('logged_at', startDate)
+      .lte('logged_at', endDate)
+      .in('exercise_id', validIds);
+    if (logErr) throw logErr;
+    return (logs || []).reduce((acc: number, row: any) => acc + (row.sets || 0), 0);
+  }
+
+  const [secondaryRows, exercises, logs] = await Promise.all([
+    LocalDB.getAllExerciseSecondaryMuscles(),
+    LocalDB.getExercises(),
+    LocalDB.getWorkoutLogs(startDate, endDate),
+  ]);
+  const exerciseIds = new Set(
+    secondaryRows.filter((r) => r.muscle_group_id === muscleGroupId).map((r) => r.exercise_id)
+  );
+  if (exerciseIds.size === 0) return 0;
+  const validIds = new Set(
+    exercises
+      .filter((e) => exerciseIds.has(e.id) && e.exercise_type === 'compound' && e.muscle_group_id !== muscleGroupId)
+      .map((e) => e.id)
+  );
+  if (validIds.size === 0) return 0;
+  return logs
+    .filter((log) => !log.deleted && validIds.has(log.exercise_id))
+    .reduce((acc, log) => acc + (log.sets || 0), 0);
+}
+
+export async function getMuscleGroupSetBreakdown(
+  muscleGroupId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ isolationSets: number; impactSets: number }> {
+  const [isolationSets, secondarySets] = await Promise.all([
+    getSetCounts(muscleGroupId, startDate, endDate),
+    getSecondaryImpactSetCounts(muscleGroupId, startDate, endDate),
+  ]);
+  return { isolationSets, impactSets: isolationSets + secondarySets };
 }
 
 export async function softDeleteWorkoutLog(id: string) {

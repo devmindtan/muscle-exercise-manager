@@ -28,6 +28,7 @@ import {
   Info,
   CornerUpLeft,
   CornerDownRight,
+  AlertTriangle,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
@@ -46,6 +47,7 @@ import {
 import { Exercise, WorkoutLog, MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 import { getGroupTone } from '@/src/lib/planTone';
+import { ExerciseInjuryBadge } from '@/src/components/ExerciseInjuryBadge';
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('vi-VN', {
@@ -102,6 +104,7 @@ export default function ExerciseDetailScreen() {
     exercise_type: null as 'compound' | 'isolation' | null,
     rest_seconds: '',
     prep_seconds: '',
+    is_injury_prone: false,
   });
   const [editSecondaryIds, setEditSecondaryIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -176,6 +179,7 @@ export default function ExerciseDetailScreen() {
       exercise_type: exercise.exercise_type ?? null,
       rest_seconds: exercise.rest_seconds != null ? String(exercise.rest_seconds) : '',
       prep_seconds: exercise.prep_seconds != null ? String(exercise.prep_seconds) : '',
+      is_injury_prone: !!exercise.is_injury_prone,
     });
     setEditSecondaryIds(new Set(exercise.exercise_type === 'compound' ? secondaryMuscleIds : []));
     setEditError('');
@@ -238,6 +242,7 @@ export default function ExerciseDetailScreen() {
         exercise_type: editForm.exercise_type,
         rest_seconds: editForm.rest_seconds.trim() ? Math.max(0, Math.round(Number(editForm.rest_seconds))) : null,
         prep_seconds: editForm.prep_seconds.trim() ? Math.max(0, Math.round(Number(editForm.prep_seconds))) : null,
+        is_injury_prone: editForm.is_injury_prone,
       });
       // Không compound nữa -> dọn sạch nhóm cơ phụ đã gán trước đó.
       await setExerciseSecondaryMuscles(
@@ -319,6 +324,7 @@ export default function ExerciseDetailScreen() {
                   </Text>
                 </View>
               )}
+              {exercise.is_injury_prone ? <ExerciseInjuryBadge size={16} /> : null}
             </View>
             {exercise.parent_exercise_id ? (
               <TouchableOpacity
@@ -642,6 +648,16 @@ export default function ExerciseDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <TouchableOpacity
+              style={[styles.injuryToggle, editForm.is_injury_prone && styles.injuryToggleActive]}
+              onPress={() => setEditForm((f) => ({ ...f, is_injury_prone: !f.is_injury_prone }))}
+            >
+              <AlertTriangle size={14} color={editForm.is_injury_prone ? Colors.warning : Colors.textMuted} strokeWidth={2.2} />
+              <Text style={[styles.injuryToggleText, editForm.is_injury_prone && styles.injuryToggleTextActive]}>
+                Dễ chấn thương
+              </Text>
+            </TouchableOpacity>
 
             <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
             <View style={styles.restPrepRow}>
@@ -1118,6 +1134,22 @@ const styles = StyleSheet.create({
   muscleGroupChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
   muscleGroupChipTextActive: { color: Colors.bg, fontWeight: '700' },
   muscleGroupChipSelected: { backgroundColor: Colors.accent, borderColor: Colors.accent },
+  injuryToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  injuryToggleActive: { backgroundColor: Colors.warning + '18', borderColor: Colors.warning },
+  injuryToggleText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  injuryToggleTextActive: { color: Colors.warning, fontWeight: '700' },
   restPrepRow: { flexDirection: 'row', gap: 10 },
   restPrepField: { flex: 1 },
   restPrepFieldLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },

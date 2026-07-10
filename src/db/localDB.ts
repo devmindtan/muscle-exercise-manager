@@ -221,6 +221,8 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       color TEXT,
       target_sets_per_week INTEGER DEFAULT 10,
       target_sets_per_month INTEGER DEFAULT 40,
+      target_impact_sets_per_week INTEGER,
+      target_impact_sets_per_month INTEGER,
       image_uri TEXT,
       category TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -239,6 +241,7 @@ async function applySchema(database: SQLite.SQLiteDatabase) {
       exercise_type TEXT,
       rest_seconds INTEGER,
       prep_seconds INTEGER,
+      is_injury_prone INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       dirty INTEGER DEFAULT 0,
@@ -491,6 +494,8 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'muscle_groups', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'muscle_groups', 'deleted', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'muscle_groups', 'category', 'TEXT');
+  await ensureColumn(database, 'muscle_groups', 'target_impact_sets_per_week', 'INTEGER');
+  await ensureColumn(database, 'muscle_groups', 'target_impact_sets_per_month', 'INTEGER');
 
   await ensureColumn(database, 'exercises', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'exercises', 'deleted', 'INTEGER DEFAULT 0');
@@ -499,6 +504,7 @@ async function migrateLegacySchema(database: SQLite.SQLiteDatabase) {
   await ensureColumn(database, 'exercises', 'exercise_type', 'TEXT');
   await ensureColumn(database, 'exercises', 'rest_seconds', 'INTEGER');
   await ensureColumn(database, 'exercises', 'prep_seconds', 'INTEGER');
+  await ensureColumn(database, 'exercises', 'is_injury_prone', 'INTEGER');
 
   await ensureColumn(database, 'workout_logs', 'dirty', 'INTEGER DEFAULT 0');
   await ensureColumn(database, 'workout_logs', 'deleted', 'INTEGER DEFAULT 0');
@@ -648,13 +654,15 @@ export async function upsertMuscleGroup(group: LocalMuscleGroup) {
   const dirty = group.dirty ?? 0;
   const deleted = group.deleted ?? 0;
   await database.runAsync(
-    `INSERT INTO muscle_groups (id, name, color, target_sets_per_week, target_sets_per_month, image_uri, category, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO muscle_groups (id, name, color, target_sets_per_week, target_sets_per_month, target_impact_sets_per_week, target_impact_sets_per_month, image_uri, category, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = COALESCE(excluded.name, name),
        color = COALESCE(excluded.color, color),
        target_sets_per_week = COALESCE(excluded.target_sets_per_week, target_sets_per_week),
        target_sets_per_month = COALESCE(excluded.target_sets_per_month, target_sets_per_month),
+       target_impact_sets_per_week = excluded.target_impact_sets_per_week,
+       target_impact_sets_per_month = excluded.target_impact_sets_per_month,
        image_uri = COALESCE(excluded.image_uri, image_uri),
        category = excluded.category,
        updated_at = datetime('now'),
@@ -666,6 +674,8 @@ export async function upsertMuscleGroup(group: LocalMuscleGroup) {
       group.color || null,
       group.target_sets_per_week || 10,
       group.target_sets_per_month || 40,
+      group.target_impact_sets_per_week ?? null,
+      group.target_impact_sets_per_month ?? null,
       group.image_uri || null,
       group.category || null,
       group.created_at,
@@ -825,8 +835,8 @@ export async function upsertExercise(exercise: LocalExercise) {
   const dirty = exercise.dirty ?? 0;
   const deleted = exercise.deleted ?? 0;
   await database.runAsync(
-    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, exercise_type, rest_seconds, prep_seconds, created_at, updated_at, dirty, deleted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO exercises (id, muscle_group_id, name, notes, image_uri, is_active, parent_exercise_id, exercise_type, rest_seconds, prep_seconds, is_injury_prone, created_at, updated_at, dirty, deleted)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
       muscle_group_id = COALESCE(excluded.muscle_group_id, muscle_group_id),
       name = COALESCE(excluded.name, name),
@@ -837,6 +847,7 @@ export async function upsertExercise(exercise: LocalExercise) {
       exercise_type = excluded.exercise_type,
       rest_seconds = excluded.rest_seconds,
       prep_seconds = excluded.prep_seconds,
+      is_injury_prone = excluded.is_injury_prone,
       updated_at = datetime('now'),
        dirty = COALESCE(excluded.dirty, dirty),
        deleted = COALESCE(excluded.deleted, deleted)`,
@@ -851,6 +862,7 @@ export async function upsertExercise(exercise: LocalExercise) {
       exercise.exercise_type ?? null,
       exercise.rest_seconds ?? null,
       exercise.prep_seconds ?? null,
+      exercise.is_injury_prone ? 1 : 0,
       exercise.created_at,
       exercise.updated_at || new Date().toISOString(),
       dirty,
@@ -928,6 +940,15 @@ export async function getDirtyExerciseSecondaryMuscles() {
   const database = await getDatabase();
   return database.getAllAsync<LocalExerciseSecondaryMuscle>(
     'SELECT * FROM exercise_secondary_muscles WHERE dirty = 1'
+  );
+}
+
+// Toàn bộ quan hệ bài-tập/nhóm-cơ-phụ còn hiệu lực — dùng để tính "mục tiêu
+// tác động" (sets từ bài compound có 1 nhóm cơ khác làm nhóm cơ phụ).
+export async function getAllExerciseSecondaryMuscles() {
+  const database = await getDatabase();
+  return database.getAllAsync<LocalExerciseSecondaryMuscle>(
+    'SELECT * FROM exercise_secondary_muscles WHERE deleted = 0'
   );
 }
 

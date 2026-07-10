@@ -1,30 +1,33 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { TrendingUp, ChevronRight, Dumbbell } from 'lucide-react-native';
-import type { WeekStat } from '@/src/lib/repository';
+import type { MuscleGroupStat } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 
 export const CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
 export type ProgressTab = 'completed' | 'pending' | 'over';
 
-export function getProgressState(stat: WeekStat): ProgressTab {
-  if (stat.targetSetsPerWeek > 0 && stat.weekly_sets > stat.targetSetsPerWeek) {
+// Trạng thái/badge dùng số "tác động" (cô lập + cộng thêm từ bài compound
+// có nhóm cơ này là nhóm cơ phụ) làm chỉ số chính — luôn >= cô lập nên phản
+// ánh đúng tổng kích thích cơ hơn là chỉ tính riêng sets trực tiếp.
+export function getProgressState(stat: MuscleGroupStat): ProgressTab {
+  if (stat.targetImpactPerWeek > 0 && stat.weekly_impact_sets > stat.targetImpactPerWeek) {
     return 'over';
   }
-  if (stat.targetSetsPerWeek > 0 && stat.weekly_sets === stat.targetSetsPerWeek) {
+  if (stat.targetImpactPerWeek > 0 && stat.weekly_impact_sets === stat.targetImpactPerWeek) {
     return 'completed';
   }
   return 'pending';
 }
 
-function getProgressCopy(stat: WeekStat) {
+function getProgressCopy(stat: MuscleGroupStat) {
   const status = getProgressState(stat);
-  const remaining = Math.max(stat.targetSetsPerWeek - stat.weekly_sets, 0);
-  const exceeded = Math.max(stat.weekly_sets - stat.targetSetsPerWeek, 0);
+  const remaining = Math.max(stat.targetImpactPerWeek - stat.weekly_impact_sets, 0);
+  const exceeded = Math.max(stat.weekly_impact_sets - stat.targetImpactPerWeek, 0);
   const progressPercent =
-    stat.targetSetsPerWeek > 0
-      ? Math.round((stat.weekly_sets / stat.targetSetsPerWeek) * 100)
+    stat.targetImpactPerWeek > 0
+      ? Math.round((stat.weekly_impact_sets / stat.targetImpactPerWeek) * 100)
       : 0;
 
   if (status === 'over') {
@@ -33,7 +36,7 @@ function getProgressCopy(stat: WeekStat) {
       badgeLabel: 'Vượt',
       badgeStyle: styles.statusOver,
       badgeTextStyle: styles.statusOverText,
-      helperText: `Vượt ${exceeded} sets so với mục tiêu tuần`,
+      helperText: `Vượt ${exceeded} sets so với mục tiêu`,
       accentColor: Colors.success,
       progressText: `${progressPercent}%`,
     };
@@ -44,7 +47,7 @@ function getProgressCopy(stat: WeekStat) {
       badgeLabel: 'Hoàn thành',
       badgeStyle: styles.statusCompleted,
       badgeTextStyle: styles.statusCompletedText,
-      helperText: 'Đã chạm đúng mục tiêu tuần',
+      helperText: 'Đã chạm đúng mục tiêu tác động tuần',
       accentColor: Colors.accent,
       progressText: `${progressPercent}%`,
     };
@@ -111,7 +114,7 @@ function GoalSegmentBar({
 }
 
 export interface OverviewTabProps {
-  stats: WeekStat[];
+  stats: MuscleGroupStat[];
   totalSets: number;
   totalTargetSets: number;
   monthlyVolumeNumber: string;
@@ -121,8 +124,8 @@ export interface OverviewTabProps {
   progressCounts: { completed: number; pending: number; over: number };
   effectiveProgressTab: ProgressTab;
   setProgressTab: (tab: ProgressTab) => void;
-  categoryFilteredStats: WeekStat[];
-  displayedStats: WeekStat[];
+  categoryFilteredStats: MuscleGroupStat[];
+  displayedStats: MuscleGroupStat[];
 }
 
 export function OverviewTab({
@@ -316,21 +319,30 @@ export function OverviewTab({
 
                 <View style={styles.setsRow}>
                   <Text style={[styles.setsActual, { color: progressCopy.accentColor }]}>
-                    {s.weekly_sets}
+                    {s.weekly_impact_sets}
                   </Text>
                   <Text style={styles.setsSlash}> / </Text>
-                  <Text style={styles.setsTarget}>{s.targetSetsPerWeek} sets</Text>
+                  <Text style={styles.setsTarget}>{s.targetImpactPerWeek} sets</Text>
                 </View>
 
                 <ProgressBar
-                  value={s.weekly_sets}
-                  target={s.targetSetsPerWeek}
+                  value={s.weekly_impact_sets}
+                  target={s.targetImpactPerWeek}
                   color={progressCopy.accentColor || s.color || Colors.accent}
                 />
 
                 <View style={styles.progressMetaRow}>
                   <Text style={styles.progressHelper}>{progressCopy.helperText}</Text>
                   <Text style={styles.progressPercent}>{progressCopy.progressText}</Text>
+                </View>
+
+                <View style={styles.secondaryStatsRow}>
+                  <Text style={styles.secondaryStatsText}>
+                    Cô lập: {s.weekly_isolation_sets}/{s.targetIsolationPerWeek}
+                  </Text>
+                  <Text style={styles.secondaryStatsText}>
+                    Tháng: {s.monthly_impact_sets}/{s.targetImpactPerMonth}
+                  </Text>
                 </View>
               </TouchableOpacity>
             );
@@ -536,6 +548,12 @@ const styles = StyleSheet.create({
   },
   progressHelper: { fontSize: 11, color: Colors.textMuted, flex: 1 },
   progressPercent: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
+  secondaryStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  secondaryStatsText: { fontSize: 11, color: Colors.textMuted },
 
   // ── Status chips ──
   statusChip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },

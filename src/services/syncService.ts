@@ -115,6 +115,8 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           color: group.color,
           target_sets_per_week: group.target_sets_per_week,
           target_sets_per_month: group.target_sets_per_month,
+          target_impact_sets_per_week: group.target_impact_sets_per_week ?? null,
+          target_impact_sets_per_month: group.target_impact_sets_per_month ?? null,
           image_uri: group.image_uri,
           category: group.category,
           deleted_at: isDeleted ? new Date().toISOString() : null,
@@ -146,6 +148,7 @@ export async function syncData(deviceId: string): Promise<SyncResult> {
           exercise_type: exercise.exercise_type ?? null,
           rest_seconds: exercise.rest_seconds ?? null,
           prep_seconds: exercise.prep_seconds ?? null,
+          is_injury_prone: typeof exercise.is_injury_prone === 'boolean' ? exercise.is_injury_prone : !!exercise.is_injury_prone,
           deleted_at: isDeleted ? new Date().toISOString() : null,
         }) as any);
         if (error) {

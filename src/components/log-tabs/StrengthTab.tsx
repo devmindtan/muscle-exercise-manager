@@ -37,6 +37,7 @@ import { MuscleGroup, Exercise } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 import { useSync } from '@/src/context/SyncContext';
 import { getGroupTone } from '@/src/lib/planTone';
+import { ExerciseInjuryBadge } from '@/src/components/ExerciseInjuryBadge';
 
 const PAGE_SIZE = 10;
 
@@ -243,6 +244,7 @@ export default function StrengthTab() {
                     </Text>
                   </View>
                 ) : null}
+                {selectedExercise.is_injury_prone ? <ExerciseInjuryBadge /> : null}
               </View>
               {exercisePR && (exercisePR.bestReps != null || exercisePR.bestWeight != null) ? (
                 <View style={styles.prRow}>
@@ -562,6 +564,7 @@ export default function StrengthTab() {
                       </Text>
                     </View>
                   ) : null}
+                  {ex.is_injury_prone ? <ExerciseInjuryBadge /> : null}
                 </View>
                 {selectedExercise?.id === ex.id && <Check color={Colors.accent} size={16} strokeWidth={2.5} />}
               </TouchableOpacity>

@@ -17,7 +17,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Plus, Trash2, X, Pencil } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, X, Pencil, AlertTriangle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
 import { uploadImage } from '@/src/services/imageUpload';
@@ -28,7 +28,7 @@ import {
   getExercisesWithStats,
   insertExercise,
   updateExercise,
-  getSetCounts,
+  getMuscleGroupSetBreakdown,
   getMuscleGroups,
   softDeleteExercise,
   setExerciseActive,
@@ -39,6 +39,7 @@ import { ExerciseWithStats } from '@/src/db/localDB';
 import { MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 import { getGroupTone } from '@/src/lib/planTone';
+import { ExerciseInjuryBadge } from '@/src/components/ExerciseInjuryBadge';
 
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
@@ -100,8 +101,8 @@ export default function MuscleDetailScreen() {
   const [group, setGroup] = useState<MuscleGroup | null>(null);
   const [exercises, setExercises] = useState<ExerciseWithStats[]>([]);
   const [exTab, setExTab] = useState<'active' | 'disabled'>('active');
-  const [weeklySets, setWeeklySets] = useState(0);
-  const [monthlySets, setMonthlySets] = useState(0);
+  const [weeklyBreakdown, setWeeklyBreakdown] = useState({ isolationSets: 0, impactSets: 0 });
+  const [monthlyBreakdown, setMonthlyBreakdown] = useState({ isolationSets: 0, impactSets: 0 });
 
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [exName, setExName] = useState('');
@@ -110,6 +111,7 @@ export default function MuscleDetailScreen() {
   const [exParentId, setExParentId] = useState<string | null>(null);
   const [exType, setExType] = useState<'compound' | 'isolation' | null>(null);
   const [exSecondaryIds, setExSecondaryIds] = useState<Set<string>>(new Set());
+  const [exIsInjuryProne, setExIsInjuryProne] = useState(false);
   // Thời gian nghỉ/chuẩn bị mặc định (giây) cho Focus Mode — tuỳ chọn, để
   // trống thì Focus Mode tự dùng mặc định chung (90s nghỉ/120s chuẩn bị).
   const [exRestSeconds, setExRestSeconds] = useState('');
@@ -122,6 +124,8 @@ export default function MuscleDetailScreen() {
     name: '',
     target_sets_per_week: '',
     target_sets_per_month: '',
+    target_impact_sets_per_week: '',
+    target_impact_sets_per_month: '',
     color: '',
     image_uri: '',
     category: '',
@@ -139,6 +143,7 @@ export default function MuscleDetailScreen() {
     exercise_type: null as 'compound' | 'isolation' | null,
     rest_seconds: '',
     prep_seconds: '',
+    is_injury_prone: false,
   });
   const [editSecondaryIds, setEditSecondaryIds] = useState<Set<string>>(new Set());
   const [loadError, setLoadError] = useState('');
@@ -172,11 +177,11 @@ export default function MuscleDetailScreen() {
         59,
       ).toISOString();
 
-      const [g, ex, wSets, mSets, allGroups] = await Promise.all([
+      const [g, ex, wBreakdown, mBreakdown, allGroups] = await Promise.all([
         getMuscleGroup(id),
         getExercisesWithStats(id, weekStart),
-        getSetCounts(id, weekStart, weekEnd),
-        getSetCounts(id, monthStart, monthEnd),
+        getMuscleGroupSetBreakdown(id, weekStart, weekEnd),
+        getMuscleGroupSetBreakdown(id, monthStart, monthEnd),
         getMuscleGroups(),
       ]);
       if (g) {
@@ -186,8 +191,8 @@ export default function MuscleDetailScreen() {
         setLoadError('Không tìm thấy nhóm cơ này.');
       }
       setExercises(ex);
-      setWeeklySets(wSets);
-      setMonthlySets(mSets);
+      setWeeklyBreakdown(wBreakdown);
+      setMonthlyBreakdown(mBreakdown);
       setAllMuscleGroups(allGroups);
     } catch (error: any) {
       console.error('Failed to load muscle detail:', error);
@@ -208,6 +213,8 @@ export default function MuscleDetailScreen() {
       name: group.name,
       target_sets_per_week: String(group.target_sets_per_week),
       target_sets_per_month: String(group.target_sets_per_month),
+      target_impact_sets_per_week: group.target_impact_sets_per_week != null ? String(group.target_impact_sets_per_week) : '',
+      target_impact_sets_per_month: group.target_impact_sets_per_month != null ? String(group.target_impact_sets_per_month) : '',
       color: group.color,
       image_uri: group.image_uri || '',
       category: group.category || '',
@@ -222,6 +229,7 @@ export default function MuscleDetailScreen() {
     setExSecondaryIds(new Set());
     setExRestSeconds('');
     setExPrepSeconds('');
+    setExIsInjuryProne(false);
   };
 
   const closeEditExerciseModal = () => {
@@ -259,6 +267,10 @@ export default function MuscleDetailScreen() {
           parseInt(editForm.target_sets_per_week) || group.target_sets_per_week,
         target_sets_per_month:
           parseInt(editForm.target_sets_per_month) || group.target_sets_per_month,
+        target_impact_sets_per_week:
+          editForm.target_impact_sets_per_week.trim() === '' ? null : parseInt(editForm.target_impact_sets_per_week) || null,
+        target_impact_sets_per_month:
+          editForm.target_impact_sets_per_month.trim() === '' ? null : parseInt(editForm.target_impact_sets_per_month) || null,
         color: editForm.color,
         image_uri: editForm.image_uri.trim() || null,
         category: editForm.category || null,
@@ -343,6 +355,7 @@ export default function MuscleDetailScreen() {
         exercise_type: exType,
         rest_seconds: exRestSeconds.trim() ? Math.max(0, Math.round(Number(exRestSeconds))) : null,
         prep_seconds: exPrepSeconds.trim() ? Math.max(0, Math.round(Number(exPrepSeconds))) : null,
+        is_injury_prone: exIsInjuryProne,
       });
       if (exType === 'compound' && exSecondaryIds.size > 0) {
         await setExerciseSecondaryMuscles(created.id, Array.from(exSecondaryIds));
@@ -356,6 +369,7 @@ export default function MuscleDetailScreen() {
       setExSecondaryIds(new Set());
       setExRestSeconds('');
       setExPrepSeconds('');
+      setExIsInjuryProne(false);
       load();
     } catch (e: unknown) {
       setExError(e instanceof Error ? e.message : 'Lỗi không xác định');
@@ -375,6 +389,7 @@ export default function MuscleDetailScreen() {
       exercise_type: exercise.exercise_type ?? null,
       rest_seconds: exercise.rest_seconds != null ? String(exercise.rest_seconds) : '',
       prep_seconds: exercise.prep_seconds != null ? String(exercise.prep_seconds) : '',
+      is_injury_prone: !!exercise.is_injury_prone,
     });
     setEditSecondaryIds(new Set());
     setShowEditExercise(true);
@@ -448,6 +463,7 @@ export default function MuscleDetailScreen() {
         exercise_type: editExerciseForm.exercise_type,
         rest_seconds: editExerciseForm.rest_seconds.trim() ? Math.max(0, Math.round(Number(editExerciseForm.rest_seconds))) : null,
         prep_seconds: editExerciseForm.prep_seconds.trim() ? Math.max(0, Math.round(Number(editExerciseForm.prep_seconds))) : null,
+        is_injury_prone: editExerciseForm.is_injury_prone,
       });
       // Không compound nữa -> dọn sạch nhóm cơ phụ đã gán trước đó.
       await setExerciseSecondaryMuscles(
@@ -521,6 +537,7 @@ export default function MuscleDetailScreen() {
                 </Text>
               </View>
             ) : null}
+            {v.is_injury_prone ? <ExerciseInjuryBadge /> : null}
             {disabled ? (
               <Text style={styles.enableHint}>Bật lại</Text>
             ) : (
@@ -535,6 +552,11 @@ export default function MuscleDetailScreen() {
       </View>
     );
   };
+
+  // "Tác động" = cô lập + sets từ bài compound có nhóm cơ này là nhóm cơ
+  // phụ — fallback về target cô lập nếu chưa cấu hình riêng.
+  const weeklyImpactTarget = group.target_impact_sets_per_week ?? group.target_sets_per_week;
+  const monthlyImpactTarget = group.target_impact_sets_per_month ?? group.target_sets_per_month;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -551,36 +573,38 @@ export default function MuscleDetailScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statVal}>{weeklySets}</Text>
-            <Text style={styles.statLabel}>Tuần này</Text>
+            <Text style={styles.statVal}>{weeklyBreakdown.impactSets}</Text>
+            <Text style={styles.statLabel}>Tác động tuần</Text>
             <View style={styles.progressBg}>
               <View
                 style={[
                   styles.progressFill,
                   {
-                    width: `${Math.min(100, (weeklySets / group.target_sets_per_week) * 100)}%`,
+                    width: `${Math.min(100, (weeklyBreakdown.impactSets / weeklyImpactTarget) * 100)}%`,
                     backgroundColor: group.color,
                   },
                 ]}
               />
             </View>
-            <Text style={styles.targetText}>mục tiêu: {group.target_sets_per_week}</Text>
+            <Text style={styles.targetText}>mục tiêu: {weeklyImpactTarget}</Text>
+            <Text style={styles.statSubText}>Cô lập: {weeklyBreakdown.isolationSets}/{group.target_sets_per_week}</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statVal}>{monthlySets}</Text>
-            <Text style={styles.statLabel}>Tháng này</Text>
+            <Text style={styles.statVal}>{monthlyBreakdown.impactSets}</Text>
+            <Text style={styles.statLabel}>Tác động tháng</Text>
             <View style={styles.progressBg}>
               <View
                 style={[
                   styles.progressFill,
                   {
-                    width: `${Math.min(100, (monthlySets / group.target_sets_per_month) * 100)}%`,
+                    width: `${Math.min(100, (monthlyBreakdown.impactSets / monthlyImpactTarget) * 100)}%`,
                     backgroundColor: group.color,
                   },
                 ]}
               />
             </View>
-            <Text style={styles.targetText}>mục tiêu: {group.target_sets_per_month}</Text>
+            <Text style={styles.targetText}>mục tiêu: {monthlyImpactTarget}</Text>
+            <Text style={styles.statSubText}>Cô lập: {monthlyBreakdown.isolationSets}/{group.target_sets_per_month}</Text>
           </View>
         </View>
 
@@ -642,7 +666,7 @@ export default function MuscleDetailScreen() {
                   )}
                   <View style={styles.exInfo}>
                     <View style={styles.exNameRow}>
-                      <Text style={styles.exName}>{ex.name}</Text>
+                      <Text style={styles.exName} numberOfLines={1}>{ex.name}</Text>
                       {ex.exercise_type ? (
                         <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
                           <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
@@ -650,6 +674,7 @@ export default function MuscleDetailScreen() {
                           </Text>
                         </View>
                       ) : null}
+                      {ex.is_injury_prone ? <ExerciseInjuryBadge /> : null}
                     </View>
                     <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
                     {ex.notes ? (
@@ -697,7 +722,7 @@ export default function MuscleDetailScreen() {
                   )}
                   <View style={styles.exInfo}>
                     <View style={styles.exNameRow}>
-                      <Text style={[styles.exName, styles.disabledText]}>{ex.name}</Text>
+                      <Text style={[styles.exName, styles.disabledText]} numberOfLines={1}>{ex.name}</Text>
                       {ex.exercise_type ? (
                         <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
                           <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
@@ -705,6 +730,7 @@ export default function MuscleDetailScreen() {
                           </Text>
                         </View>
                       ) : null}
+                      {ex.is_injury_prone ? <ExerciseInjuryBadge /> : null}
                     </View>
                     <Text style={styles.exDate}>{formatRelativeDate(ex.last_logged_at)}</Text>
                     {ex.notes ? (
@@ -817,6 +843,16 @@ export default function MuscleDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <TouchableOpacity
+              style={[styles.injuryToggle, exIsInjuryProne && styles.injuryToggleActive]}
+              onPress={() => setExIsInjuryProne((v) => !v)}
+            >
+              <AlertTriangle size={14} color={exIsInjuryProne ? Colors.warning : Colors.textMuted} strokeWidth={2.2} />
+              <Text style={[styles.injuryToggleText, exIsInjuryProne && styles.injuryToggleTextActive]}>
+                Dễ chấn thương
+              </Text>
+            </TouchableOpacity>
 
             <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
             <View style={styles.restPrepRow}>
@@ -1008,6 +1044,16 @@ export default function MuscleDetailScreen() {
               ))}
             </View>
 
+            <TouchableOpacity
+              style={[styles.injuryToggle, editExerciseForm.is_injury_prone && styles.injuryToggleActive]}
+              onPress={() => setEditExerciseForm((f) => ({ ...f, is_injury_prone: !f.is_injury_prone }))}
+            >
+              <AlertTriangle size={14} color={editExerciseForm.is_injury_prone ? Colors.warning : Colors.textMuted} strokeWidth={2.2} />
+              <Text style={[styles.injuryToggleText, editExerciseForm.is_injury_prone && styles.injuryToggleTextActive]}>
+                Dễ chấn thương
+              </Text>
+            </TouchableOpacity>
+
             <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
             <View style={styles.restPrepRow}>
               <View style={styles.restPrepField}>
@@ -1127,9 +1173,10 @@ export default function MuscleDetailScreen() {
             placeholderTextColor={Colors.textMuted}
           />
 
+          <Text style={styles.label}>Mục tiêu cô lập (sets)</Text>
           <View style={styles.rowFields}>
             <View style={styles.halfField}>
-              <Text style={styles.label}>Sets mục tiêu/tuần</Text>
+              <Text style={styles.subLabel}>Tuần</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
@@ -1139,12 +1186,38 @@ export default function MuscleDetailScreen() {
               />
             </View>
             <View style={styles.halfField}>
-              <Text style={styles.label}>Sets mục tiêu/tháng</Text>
+              <Text style={styles.subLabel}>Tháng</Text>
               <TextInput
                 style={styles.input}
                 keyboardType="number-pad"
                 value={editForm.target_sets_per_month}
                 onChangeText={(t) => setEditForm((f) => ({ ...f, target_sets_per_month: t }))}
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.label}>Mục tiêu tác động (sets)</Text>
+          <View style={styles.rowFields}>
+            <View style={styles.halfField}>
+              <Text style={styles.subLabel}>Tuần</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="number-pad"
+                value={editForm.target_impact_sets_per_week}
+                onChangeText={(t) => setEditForm((f) => ({ ...f, target_impact_sets_per_week: t }))}
+                placeholder={editForm.target_sets_per_week || '10'}
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+            <View style={styles.halfField}>
+              <Text style={styles.subLabel}>Tháng</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="number-pad"
+                value={editForm.target_impact_sets_per_month}
+                onChangeText={(t) => setEditForm((f) => ({ ...f, target_impact_sets_per_month: t }))}
+                placeholder={editForm.target_sets_per_month || '40'}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
@@ -1267,6 +1340,7 @@ const styles = StyleSheet.create({
   },
   progressFill: { height: '100%', borderRadius: 3 },
   targetText: { fontSize: 11, color: Colors.textSecondary },
+  statSubText: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1305,7 +1379,7 @@ const styles = StyleSheet.create({
   exImgText: { fontSize: 20, fontWeight: '800' },
   exInfo: { flex: 1, marginLeft: 12 },
   exNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  exName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  exName: { fontSize: 16, fontWeight: '700', color: Colors.text, flexShrink: 1 },
   exerciseTypeTag: {
     width: 16, height: 16, borderRadius: 4, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -1433,9 +1507,26 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
+  subLabel: { fontSize: 12, fontWeight: '500', color: Colors.textMuted, marginBottom: 6 },
   restPrepRow: { flexDirection: 'row', gap: 10 },
   restPrepField: { flex: 1 },
   restPrepFieldLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
+  injuryToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  injuryToggleActive: { backgroundColor: Colors.warning + '18', borderColor: Colors.warning },
+  injuryToggleText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  injuryToggleTextActive: { color: Colors.warning, fontWeight: '700' },
   input: {
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,

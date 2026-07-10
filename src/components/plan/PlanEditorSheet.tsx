@@ -68,8 +68,10 @@ type EntryUpsertPayload = {
 // setsByExerciseId (nếu có) cho phép mỗi bài tập có sets riêng thay vì dùng
 // chung 1 giá trị `sets` — dùng khi 1 nhóm cơ có >= 2 bài tập được chọn.
 // repsByExerciseId (nếu có) là reps mục tiêu riêng từng bài, tuỳ chọn (null
-// = không đặt mục tiêu reps). sortOrder = vị trí trong mảng exerciseIds —
-// đủ dùng cho Focus Mode chạy đúng thứ tự trong phạm vi 1 nhóm cơ/1 ngày.
+// = không đặt mục tiêu reps). sortOrder GIỮ NGUYÊN giá trị đã có (thứ tự
+// Focus Mode được quản lý riêng qua FocusOrderSheet trong WeeklyPlanScreen.tsx
+// — đánh số phẳng xuyên suốt cả ngày, không phân biệt nhóm cơ); bài mới thêm
+// vào đây chưa có thứ tự, để null (rơi xuống cuối, xếp bằng tay sau).
 function resolveMuscleEntries(
   dayKey: WeekDayKey,
   muscleGroupId: string,
@@ -81,7 +83,7 @@ function resolveMuscleEntries(
   repsByExerciseId?: Record<string, number | null>,
 ): { toUpsert: EntryUpsertPayload[]; toDeleteIds: string[] } {
   const targetIds: (string | null)[] = exerciseIds.length > 0 ? exerciseIds : [null];
-  const toUpsert = targetIds.map((exId, idx) => {
+  const toUpsert = targetIds.map((exId) => {
     const existing = existingEntries.find((e) => (e.exerciseId ?? null) === exId);
     const rowSets = exId && setsByExerciseId?.[exId] !== undefined ? setsByExerciseId[exId] : sets;
     const rowReps = exId ? repsByExerciseId?.[exId] ?? null : null;
@@ -92,7 +94,7 @@ function resolveMuscleEntries(
       exerciseId: exId,
       sets: rowSets,
       reps: rowReps,
-      sortOrder: exId ? idx : null,
+      sortOrder: existing?.sortOrder ?? null,
       note,
     };
   });

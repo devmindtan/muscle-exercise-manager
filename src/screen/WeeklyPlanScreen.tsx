@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { ChevronDown, Plus, Pencil, Trash2, Flame, Target } from 'lucide-react-native';
+import { ChevronDown, Plus, Pencil, Trash2, Flame, Target, ArrowUpDown } from 'lucide-react-native';
 import { getMuscleGroups, getWorkoutLogs, getExercises } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 import { useAuth } from '@/src/context/AuthContext';
@@ -20,6 +20,8 @@ import { PlanEditorSheet, PlanEditorRequest } from '@/src/components/plan/PlanEd
 import { PlanManagerSheet } from '@/src/components/plan/PlanManagerSheet';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
 import { ExerciseInfoModal } from '@/src/components/plan/ExerciseInfoModal';
+import { ExerciseInjuryBadge } from '@/src/components/ExerciseInjuryBadge';
+import { FocusOrderSheet } from '@/src/components/plan/FocusOrderSheet';
 import {
   deleteWeeklyPlanEntry,
   getWeeklyPlanEntries,
@@ -133,6 +135,7 @@ export default function WeeklyPlanScreen() {
   const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [showPlanManager, setShowPlanManager] = useState(false);
+  const [showFocusOrder, setShowFocusOrder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actualSetsByMuscle, setActualSetsByMuscle] = useState<Record<string, number>>({});
@@ -484,15 +487,26 @@ export default function WeeklyPlanScreen() {
                     : `  ·  ${dayProgressLoading ? '…' : dayActualTotal} sets`}
                 </Text>
               </View>
-              <TouchableOpacity
-                style={[styles.focusBtn, !canFocusMode && styles.focusBtnDisabled]}
-                onPress={() => canFocusMode && router.push(`/focus/${selectedDay}` as any)}
-                disabled={!canFocusMode}
-                activeOpacity={0.8}
-              >
-                <Target color={canFocusMode ? INK : CHALK} size={14} strokeWidth={2.5} opacity={canFocusMode ? 1 : 0.35} />
-                <Text style={[styles.focusBtnText, !canFocusMode && styles.focusBtnTextDisabled]}>TẬP TRUNG</Text>
-              </TouchableOpacity>
+              <View style={styles.dayDetailHeaderActions}>
+                {canFocusMode && (
+                  <TouchableOpacity
+                    style={styles.orderBtn}
+                    onPress={() => setShowFocusOrder(true)}
+                    activeOpacity={0.8}
+                  >
+                    <ArrowUpDown color={CHALK} size={14} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.focusBtn, !canFocusMode && styles.focusBtnDisabled]}
+                  onPress={() => canFocusMode && router.push(`/focus/${selectedDay}` as any)}
+                  disabled={!canFocusMode}
+                  activeOpacity={0.8}
+                >
+                  <Target color={canFocusMode ? INK : CHALK} size={14} strokeWidth={2.5} opacity={canFocusMode ? 1 : 0.35} />
+                  <Text style={[styles.focusBtnText, !canFocusMode && styles.focusBtnTextDisabled]}>TẬP TRUNG</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             {!canFocusMode && (
               <Text style={styles.focusBtnHint}>Cần có lịch tập trong ngày để dùng Tập trung</Text>
@@ -584,6 +598,7 @@ export default function WeeklyPlanScreen() {
                                             </Text>
                                           </View>
                                         ) : null}
+                                        {ex?.is_injury_prone ? <ExerciseInjuryBadge /> : null}
                                       </View>
                                       {entry.note ? (
                                         <Text style={styles.exerciseSubNote} numberOfLines={1}>{entry.note}</Text>
@@ -662,6 +677,19 @@ export default function WeeklyPlanScreen() {
         exerciseById={exerciseById}
         userKey={userKey}
         activePlanId={activePlanId}
+      />
+
+      <FocusOrderSheet
+        visible={showFocusOrder}
+        dayLabel={DAY_LABEL_FULL[selectedDay]}
+        entries={selectedEntries}
+        exerciseById={exerciseById}
+        muscleNameById={muscleNameById}
+        colorByMuscle={colorByMuscle}
+        userKey={userKey}
+        activePlanId={activePlanId}
+        onClose={() => setShowFocusOrder(false)}
+        onSaved={(nextPlans) => setPlans(sortPlans(nextPlans))}
       />
 
       <PlanManagerSheet
@@ -774,6 +802,11 @@ const styles = StyleSheet.create({
   todayBadge: { backgroundColor: LIME, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   todayBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4, color: INK },
   dayDetailDate: { fontSize: 11, color: CHALK, opacity: 0.5, marginLeft: 11 },
+  dayDetailHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+  orderBtn: {
+    width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(243,246,239,0.08)',
+  },
   focusBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0,
     backgroundColor: LIME, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7,

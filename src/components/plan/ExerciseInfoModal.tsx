@@ -4,6 +4,7 @@ import { X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExerciseSecondaryMuscles } from '@/src/lib/repository';
 import { Exercise } from '@/src/types/database';
+import { ExerciseInjuryBadge } from '@/src/components/ExerciseInjuryBadge';
 
 interface ExerciseInfoModalProps {
   /** null = đóng modal. */
@@ -51,6 +52,12 @@ export function ExerciseInfoModal({ exercise, muscleNameById, onClose }: Exercis
 
             <View style={styles.center}>
               <Text style={styles.name}>{exercise.name}</Text>
+              {exercise.is_injury_prone ? (
+                <View style={styles.injuryRow}>
+                  <ExerciseInjuryBadge size={14} />
+                  <Text style={styles.injuryText}>Dễ chấn thương</Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.section}>
@@ -131,6 +138,8 @@ const styles = StyleSheet.create({
   heroPlaceholderText: { fontSize: 56, fontWeight: '800', color: Colors.accent },
   center: { alignItems: 'center', marginTop: 14, marginBottom: 4 },
   name: { fontSize: 22, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  injuryRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  injuryText: { fontSize: 12, color: Colors.warning, fontWeight: '600' },
   typeBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,

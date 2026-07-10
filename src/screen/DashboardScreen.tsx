@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getMuscleGroupsWithWeeklyStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
-import type { WeekStat } from '@/src/lib/repository';
+import { getMuscleGroupsWithStats, getMonthlyVolume, getWorkoutLogs } from '@/src/lib/repository';
+import type { MuscleGroupStat } from '@/src/lib/repository';
 import { HistoryTabSection } from '../components/dashboard-tabs/HistoryTab';
 import type { HistoryPoint } from '../components/dashboard-tabs/HistoryTab';
 import { OverviewTab, getProgressState } from '../components/dashboard-tabs/OverviewTab';
@@ -123,7 +123,7 @@ function sumVolume(logs: any[]) {
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { lastSyncAt } = useSync();
-  const [stats, setStats] = useState<WeekStat[]>([]);
+  const [stats, setStats] = useState<MuscleGroupStat[]>([]);
   const [totalSets, setTotalSets] = useState(0);
   const [monthlyVolume, setMonthlyVolume] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -152,9 +152,9 @@ export default function DashboardScreen() {
   const isLoadingRef = useRef(false);
   const pendingReloadRef = useRef(false);
 
-  // Total target sets across all muscle groups
+  // Total target sets across all muscle groups (theo mục tiêu tác động)
   const totalTargetSets = useMemo(
-    () => stats.reduce((s, r) => s + r.targetSetsPerWeek, 0),
+    () => stats.reduce((s, r) => s + r.targetImpactPerWeek, 0),
     [stats],
   );
 
@@ -167,11 +167,11 @@ export default function DashboardScreen() {
     const isInitialHistoryLoad = !hasLoadedHistoryRef.current;
     try {
       const { start, end } = getWeekRange();
-      const result = await getMuscleGroupsWithWeeklyStats(start, end);
-      setStats(result);
-      setTotalSets(result.reduce((s, r) => s + r.weekly_sets, 0));
-
       const { start: mStart, end: mEnd } = getMonthRange();
+      const result = await getMuscleGroupsWithStats(start, end, mStart, mEnd);
+      setStats(result);
+      setTotalSets(result.reduce((s, r) => s + r.weekly_impact_sets, 0));
+
       const volume = await getMonthlyVolume(mStart, mEnd);
       setMonthlyVolume(volume);
 

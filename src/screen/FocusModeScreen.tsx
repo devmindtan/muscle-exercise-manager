@@ -54,11 +54,12 @@ type SetStep = {
 };
 
 function sortEntriesForFocus(entries: WeeklyPlanEntry[]): WeeklyPlanEntry[] {
-  // Cùng tiêu chí với sortPlans() trong WeeklyPlanScreen.tsx: nhóm cơ trước
-  // (thứ tự "tình cờ" theo UUID, chấp nhận là giới hạn MVP), rồi trong cùng
-  // 1 nhóm cơ ưu tiên sort_order (gán lúc lưu kế hoạch), fallback createdAt.
+  // Thứ tự phẳng xuyên suốt cả ngày, không phân biệt nhóm cơ — người dùng
+  // chủ động sắp qua FocusOrderSheet (WeeklyPlanScreen.tsx), sort_order ở
+  // đó được đánh số lại 0..N-1 trên toàn bộ danh sách ngày mỗi lần đổi.
+  // Entry chưa từng được sắp (sort_order null) rơi xuống cuối, fallback
+  // createdAt để có thứ tự ổn định.
   return [...entries].sort((a, b) => {
-    if (a.muscleGroupId !== b.muscleGroupId) return a.muscleGroupId.localeCompare(b.muscleGroupId);
     const aHas = a.sortOrder != null;
     const bHas = b.sortOrder != null;
     if (aHas && bHas) return (a.sortOrder as number) - (b.sortOrder as number);

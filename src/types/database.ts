@@ -17,6 +17,8 @@ export type Database = {
           color?: string;
           target_sets_per_week?: number;
           target_sets_per_month?: number;
+          target_impact_sets_per_week?: number | null;
+          target_impact_sets_per_month?: number | null;
           image_uri?: string | null;
           category?: string | null;
           created_at?: string;
@@ -30,6 +32,8 @@ export type Database = {
           color?: string;
           target_sets_per_week?: number;
           target_sets_per_month?: number;
+          target_impact_sets_per_week?: number | null;
+          target_impact_sets_per_month?: number | null;
           image_uri?: string | null;
           category?: string | null;
           updated_at?: string;
@@ -51,6 +55,7 @@ export type Database = {
           exercise_type?: 'compound' | 'isolation' | null;
           rest_seconds?: number | null;
           prep_seconds?: number | null;
+          is_injury_prone?: boolean | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -66,6 +71,7 @@ export type Database = {
           exercise_type?: 'compound' | 'isolation' | null;
           rest_seconds?: number | null;
           prep_seconds?: number | null;
+          is_injury_prone?: boolean | null;
           updated_at?: string;
           deleted_at?: string | null;
           sync_status?: 'pending' | 'synced' | 'failed';
@@ -530,6 +536,8 @@ export type MuscleGroup = {
   color: string;
   target_sets_per_week: number;
   target_sets_per_month: number;
+  target_impact_sets_per_week: number | null;
+  target_impact_sets_per_month: number | null;
   image_uri: string | null;
   category: string | null;
   created_at: string;
@@ -550,6 +558,7 @@ export type Exercise = {
   exercise_type: 'compound' | 'isolation' | null;
   rest_seconds: number | null;
   prep_seconds: number | null;
+  is_injury_prone: boolean | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
