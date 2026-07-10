@@ -386,8 +386,9 @@ export default function MuscleDetailScreen() {
   };
 
   // Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id trỏ tới 1 bài
-  // trong cùng danh sách) được lồng dưới bài gốc, thu gọn mặc định. Biến thể
-  // mồ côi (bài gốc bị lọc sang tab khác) vẫn hiện như bài độc lập.
+  // trong cùng danh sách) luôn hiện, lồng dưới bài gốc bằng 1 đường nối trực
+  // quan (xem renderVariantRow). Biến thể mồ côi (bài gốc bị lọc sang tab
+  // khác) vẫn hiện như bài độc lập.
   const groupExercises = (list: ExerciseWithStats[]) => {
     const idsInList = new Set(list.map((e) => e.id));
     const variantsByParent = new Map<string, ExerciseWithStats[]>();
@@ -489,6 +490,51 @@ export default function MuscleDetailScreen() {
   }
 
   const tone = getGroupTone(group.color);
+
+  const renderVariants = (variants: ExerciseWithStats[], disabled: boolean) => {
+    if (variants.length === 0) return null;
+    return (
+      <View style={styles.variantsGroup}>
+        <Text style={styles.variantsGroupLabel}>Biến thể ({variants.length})</Text>
+        {variants.map((v) => (
+          <TouchableOpacity
+            key={v.id}
+            style={[styles.variantRow, disabled && styles.variantRowDisabled]}
+            onPress={() => (disabled ? openEditExercise(v) : router.push(`/muscles/exercises/${v.id}` as any))}
+          >
+            {v.image_uri ? (
+              <Image source={{ uri: v.image_uri }} style={[styles.variantThumb, disabled && styles.disabledImage]} />
+            ) : (
+              <View style={[styles.variantThumbPlaceholder, { backgroundColor: disabled ? Colors.border : group.color + '20' }]}>
+                <Text style={[styles.variantThumbText, { color: disabled ? Colors.textMuted : group.color }]}>
+                  {v.name[0].toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.variantInfo}>
+              <Text style={[styles.variantName, disabled && styles.disabledText]} numberOfLines={1}>{v.name}</Text>
+            </View>
+            {v.exercise_type ? (
+              <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
+                <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
+                  {v.exercise_type === 'compound' ? 'C' : 'I'}
+                </Text>
+              </View>
+            ) : null}
+            {disabled ? (
+              <Text style={styles.enableHint}>Bật lại</Text>
+            ) : (
+              <View style={styles.weeklySetsbadge}>
+                <Text style={styles.weeklySetsBadgeText}>
+                  {(v.weekly_sets ?? 0) > 0 ? `${v.weekly_sets}s/w` : '0s/w'}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -619,47 +665,7 @@ export default function MuscleDetailScreen() {
                   </TouchableOpacity>
                 </TouchableOpacity>
 
-                {variants.length > 0 && (
-                  <Text style={styles.variantsLabel}>Biến thể ({variants.length})</Text>
-                )}
-
-                {variants.map((v) => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[styles.exCard, styles.exCardVariant]}
-                    onPress={() => router.push(`/muscles/exercises/${v.id}` as any)}
-                  >
-                    {v.image_uri ? (
-                      <Image source={{ uri: v.image_uri }} style={styles.exImg} />
-                    ) : (
-                      <View style={[styles.exImgPlaceholder, { backgroundColor: group.color + '20' }]}>
-                        <Text style={[styles.exImgText, { color: group.color }]}>
-                          {v.name[0].toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <View style={styles.exInfo}>
-                      <View style={styles.exNameRow}>
-                        <Text style={styles.exName}>{v.name}</Text>
-                        {v.exercise_type ? (
-                          <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
-                            <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
-                              {v.exercise_type === 'compound' ? 'C' : 'I'}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text style={styles.exDate}>{formatRelativeDate(v.last_logged_at)}</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => openEditExercise(v)} style={styles.exEditIcon}>
-                      <View style={styles.weeklySetsbadge}>
-                        <Text style={styles.weeklySetsBadgeText}>
-                          {(v.weekly_sets ?? 0) > 0 ? `${v.weekly_sets}s/w` : '0s/w'}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                ))}
+                {renderVariants(variants, false)}
               </View>
             );
           });
@@ -710,43 +716,7 @@ export default function MuscleDetailScreen() {
                   </View>
                 </TouchableOpacity>
 
-                {variants.length > 0 && (
-                  <Text style={styles.variantsLabel}>Biến thể ({variants.length})</Text>
-                )}
-
-                {variants.map((v) => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[styles.exCard, styles.exCardDisabled, styles.exCardVariant]}
-                    onPress={() => openEditExercise(v)}
-                  >
-                    {v.image_uri ? (
-                      <Image source={{ uri: v.image_uri }} style={[styles.exImg, styles.disabledImage]} />
-                    ) : (
-                      <View style={[styles.exImgPlaceholder, { backgroundColor: Colors.border }]}>
-                        <Text style={[styles.exImgText, { color: Colors.textMuted }]}>
-                          {v.name[0].toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <View style={styles.exInfo}>
-                      <View style={styles.exNameRow}>
-                        <Text style={[styles.exName, styles.disabledText]}>{v.name}</Text>
-                        {v.exercise_type ? (
-                          <View style={[styles.exerciseTypeTag, { backgroundColor: tone.badgeBg, borderColor: tone.badgeBorder }]}>
-                            <Text style={[styles.exerciseTypeTagText, { color: tone.badgeText }]}>
-                              {v.exercise_type === 'compound' ? 'C' : 'I'}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text style={styles.exDate}>{formatRelativeDate(v.last_logged_at)}</Text>
-                    </View>
-                    <View style={styles.exEditIcon}>
-                      <Text style={styles.enableHint}>Bật lại</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                {renderVariants(variants, true)}
               </View>
             );
           });
@@ -1399,14 +1369,39 @@ const styles = StyleSheet.create({
   emptyTabText: { fontSize: 13, color: Colors.textMuted },
   enableHint: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
   exCardDisabled: { opacity: 0.6, borderStyle: 'dashed' },
-  exCardVariant: { marginLeft: 20, marginTop: -4 },
-  variantsLabel: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: '600',
-    marginLeft: 12,
-    marginBottom: 8,
+  // Nhóm biến thể nối liền trực quan với card cha bằng đường viền trái (thay
+  // vì margin âm) — 31px canh theo tâm ảnh đại diện 50px của card cha.
+  variantsGroup: {
+    marginLeft: 31,
+    marginTop: 4,
+    marginBottom: 12,
+    paddingLeft: 12,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.border,
+    gap: 8,
   },
+  variantsGroupLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
+  variantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  variantRowDisabled: { opacity: 0.6, borderWidth: 1, borderStyle: 'dashed', borderColor: Colors.border },
+  variantThumb: { width: 36, height: 36, borderRadius: 8 },
+  variantThumbPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  variantThumbText: { fontSize: 14, fontWeight: '800' },
+  variantInfo: { flex: 1 },
+  variantName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   disabledImage: { opacity: 0.5 },
   disabledText: { color: Colors.textSecondary },
   disableBtn: {

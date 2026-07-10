@@ -26,6 +26,8 @@ import {
   Calendar,
   Award,
   Info,
+  CornerUpLeft,
+  CornerDownRight,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
@@ -319,9 +321,18 @@ export default function ExerciseDetailScreen() {
               )}
             </View>
             {exercise.parent_exercise_id ? (
-              <Text style={styles.variantOfText}>
-                Biến thể của: {siblingExercises.find((e) => e.id === exercise.parent_exercise_id)?.name || '...'}
-              </Text>
+              <TouchableOpacity
+                style={styles.variantOfChip}
+                onPress={() => {
+                  const parent = siblingExercises.find((e) => e.id === exercise.parent_exercise_id);
+                  if (parent) router.push(`/muscles/exercises/${parent.id}` as any);
+                }}
+              >
+                <CornerUpLeft color={Colors.textMuted} size={12} strokeWidth={2.2} />
+                <Text style={styles.variantOfText}>
+                  Biến thể của {siblingExercises.find((e) => e.id === exercise.parent_exercise_id)?.name || '...'}
+                </Text>
+              </TouchableOpacity>
             ) : null}
             {exercise.notes ? (
               <Text style={styles.notes}>{exercise.notes}</Text>
@@ -340,6 +351,7 @@ export default function ExerciseDetailScreen() {
                   style={styles.variantRow}
                   onPress={() => router.push(`/muscles/exercises/${v.id}` as any)}
                 >
+                  <CornerDownRight color={Colors.textMuted} size={14} strokeWidth={2} />
                   <Text style={styles.variantRowText}>{v.name}</Text>
                 </TouchableOpacity>
               ))}
@@ -1109,8 +1121,22 @@ const styles = StyleSheet.create({
   restPrepRow: { flexDirection: 'row', gap: 10 },
   restPrepField: { flex: 1 },
   restPrepFieldLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
-  variantOfText: { fontSize: 12, color: Colors.textMuted, fontStyle: 'italic' },
+  variantOfChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+  variantOfText: { fontSize: 12, color: Colors.textMuted },
   variantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 10,
     borderWidth: 1,
