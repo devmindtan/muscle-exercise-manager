@@ -24,6 +24,7 @@ import {
   createMuscleGroup,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
+import { ProgressRing } from '@/src/components/common/ProgressRing';
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
 // Màn này chỉ hiện mục tiêu "cô lập" (như trước khi có mục tiêu tác động) —
@@ -60,59 +61,6 @@ function getMonthRange() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   return { start: start.toISOString(), end: end.toISOString() };
-}
-
-function ProgressRing({
-  progress,
-  color,
-  size = 44,
-}: {
-  progress: number;
-  color: string;
-  size?: number;
-}) {
-  const r = (size - 6) / 2;
-  const circ = 2 * Math.PI * r;
-  const filled = Math.min(progress, 1) * circ;
-  const center = size / 2;
-
-  return (
-    <View style={{ width: size, height: size }}>
-      {/* SVG-like using View circles — use a simple arc with borders instead */}
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderWidth: 3,
-          borderColor: Colors.border,
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-        }}
-      >
-        {/* Filled arc approximation using colored border on one side */}
-        <View
-          style={{
-            position: 'absolute',
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            borderWidth: 3,
-            borderColor: 'transparent',
-            borderTopColor: progress > 0 ? color : 'transparent',
-            borderRightColor: progress > 0.25 ? color : 'transparent',
-            borderBottomColor: progress > 0.5 ? color : 'transparent',
-            borderLeftColor: progress > 0.75 ? color : 'transparent',
-            transform: [{ rotate: '-90deg' }],
-          }}
-        />
-        <Text style={{ fontSize: 10, fontWeight: '700', color }}>
-          {Math.round(Math.min(progress, 1) * 100)}%
-        </Text>
-      </View>
-    </View>
-  );
 }
 
 export default function MusclesScreen() {

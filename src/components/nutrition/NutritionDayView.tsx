@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Plus, Settings, BookOpen, Trash2, Calculator } from 'lucide-react-native';
-import Svg, { Rect, Line, G, Circle } from 'react-native-svg';
+import Svg, { Rect, Line, G } from 'react-native-svg';
 import {
   getNutrientConfigs,
   getNutritionLogsForDate,
@@ -25,6 +25,7 @@ import {
   type InBodySnapshot,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
+import { ProgressRing } from '@/src/components/common/ProgressRing';
 import AddFoodLogModal from './AddFoodLogModal';
 import NutrientConfigScreen from './NutrientConfigScreen';
 import FoodLibraryScreen from './FoodLibraryScreen';
@@ -207,34 +208,6 @@ function WeekChart({
     </View>
   );
 }
-
-function CircleGauge({ value, total }: { value: number; total: number }) {
-  const SIZE = 52;
-  const R = 20;
-  const circ = 2 * Math.PI * R;
-  const pct = total > 0 ? Math.min(value / total, 1) : 0;
-  const over = pct >= 1;
-  return (
-    <View style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
-        <Circle cx={SIZE / 2} cy={SIZE / 2} r={R} stroke={Colors.border} strokeWidth={5} fill="none" />
-        <Circle
-          cx={SIZE / 2} cy={SIZE / 2} r={R}
-          stroke={over ? Colors.warning : NUTRITION_ACCENT}
-          strokeWidth={5} fill="none"
-          strokeDasharray={`${circ}`}
-          strokeDashoffset={`${circ * (1 - pct)}`}
-          strokeLinecap="round"
-          transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
-        />
-      </Svg>
-      <Text style={gaugeStyles.pct}>{Math.round(pct * 100)}%</Text>
-    </View>
-  );
-}
-const gaugeStyles = StyleSheet.create({
-  pct: { fontSize: 12, fontWeight: '700', color: Colors.text },
-});
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -472,7 +445,12 @@ export default function NutritionDayView() {
                     <Text style={styles.remainingVal}>{fmtNum(calRemaining)}</Text>
                     <Text style={styles.remainingLabel}>còn lại</Text>
                   </View>
-                  <CircleGauge value={calConsumed} total={calorieGoal} />
+                  <ProgressRing
+                    progress={calorieGoal > 0 ? calConsumed / calorieGoal : 0}
+                    color={calorieGoal > 0 && calConsumed >= calorieGoal ? Colors.warning : NUTRITION_ACCENT}
+                    size={52}
+                    textColor={Colors.text}
+                  />
                 </View>
               )}
             </View>
