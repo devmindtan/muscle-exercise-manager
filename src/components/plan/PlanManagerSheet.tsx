@@ -144,7 +144,10 @@ export function PlanManagerSheet({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 280 }}>
+        {/* 1 ScrollView duy nhất bọc cả danh sách kế hoạch lẫn phần đổi
+            tên/tạo mới — để bàn phím hiện lên tự cuộn ô đang gõ lên trên,
+            thay vì để nó nằm ngoài vùng cuộn cũ và bị bàn phím che mất. */}
+        <ScrollView keyboardShouldPersistTaps="handled">
           {workoutPlans.map((plan) => {
             const isActive = plan.id === activePlanId;
             return (
@@ -184,41 +187,41 @@ export function PlanManagerSheet({
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
 
-        <Text style={styles.inputLabel}>
-          {renamingPlanId ? 'Đổi tên kế hoạch' : 'Tạo kế hoạch mới'}
-        </Text>
-        <TextInput
-          style={styles.input}
-          value={planNameDraft}
-          onChangeText={setPlanNameDraft}
-          placeholder="VD: Kế hoạch mùa hè, Kế hoạch tăng cơ..."
-          placeholderTextColor={Colors.textMuted}
-        />
+          <Text style={styles.inputLabel}>
+            {renamingPlanId ? 'Đổi tên kế hoạch' : 'Tạo kế hoạch mới'}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={planNameDraft}
+            onChangeText={setPlanNameDraft}
+            placeholder="VD: Kế hoạch mùa hè, Kế hoạch tăng cơ..."
+            placeholderTextColor={Colors.textMuted}
+          />
 
-        {planActionError ? <Text style={styles.errorText}>{planActionError}</Text> : null}
+          {planActionError ? <Text style={styles.errorText}>{planActionError}</Text> : null}
 
-        <View style={styles.planManageActions}>
-          {renamingPlanId && (
+          <View style={styles.planManageActions}>
+            {renamingPlanId && (
+              <TouchableOpacity
+                style={[styles.saveBtn, styles.planManageCancelBtn]}
+                onPress={() => { setRenamingPlanId(null); setPlanNameDraft(''); setPlanActionError(''); }}
+              >
+                <Text style={styles.planManageCancelBtnText}>Huỷ</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={[styles.saveBtn, styles.planManageCancelBtn]}
-              onPress={() => { setRenamingPlanId(null); setPlanNameDraft(''); setPlanActionError(''); }}
+              style={[styles.saveBtn, { flex: 1 }, planActionBusy && styles.saveBtnDisabled]}
+              onPress={renamingPlanId ? submitRenamePlan : submitCreatePlan}
+              disabled={planActionBusy}
             >
-              <Text style={styles.planManageCancelBtnText}>Huỷ</Text>
+              <Text style={styles.saveBtnText}>
+                {planActionBusy ? 'Đang lưu...' : renamingPlanId ? 'Lưu tên mới' : 'Tạo kế hoạch'}
+              </Text>
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[styles.saveBtn, { flex: 1 }, planActionBusy && styles.saveBtnDisabled]}
-            onPress={renamingPlanId ? submitRenamePlan : submitCreatePlan}
-            disabled={planActionBusy}
-          >
-            <Text style={styles.saveBtnText}>
-              {planActionBusy ? 'Đang lưu...' : renamingPlanId ? 'Lưu tên mới' : 'Tạo kế hoạch'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ height: 24 }} />
+          </View>
+          <View style={{ height: 24 }} />
+        </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );

@@ -133,7 +133,7 @@ function OrderRow({
           </Text>
           {ex && (
             <View style={styles.prepRow}>
-              <Clock size={11} color={Colors.textMuted} strokeWidth={2} />
+              <Clock size={13} color={Colors.accent} strokeWidth={2.2} />
               <TextInput
                 style={styles.prepInput}
                 keyboardType="number-pad"
@@ -351,13 +351,18 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1 },
   rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   rowMuscle: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  prepRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  prepInput: {
-    width: 36, fontSize: 11, color: Colors.text, fontWeight: '600',
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 6,
-    paddingHorizontal: 4, paddingVertical: 1, backgroundColor: Colors.surfaceElevated,
+  prepRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1, borderColor: Colors.accent + '40', borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 3,
   },
-  prepUnit: { fontSize: 10, color: Colors.textMuted },
+  prepInput: {
+    width: 32, fontSize: 13, color: Colors.text, fontWeight: '800',
+    textAlign: 'center', padding: 0,
+  },
+  prepUnit: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
   arrowCol: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   dragHandle: { paddingHorizontal: 4, paddingVertical: 10 },
   dropLine: { height: 3, borderRadius: 2, backgroundColor: Colors.accent, marginBottom: 5, marginHorizontal: 2 },

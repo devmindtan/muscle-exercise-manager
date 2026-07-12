@@ -460,7 +460,6 @@ export default function WeeklyPlanScreen() {
                 <Text style={[styles.dayPlateNum, isSelected && styles.dayPlateNumActive]}>
                   {date.getDate()}
                 </Text>
-                {isToday && !isSelected ? <View style={styles.dayPlateTodayDot} /> : null}
               </TouchableOpacity>
             );
           })}
@@ -781,10 +780,6 @@ const styles = StyleSheet.create({
   dayPlateAbbrActive: { color: INK, opacity: 0.75 },
   dayPlateNum: { fontSize: 17, fontWeight: '800', color: CHALK },
   dayPlateNumActive: { color: INK },
-  dayPlateTodayDot: {
-    position: 'absolute', top: 6, right: 6,
-    width: 5, height: 5, borderRadius: 2.5, backgroundColor: LIME,
-  },
 
   dayDetail: {
     marginHorizontal: 20, marginBottom: 4,
