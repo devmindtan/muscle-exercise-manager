@@ -17,7 +17,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Plus, Trash2, X, Pencil, AlertTriangle } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, X, Pencil } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
 import { uploadImage } from '@/src/services/imageUpload';
@@ -39,7 +39,8 @@ import { ExerciseWithStats } from '@/src/db/localDB';
 import { MuscleGroup } from '@/src/types/database';
 import { Colors } from '@/src/constants/colors';
 import { getGroupTone } from '@/src/lib/planTone';
-import { ExerciseInjuryBadge } from '@/src/components/ExerciseInjuryBadge';
+import { groupExercisesByParent } from '@/src/lib/exerciseGrouping';
+import { ExerciseInjuryBadge, InjuryToggleRow } from '@/src/components/ExerciseInjuryBadge';
 
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
 
@@ -400,26 +401,6 @@ export default function MuscleDetailScreen() {
     }
   };
 
-  // Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id trỏ tới 1 bài
-  // trong cùng danh sách) luôn hiện, lồng dưới bài gốc bằng 1 đường nối trực
-  // quan (xem renderVariantRow). Biến thể mồ côi (bài gốc bị lọc sang tab
-  // khác) vẫn hiện như bài độc lập.
-  const groupExercises = (list: ExerciseWithStats[]) => {
-    const idsInList = new Set(list.map((e) => e.id));
-    const variantsByParent = new Map<string, ExerciseWithStats[]>();
-    const topLevel: ExerciseWithStats[] = [];
-    for (const ex of list) {
-      if (ex.parent_exercise_id && idsInList.has(ex.parent_exercise_id)) {
-        const arr = variantsByParent.get(ex.parent_exercise_id) || [];
-        arr.push(ex);
-        variantsByParent.set(ex.parent_exercise_id, arr);
-      } else {
-        topLevel.push(ex);
-      }
-    }
-    return { topLevel, variantsByParent };
-  };
-
   const deleteExercise = () => {
     if (!editingExercise) return;
     confirmDestructive(
@@ -646,7 +627,7 @@ export default function MuscleDetailScreen() {
         </View>
 
         {exTab === 'active' && (() => {
-          const { topLevel, variantsByParent } = groupExercises(exercises.filter((e) => !!e.is_active));
+          const { topLevel, variantsByParent } = groupExercisesByParent(exercises.filter((e) => !!e.is_active));
           return topLevel.map((ex) => {
             const variants = variantsByParent.get(ex.id) || [];
             return (
@@ -702,7 +683,7 @@ export default function MuscleDetailScreen() {
           </View>
         )}
         {exTab === 'disabled' && (() => {
-          const { topLevel, variantsByParent } = groupExercises(exercises.filter((e) => !e.is_active));
+          const { topLevel, variantsByParent } = groupExercisesByParent(exercises.filter((e) => !e.is_active));
           return topLevel.map((ex) => {
             const variants = variantsByParent.get(ex.id) || [];
             return (
@@ -844,15 +825,7 @@ export default function MuscleDetailScreen() {
               ))}
             </View>
 
-            <TouchableOpacity
-              style={[styles.injuryToggle, exIsInjuryProne && styles.injuryToggleActive]}
-              onPress={() => setExIsInjuryProne((v) => !v)}
-            >
-              <AlertTriangle size={14} color={exIsInjuryProne ? Colors.warning : Colors.textMuted} strokeWidth={2.2} />
-              <Text style={[styles.injuryToggleText, exIsInjuryProne && styles.injuryToggleTextActive]}>
-                Dễ chấn thương
-              </Text>
-            </TouchableOpacity>
+            <InjuryToggleRow value={exIsInjuryProne} onChange={setExIsInjuryProne} />
 
             <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
             <View style={styles.restPrepRow}>
@@ -1044,15 +1017,10 @@ export default function MuscleDetailScreen() {
               ))}
             </View>
 
-            <TouchableOpacity
-              style={[styles.injuryToggle, editExerciseForm.is_injury_prone && styles.injuryToggleActive]}
-              onPress={() => setEditExerciseForm((f) => ({ ...f, is_injury_prone: !f.is_injury_prone }))}
-            >
-              <AlertTriangle size={14} color={editExerciseForm.is_injury_prone ? Colors.warning : Colors.textMuted} strokeWidth={2.2} />
-              <Text style={[styles.injuryToggleText, editExerciseForm.is_injury_prone && styles.injuryToggleTextActive]}>
-                Dễ chấn thương
-              </Text>
-            </TouchableOpacity>
+            <InjuryToggleRow
+              value={editExerciseForm.is_injury_prone}
+              onChange={(next) => setEditExerciseForm((f) => ({ ...f, is_injury_prone: next }))}
+            />
 
             <Text style={styles.label}>Thời gian nghỉ/chuẩn bị mặc định (giây, tuỳ chọn)</Text>
             <View style={styles.restPrepRow}>
@@ -1511,22 +1479,6 @@ const styles = StyleSheet.create({
   restPrepRow: { flexDirection: 'row', gap: 10 },
   restPrepField: { flex: 1 },
   restPrepFieldLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
-  injuryToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  injuryToggleActive: { backgroundColor: Colors.warning + '18', borderColor: Colors.warning },
-  injuryToggleText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
-  injuryToggleTextActive: { color: Colors.warning, fontWeight: '700' },
   input: {
     backgroundColor: Colors.surfaceElevated,
     borderWidth: 1,
