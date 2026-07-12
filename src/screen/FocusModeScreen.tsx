@@ -29,7 +29,7 @@ import { getGroupTone } from '@/src/lib/planTone';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
 import { ExercisePickerSheet } from '@/src/components/plan/ExercisePickerSheet';
 import { ExerciseInfoModal } from '@/src/components/plan/ExerciseInfoModal';
-import { getWeeklyPlanEntries, getWorkoutPlans, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
+import { getWeeklyPlanEntries, getWorkoutPlans, sortWeeklyPlanEntriesForFocus, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
 import { Exercise, MuscleGroup } from '@/src/types/database';
 
 // Reuse cùng bảng màu "gym scoreboard" với WeeklyPlanScreen để 2 màn hình
@@ -52,21 +52,6 @@ type SetStep = {
   setIndex: number;
   totalSets: number;
 };
-
-function sortEntriesForFocus(entries: WeeklyPlanEntry[]): WeeklyPlanEntry[] {
-  // Thứ tự phẳng xuyên suốt cả ngày, không phân biệt nhóm cơ — người dùng
-  // chủ động sắp qua FocusOrderSheet (WeeklyPlanScreen.tsx), sort_order ở
-  // đó được đánh số lại 0..N-1 trên toàn bộ danh sách ngày mỗi lần đổi.
-  // Entry chưa từng được sắp (sort_order null) rơi xuống cuối, fallback
-  // createdAt để có thứ tự ổn định.
-  return [...entries].sort((a, b) => {
-    const aHas = a.sortOrder != null;
-    const bHas = b.sortOrder != null;
-    if (aHas && bHas) return (a.sortOrder as number) - (b.sortOrder as number);
-    if (aHas !== bHas) return aHas ? -1 : 1;
-    return a.createdAt.localeCompare(b.createdAt);
-  });
-}
 
 function formatCountdown(ms: number) {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -141,7 +126,7 @@ export default function FocusModeScreen() {
       // Giữ cả entry chỉ-theo-nhóm-cơ (exerciseId null) — Focus Mode vẫn chạy
       // được, người tập chọn bài cụ thể (hoặc bỏ qua) ngay tại màn ghi nhanh.
       const dayEntries = entries.filter((e) => e.dayKey === dayKey);
-      const sorted = sortEntriesForFocus(dayEntries);
+      const sorted = sortWeeklyPlanEntriesForFocus(dayEntries);
 
       const nextQueue: SetStep[] = [];
       sorted.forEach((entry) => {

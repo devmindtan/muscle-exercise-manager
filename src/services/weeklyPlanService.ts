@@ -29,6 +29,21 @@ export type WeeklyPlanEntry = {
   updatedAt: string;
 };
 
+// Thứ tự phẳng xuyên suốt cả ngày, không phân biệt nhóm cơ — người dùng chủ
+// động sắp qua FocusOrderSheet (đánh số lại sortOrder 0..N-1 trên toàn bộ
+// ngày mỗi lần đổi). Entry chưa từng được sắp (sortOrder null) rơi xuống
+// cuối, fallback createdAt để có thứ tự ổn định. Dùng chung cho cả sheet sắp
+// xếp và Focus Mode chạy thật, để 2 nơi luôn hiển thị đúng cùng 1 thứ tự.
+export function sortWeeklyPlanEntriesForFocus(entries: WeeklyPlanEntry[]): WeeklyPlanEntry[] {
+  return [...entries].sort((a, b) => {
+    const aHas = a.sortOrder != null;
+    const bHas = b.sortOrder != null;
+    if (aHas && bHas) return (a.sortOrder as number) - (b.sortOrder as number);
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    return a.createdAt.localeCompare(b.createdAt);
+  });
+}
+
 export type WeeklyPlanEntryInput = {
   id?: string;
   dayKey: WeekDayKey;

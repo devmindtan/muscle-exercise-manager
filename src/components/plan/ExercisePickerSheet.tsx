@@ -4,27 +4,10 @@ import { Check, Info, X } from 'lucide-react-native';
 import { Colors } from '@/src/constants/colors';
 import { getExercises } from '@/src/lib/repository';
 import { MuscleTone } from '@/src/lib/planTone';
+import { groupExercisesByParent } from '@/src/lib/exerciseGrouping';
 import { Exercise } from '@/src/types/database';
 import { ExerciseThumb } from './ExerciseThumb';
 import { ExerciseInfoModal } from './ExerciseInfoModal';
-
-// Nhóm bài tập theo bài gốc — biến thể (parent_exercise_id) lồng dưới bài
-// gốc, để chọn bài tập cụ thể cho 1 mục kế hoạch.
-function groupExercisesByParent(list: Exercise[]) {
-  const idsInList = new Set(list.map((e) => e.id));
-  const variantsByParent = new Map<string, Exercise[]>();
-  const topLevel: Exercise[] = [];
-  for (const ex of list) {
-    if (ex.parent_exercise_id && idsInList.has(ex.parent_exercise_id)) {
-      const arr = variantsByParent.get(ex.parent_exercise_id) || [];
-      arr.push(ex);
-      variantsByParent.set(ex.parent_exercise_id, arr);
-    } else {
-      topLevel.push(ex);
-    }
-  }
-  return { topLevel, variantsByParent };
-}
 
 interface ExercisePickerSheetProps {
   /** Muscle group whose exercises are being picked; null = sheet closed. */

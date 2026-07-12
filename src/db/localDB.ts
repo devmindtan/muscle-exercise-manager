@@ -1566,37 +1566,6 @@ export async function clearAllLocalData() {
   }
 }
 
-export async function hasAnyLocalData() {
-  const database = await getDatabase();
-  const [groups, exercises, logs, measurements, goals, weeklyPlans, cardioLogs] = await Promise.all([
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_groups'),
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercises'),
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM workout_logs'),
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM body_measurements'),
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM muscle_goals'),
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM weekly_plan_entries'),
-    database.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM cardio_logs'),
-  ]);
-
-  return (
-    (groups?.count ?? 0) > 0 ||
-    (exercises?.count ?? 0) > 0 ||
-    (logs?.count ?? 0) > 0 ||
-    (measurements?.count ?? 0) > 0 ||
-    (goals?.count ?? 0) > 0 ||
-    (weeklyPlans?.count ?? 0) > 0 ||
-    (cardioLogs?.count ?? 0) > 0
-  );
-}
-
-// Cleanup
-export async function closeDatabase() {
-  if (db) {
-    await db.closeAsync();
-    db = null;
-  }
-}
-
 // ─── Nutrition ────────────────────────────────────────────────────────────────
 
 export async function getNutrientConfigs(): Promise<LocalNutrientConfig[]> {
@@ -1781,22 +1750,6 @@ export async function deleteNutritionGoalByKey(nutrientKey: string): Promise<voi
      SET deleted_at = datetime('now'), updated_at = datetime('now'), sync_status = 'pending'
      WHERE nutrient_key = ? AND deleted_at IS NULL`,
     [nutrientKey]
-  );
-}
-
-export async function saveImageUriToMuscleGroup(id: string, imageUri: string) {
-  const database = await getDatabase();
-  await database.runAsync(
-    `UPDATE muscle_groups SET image_uri = ?, dirty = 1 WHERE id = ?`,
-    [imageUri, id]
-  );
-}
-
-export async function saveImageUriToExercise(id: string, imageUri: string) {
-  const database = await getDatabase();
-  await database.runAsync(
-    `UPDATE exercises SET image_uri = ?, dirty = 1 WHERE id = ?`,
-    [imageUri, id]
   );
 }
 

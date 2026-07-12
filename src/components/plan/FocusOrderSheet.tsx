@@ -6,7 +6,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 
 import { Colors } from '@/src/constants/colors';
 import { getGroupTone } from '@/src/lib/planTone';
 import { updateExercise } from '@/src/lib/repository';
-import { upsertWeeklyPlanEntries, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
+import { upsertWeeklyPlanEntries, sortWeeklyPlanEntriesForFocus, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
 import { Exercise } from '@/src/types/database';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
 
@@ -27,20 +27,10 @@ interface FocusOrderSheetProps {
   onExerciseUpdated: () => void;
 }
 
-// Thứ tự tập trong Focus Mode chạy theo sortOrder xuyên suốt cả ngày, không
-// phân biệt nhóm cơ (FocusModeScreen.sortEntriesForFocus không còn ưu tiên
-// nhóm theo muscleGroupId trước) — sheet này là nơi DUY NHẤT người dùng chủ
-// động chỉnh sortOrder, nên mỗi lần đổi vị trí sẽ đánh số lại toàn bộ danh
-// sách của ngày đó (0..N-1) và lưu ngay.
-function sortForDisplay(entries: WeeklyPlanEntry[]): WeeklyPlanEntry[] {
-  return [...entries].sort((a, b) => {
-    const aHas = a.sortOrder != null;
-    const bHas = b.sortOrder != null;
-    if (aHas && bHas) return (a.sortOrder as number) - (b.sortOrder as number);
-    if (aHas !== bHas) return aHas ? -1 : 1;
-    return a.createdAt.localeCompare(b.createdAt);
-  });
-}
+// Sheet này là nơi DUY NHẤT người dùng chủ động chỉnh sortOrder — mỗi lần
+// đổi vị trí sẽ đánh số lại toàn bộ danh sách của ngày đó (0..N-1) và lưu
+// ngay. Thứ tự hiển thị dùng chung công thức với Focus Mode thật
+// (sortWeeklyPlanEntriesForFocus) để 2 nơi luôn khớp nhau.
 
 interface OrderRowProps {
   entry: WeeklyPlanEntry;
@@ -194,7 +184,7 @@ export function FocusOrderSheet({
   };
 
   useEffect(() => {
-    if (visible) setOrder(sortForDisplay(entries));
+    if (visible) setOrder(sortWeeklyPlanEntriesForFocus(entries));
   }, [visible, entries]);
 
   const persist = async (nextOrder: WeeklyPlanEntry[]) => {

@@ -20,12 +20,24 @@ import { Plus, ChevronRight, X, Search } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { persistImageLocally } from '@/src/lib/image';
 import {
-  getMuscleGroupsWithWeeklyStats,
+  getMuscleGroupsWithStats,
   createMuscleGroup,
-  type WeekStat,
 } from '@/src/lib/repository';
 import { Colors } from '@/src/constants/colors';
 const MUSCLE_CATEGORIES = ['Ngực', 'Lưng', 'Vai', 'Tay', 'Chân', 'Bụng', 'Khác'];
+
+// Màn này chỉ hiện mục tiêu "cô lập" (như trước khi có mục tiêu tác động) —
+// dùng chung hàm bulk-stats với Dashboard, chỉ lấy phần isolation.
+interface WeekStat {
+  id: string;
+  name: string;
+  color?: string;
+  category?: string | null;
+  weekly_sets: number;
+  exerciseCount: number;
+  progress: number;
+  targetSetsPerWeek: number;
+}
 
 function getWeekRange() {
   const now = new Date();
@@ -41,6 +53,13 @@ function getWeekRange() {
     start: mon.toISOString(),
     end: sun.toISOString(),
   };
+}
+
+function getMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 function ProgressRing({
@@ -118,8 +137,18 @@ export default function MusclesScreen() {
   const load = useCallback(async () => {
     try {
       const { start, end } = getWeekRange();
-      const data = await getMuscleGroupsWithWeeklyStats(start, end);
-      setStats(data);
+      const { start: mStart, end: mEnd } = getMonthRange();
+      const data = await getMuscleGroupsWithStats(start, end, mStart, mEnd);
+      setStats(data.map((s) => ({
+        id: s.id,
+        name: s.name,
+        color: s.color,
+        category: s.category,
+        weekly_sets: s.weekly_isolation_sets,
+        exerciseCount: s.exerciseCount,
+        progress: s.targetIsolationPerWeek > 0 ? s.weekly_isolation_sets / s.targetIsolationPerWeek : 0,
+        targetSetsPerWeek: s.targetIsolationPerWeek,
+      })));
     } finally {
       setLoading(false);
     }

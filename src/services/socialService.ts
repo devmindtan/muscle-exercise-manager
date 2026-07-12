@@ -354,18 +354,6 @@ export async function resolveSharedPlan(shareCode: string): Promise<SharedPlanEn
   return (data || []) as SharedPlanEntryRow[];
 }
 
-export async function importSharedPlan(shareCode: string): Promise<{
-  planId: string;
-  planName: string;
-  importedEntries: number;
-}> {
-  const rows = await resolveSharedPlan(shareCode);
-  if (rows.length === 0) {
-    throw new Error('Không tìm thấy kế hoạch chia sẻ, hoặc bạn không có quyền xem.');
-  }
-  return importPlanEntries(rows, rows[0].plan_name);
-}
-
 // Lõi dùng chung cho mọi nguồn kế hoạch (mã chia sẻ, file JSON tự xuất...) —
 // nhận sẵn danh sách rows đã resolve, không quan tâm rows đến từ đâu.
 export async function importPlanEntries(

@@ -4,6 +4,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { getMuscleGroups, getExercises } from '@/src/lib/repository';
 import { getWeeklyPlanEntries } from '@/src/services/weeklyPlanService';
+import { groupExercisesByParent } from '@/src/lib/exerciseGrouping';
 import type { SharedPlanEntryRow } from '@/src/services/socialService';
 
 const SCHEMA_VERSION = 1;
@@ -36,25 +37,6 @@ export interface PlanExportFile {
 
 function sanitizeFileName(name: string): string {
   return name.trim().replace(/[/\\:*?"<>|]+/g, '_').replace(/\s+/g, '_') || 'export';
-}
-
-// Nhóm bài tập theo bài gốc — cùng logic groupExercisesByParent đã dùng ở
-// ExercisePickerSheet.tsx, lặp lại ở đây vì phạm vi dùng khác nhau (xuất dữ
-// liệu, không phải chọn bài tập) và logic quá nhỏ để tách thành util dùng chung.
-function groupExercisesByParent(list: any[]) {
-  const idsInList = new Set(list.map((e) => e.id));
-  const variantsByParent = new Map<string, any[]>();
-  const topLevel: any[] = [];
-  for (const ex of list) {
-    if (ex.parent_exercise_id && idsInList.has(ex.parent_exercise_id)) {
-      const arr = variantsByParent.get(ex.parent_exercise_id) || [];
-      arr.push(ex);
-      variantsByParent.set(ex.parent_exercise_id, arr);
-    } else {
-      topLevel.push(ex);
-    }
-  }
-  return { topLevel, variantsByParent };
 }
 
 // ─── Export: nhóm cơ + bài tập (chỉ xuất, không nhập lại) ──────────────────────
