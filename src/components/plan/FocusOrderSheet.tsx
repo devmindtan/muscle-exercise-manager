@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
-import { X, ChevronUp, ChevronDown, ArrowUpDown, GripVertical } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Pressable, TextInput } from 'react-native';
+import { X, ChevronUp, ChevronDown, ArrowUpDown, GripVertical, Clock } from 'lucide-react-native';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { Colors } from '@/src/constants/colors';
 import { getGroupTone } from '@/src/lib/planTone';
+import { updateExercise } from '@/src/lib/repository';
 import { upsertWeeklyPlanEntries, WeeklyPlanEntry } from '@/src/services/weeklyPlanService';
 import { Exercise } from '@/src/types/database';
 import { ExerciseThumb } from '@/src/components/plan/ExerciseThumb';
 
-const ROW_HEIGHT = 62;
+const ROW_HEIGHT = 70;
+const DEFAULT_PREP_SECONDS = 120;
 
 interface FocusOrderSheetProps {
   visible: boolean;
@@ -22,6 +24,7 @@ interface FocusOrderSheetProps {
   activePlanId: string | null;
   onClose: () => void;
   onSaved: (nextPlans: WeeklyPlanEntry[]) => void;
+  onExerciseUpdated: () => void;
 }
 
 // Thứ tự tập trong Focus Mode chạy theo sortOrder xuyên suốt cả ngày, không
@@ -54,6 +57,7 @@ interface OrderRowProps {
   onDragStart: () => void;
   onDragUpdate: (translationY: number) => void;
   onDragEnd: () => void;
+  onPrepSecondsCommit: (value: number | null) => void;
 }
 
 // Kéo-thả: chỉ giữ ở tay cầm (GripVertical) — kéo không làm reorder liên tục
@@ -75,8 +79,14 @@ function OrderRow({
   onDragStart,
   onDragUpdate,
   onDragEnd,
+  onPrepSecondsCommit,
 }: OrderRowProps) {
   const translateY = useSharedValue(0);
+  const [prepText, setPrepText] = useState(ex?.prep_seconds != null ? String(ex.prep_seconds) : '');
+
+  useEffect(() => {
+    setPrepText(ex?.prep_seconds != null ? String(ex.prep_seconds) : '');
+  }, [ex?.id, ex?.prep_seconds]);
 
   useEffect(() => {
     if (!isDragging) translateY.value = withSpring(0, { damping: 22, stiffness: 280 });
@@ -121,6 +131,25 @@ function OrderRow({
           <Text style={styles.rowMuscle} numberOfLines={1}>
             {muscleLabel} · {entry.sets} sets
           </Text>
+          {ex && (
+            <View style={styles.prepRow}>
+              <Clock size={11} color={Colors.textMuted} strokeWidth={2} />
+              <TextInput
+                style={styles.prepInput}
+                keyboardType="number-pad"
+                value={prepText}
+                onChangeText={setPrepText}
+                onBlur={() => {
+                  const parsed = Number(prepText);
+                  onPrepSecondsCommit(prepText.trim() && Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null);
+                }}
+                placeholder={String(DEFAULT_PREP_SECONDS)}
+                placeholderTextColor={Colors.textMuted}
+                selectTextOnFocus
+              />
+              <Text style={styles.prepUnit}>s chuẩn bị đổi bài</Text>
+            </View>
+          )}
         </View>
         <View style={styles.arrowCol}>
           <TouchableOpacity onPress={onMoveUp} disabled={index === 0 || disabled} hitSlop={6}>
@@ -151,12 +180,18 @@ export function FocusOrderSheet({
   activePlanId,
   onClose,
   onSaved,
+  onExerciseUpdated,
 }: FocusOrderSheetProps) {
   const [order, setOrder] = useState<WeeklyPlanEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const dragStartIndexRef = useRef(0);
+
+  const commitPrepSeconds = async (exerciseId: string, value: number | null) => {
+    await updateExercise(exerciseId, { prep_seconds: value });
+    onExerciseUpdated();
+  };
 
   useEffect(() => {
     if (visible) setOrder(sortForDisplay(entries));
@@ -258,6 +293,7 @@ export function FocusOrderSheet({
                   onDragStart={() => handleDragStart(entry.id)}
                   onDragUpdate={handleDragUpdate}
                   onDragEnd={() => handleDragEnd(entry.id)}
+                  onPrepSecondsCommit={(value) => ex && void commitPrepSeconds(ex.id, value)}
                 />
               );
             })}
@@ -315,6 +351,13 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1 },
   rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   rowMuscle: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  prepRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  prepInput: {
+    width: 36, fontSize: 11, color: Colors.text, fontWeight: '600',
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 6,
+    paddingHorizontal: 4, paddingVertical: 1, backgroundColor: Colors.surfaceElevated,
+  },
+  prepUnit: { fontSize: 10, color: Colors.textMuted },
   arrowCol: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   dragHandle: { paddingHorizontal: 4, paddingVertical: 10 },
   dropLine: { height: 3, borderRadius: 2, backgroundColor: Colors.accent, marginBottom: 5, marginHorizontal: 2 },

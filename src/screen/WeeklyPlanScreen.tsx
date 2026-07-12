@@ -473,7 +473,7 @@ export default function WeeklyPlanScreen() {
               <View style={styles.dayDetailTitleWrap}>
                 <View style={styles.dayDetailTitleRow}>
                   <View style={styles.dayDetailTick} />
-                  <Text style={styles.dayDetailTitle}>{DAY_LABEL_FULL[selectedDay].toUpperCase()}</Text>
+                  <Text style={styles.dayDetailTitle} numberOfLines={1}>{DAY_LABEL_FULL[selectedDay].toUpperCase()}</Text>
                   {selectedDay === todayKey && (
                     <View style={styles.todayBadge}>
                       <Text style={styles.todayBadgeText}>HÔM NAY</Text>
@@ -690,6 +690,7 @@ export default function WeeklyPlanScreen() {
         activePlanId={activePlanId}
         onClose={() => setShowFocusOrder(false)}
         onSaved={(nextPlans) => setPlans(sortPlans(nextPlans))}
+        onExerciseUpdated={load}
       />
 
       <PlanManagerSheet
@@ -798,7 +799,7 @@ const styles = StyleSheet.create({
   dayDetailTitleWrap: { flex: 1, minWidth: 0 },
   dayDetailTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   dayDetailTick: { width: 3, height: 14, borderRadius: 2, backgroundColor: LIME },
-  dayDetailTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 0.6, color: CHALK },
+  dayDetailTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 0.6, color: CHALK, flexShrink: 1 },
   todayBadge: { backgroundColor: LIME, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   todayBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4, color: INK },
   dayDetailDate: { fontSize: 11, color: CHALK, opacity: 0.5, marginLeft: 11 },
