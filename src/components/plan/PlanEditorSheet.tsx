@@ -72,7 +72,7 @@ type EntryUpsertPayload = {
 // Focus Mode được quản lý riêng qua FocusOrderSheet trong WeeklyPlanScreen.tsx
 // — đánh số phẳng xuyên suốt cả ngày, không phân biệt nhóm cơ); bài mới thêm
 // vào đây chưa có thứ tự, để null (rơi xuống cuối, xếp bằng tay sau).
-function resolveMuscleEntries(
+export function resolveMuscleEntries(
   dayKey: WeekDayKey,
   muscleGroupId: string,
   sets: number,
@@ -107,7 +107,7 @@ function resolveMuscleEntries(
 // Chia đều `total` cho `count` phần, dư ra cộng vào các phần đầu tiên (VD:
 // 10 sets / 3 bài -> [4, 3, 3]) — dùng làm giá trị khởi tạo khi thêm bài tập
 // mới vào 1 nhóm cơ đã có sets, hoặc khi tạo hàng loạt (không cho chỉnh tay).
-function splitSetsEvenly(total: number, count: number): number[] {
+export function splitSetsEvenly(total: number, count: number): number[] {
   if (count <= 0) return [];
   const base = Math.floor(total / count);
   const remainder = total - base * count;
